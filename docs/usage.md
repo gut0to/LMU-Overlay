@@ -91,9 +91,27 @@ To change the CLI logging interval:
 cargo run -p hashoverlay -- --interval-ms 50
 ```
 
-## 7. Run The Overlay
+## 7. Configure The Overlay
 
-To open the configuration interface first:
+For the full settings app:
+
+```powershell
+cd settings
+npm install
+npm run tauri dev
+```
+
+The settings app can change:
+
+- presets for Practice, Qualifying and Race;
+- visible widgets;
+- position, size, scale and opacity;
+- colors and line thickness;
+- telemetry history, render FPS and sample interval;
+- delta reference, mini-sectors and coaching thresholds;
+- hotkeys and performance mode.
+
+For a lightweight text config fallback:
 
 ```powershell
 cargo run -p hashoverlay -- --configure
@@ -105,7 +123,9 @@ This creates and opens:
 %APPDATA%\HashOverlay\hashoverlay.toml
 ```
 
-You can change position, size, opacity, colors, refresh rate, sample rate and which widgets are visible. Save the file, then start the overlay.
+You can edit the same settings in TOML. Save the file, then start the overlay.
+
+## 8. Run The Overlay
 
 Start LMU, enter a session, and run:
 
@@ -119,7 +139,7 @@ The current overlay includes:
 - always on top;
 - click-through;
 - configurable position and size;
-- configurable opacity and colors;
+- configurable scale, opacity, colors and line thickness;
 - toggles for title, speed/RPM, pedals, steering, lap info and input history;
 - speed, gear and RPM text;
 - throttle, brake and clutch bars;
@@ -129,10 +149,10 @@ The current overlay includes:
 - predicted lap, personal best, session best and mini-sector indicator;
 - ghost input markers for throttle/brake when a reference lap exists;
 - brake/throttle timing hints against the reference lap.
+- F9 show/hide by default;
+- F10 edit mode by default.
 
-Drag/resize and a richer settings app are planned for the settings/edit-mode milestone.
-
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 If PowerShell says `cargo` is not recognized, Rust is not installed or the terminal was opened before Rust updated the PATH.
 
@@ -145,5 +165,5 @@ If the app says the telemetry buffer is not available:
 ## Current Limitations
 
 - Track/car names are not yet read from LMU shared memory, so PB storage currently uses a fallback key until those fields are mapped.
-- The richer settings app is planned for the Tauri milestone.
 - Configuration changes are loaded when the overlay starts.
+- Edit mode currently makes the overlay clickable; persistent drag/resize handles are the next native renderer refinement.

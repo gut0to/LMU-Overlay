@@ -430,7 +430,7 @@ mod windows_overlay {
     unsafe fn draw_panel(hdc: HDC, config: &OverlayConfig) {
         let colors = colors(config);
         let bg = CreateSolidBrush(colors.background);
-        let border = CreatePen(PS_SOLID, 1, colors.border);
+        let border = CreatePen(PS_SOLID, config.style.line_thickness, colors.border);
         let old_brush = SelectObject(hdc, bg);
         let old_pen = SelectObject(hdc, border);
         Rectangle(hdc, 0, 0, config.window.width, config.window.height);
@@ -439,7 +439,13 @@ mod windows_overlay {
         DeleteObject(border);
         DeleteObject(bg);
         if config.widgets.title {
-            draw_text(hdc, 18, 12, colors.primary_text, "HashOverlay LMU");
+            draw_text(
+                hdc,
+                scale_px(config, 18),
+                scale_px(config, 12),
+                colors.primary_text,
+                "HashOverlay LMU",
+            );
         }
     }
 
@@ -448,8 +454,8 @@ mod windows_overlay {
         if config.widgets.speed_gear_rpm {
             draw_text(
                 hdc,
-                18,
-                34,
+                scale_px(config, 18),
+                scale_px(config, 34),
                 colors.primary_text,
                 &format!(
                     "{:.0} km/h   gear {}   {:.0} rpm",
@@ -461,10 +467,10 @@ mod windows_overlay {
             draw_bar(
                 hdc,
                 Area {
-                    x: 22,
-                    y: 72,
-                    width: 34,
-                    height: 92,
+                    x: scale_px(config, 22),
+                    y: scale_px(config, 72),
+                    width: scale_size(config, 34),
+                    height: scale_size(config, 92),
                 },
                 snapshot.throttle,
                 "THR",
@@ -482,10 +488,10 @@ mod windows_overlay {
             draw_bar(
                 hdc,
                 Area {
-                    x: 70,
-                    y: 72,
-                    width: 34,
-                    height: 92,
+                    x: scale_px(config, 70),
+                    y: scale_px(config, 72),
+                    width: scale_size(config, 34),
+                    height: scale_size(config, 92),
                 },
                 snapshot.brake,
                 "BRK",
@@ -503,10 +509,10 @@ mod windows_overlay {
             draw_bar(
                 hdc,
                 Area {
-                    x: 118,
-                    y: 72,
-                    width: 34,
-                    height: 92,
+                    x: scale_px(config, 118),
+                    y: scale_px(config, 72),
+                    width: scale_size(config, 34),
+                    height: scale_size(config, 92),
                 },
                 snapshot.clutch,
                 "CLT",
@@ -522,10 +528,10 @@ mod windows_overlay {
             draw_center_bar(
                 hdc,
                 Area {
-                    x: 180,
-                    y: 86,
-                    width: 190,
-                    height: 18,
+                    x: scale_px(config, 180),
+                    y: scale_px(config, 86),
+                    width: scale_size(config, 190),
+                    height: scale_size(config, 18),
                 },
                 snapshot.steering,
                 colors.steering,
@@ -537,16 +543,16 @@ mod windows_overlay {
             if let Some(progress) = snapshot.lap_progress {
                 draw_text(
                     hdc,
-                    180,
-                    112,
+                    scale_px(config, 180),
+                    scale_px(config, 112),
                     colors.secondary_text,
                     &format!("lap {:.1}%", progress * 100.0),
                 );
             }
             draw_text(
                 hdc,
-                180,
-                136,
+                scale_px(config, 180),
+                scale_px(config, 136),
                 colors.secondary_text,
                 &format!("lap {} sector {}", snapshot.lap_number, snapshot.sector),
             );
@@ -571,7 +577,7 @@ mod windows_overlay {
     ) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
-        let outline = CreatePen(PS_SOLID, 1, 0x00888888);
+        let outline = CreatePen(PS_SOLID, config.style.line_thickness.max(1), 0x00888888);
         let old_pen = SelectObject(hdc, outline);
         Rectangle(
             hdc,
@@ -603,7 +609,11 @@ mod windows_overlay {
         if let Some(reference_value) = reference_value {
             let reference_y = area.y + area.height
                 - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
-            let reference_pen = CreatePen(PS_SOLID, 2, style.reference);
+            let reference_pen = CreatePen(
+                PS_SOLID,
+                config.style.line_thickness.max(1),
+                style.reference,
+            );
             let old_pen = SelectObject(hdc, reference_pen);
             MoveToEx(hdc, area.x, reference_y, ptr::null_mut());
             LineTo(hdc, area.x + area.width, reference_y);
@@ -630,10 +640,10 @@ mod windows_overlay {
         config: &OverlayConfig,
     ) {
         let colors = colors(config);
-        let origin_x = 180;
-        let origin_y = 72;
-        let width = 198;
-        let height = 34;
+        let origin_x = scale_px(config, 180);
+        let origin_y = scale_px(config, 72);
+        let width = scale_size(config, 198);
+        let height = scale_size(config, 34);
         draw_series(
             hdc,
             history,
@@ -651,7 +661,7 @@ mod windows_overlay {
             history,
             Area {
                 x: origin_x,
-                y: origin_y + 42,
+                y: origin_y + scale_size(config, 42),
                 width,
                 height,
             },
@@ -662,8 +672,12 @@ mod windows_overlay {
 
     unsafe fn draw_delta_widget(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
         let colors = colors(config);
-        let x = 18;
-        let y = config.window.height.saturating_sub(52).max(138);
+        let x = scale_px(config, 18);
+        let y = config
+            .window
+            .height
+            .saturating_sub(scale_size(config, 52))
+            .max(scale_size(config, 138));
         if let Some(delta) = snapshot.delta_seconds {
             let color = if delta <= 0.0 {
                 colors.delta_gain
@@ -679,7 +693,7 @@ mod windows_overlay {
             draw_text(
                 hdc,
                 x,
-                y + 20,
+                y + scale_size(config, 20),
                 colors.secondary_text,
                 &format!("Pred {}", lap_time(predicted)),
             );
@@ -688,7 +702,7 @@ mod windows_overlay {
         if let Some(best) = snapshot.personal_best_seconds {
             draw_text(
                 hdc,
-                180,
+                scale_px(config, 180),
                 y,
                 colors.secondary_text,
                 &format!("PB {}", lap_time(best)),
@@ -698,8 +712,8 @@ mod windows_overlay {
         if let Some(best) = snapshot.session_best_seconds {
             draw_text(
                 hdc,
-                180,
-                y + 20,
+                scale_px(config, 180),
+                y + scale_size(config, 20),
                 colors.secondary_text,
                 &format!("SB {}", lap_time(best)),
             );
@@ -708,7 +722,7 @@ mod windows_overlay {
         if let Some(mini_sector) = snapshot.mini_sector_index {
             draw_text(
                 hdc,
-                320,
+                scale_px(config, 320),
                 y,
                 colors.secondary_text,
                 &format!("MS {}", mini_sector + 1),
@@ -718,21 +732,21 @@ mod windows_overlay {
 
     unsafe fn draw_coaching_widget(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
         let colors = colors(config);
-        let mut y = 52;
+        let mut y = scale_px(config, 52);
         if let Some(hint) = snapshot.brake_hint_meters {
             draw_text(
                 hdc,
-                300,
+                scale_px(config, 300),
                 y,
                 colors.secondary_text,
                 &format!("BRK {}", meters_hint(hint)),
             );
-            y += 18;
+            y += scale_size(config, 18);
         }
         if let Some(hint) = snapshot.throttle_hint_meters {
             draw_text(
                 hdc,
-                300,
+                scale_px(config, 300),
                 y,
                 colors.secondary_text,
                 &format!("THR {}", meters_hint(hint)),
@@ -769,7 +783,7 @@ mod windows_overlay {
         color: u32,
         value: impl Fn(TelemetrySnapshot) -> f64,
     ) {
-        let pen = CreatePen(PS_SOLID, 2, color);
+        let pen = CreatePen(PS_SOLID, config.style.line_thickness.max(1), color);
         let old_pen = SelectObject(hdc, pen);
         let samples: Vec<_> = history.iter().copied().collect();
         for (index, pair) in samples.windows(2).enumerate() {
@@ -841,6 +855,14 @@ mod windows_overlay {
         } else {
             format!("{meters:.0}m LATE")
         }
+    }
+
+    fn scale_px(config: &OverlayConfig, value: i32) -> i32 {
+        (f64::from(value) * config.style.scale).round() as i32
+    }
+
+    fn scale_size(config: &OverlayConfig, value: i32) -> i32 {
+        scale_px(config, value).max(1)
     }
 
     fn virtual_key(value: &str) -> Option<u32> {

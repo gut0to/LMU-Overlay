@@ -8,6 +8,7 @@ members = [
   "crates/telemetry-engine",
 ]
 resolver = "2"
+exclude = ["settings/src-tauri"]
 
 [workspace.package]
 edition = "2021"

@@ -13,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -28,3 +28,36 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
+
+  settings:
+    name: Settings App
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: settings/package-lock.json
+
+      - name: Install settings dependencies
+        run: npm ci
+        working-directory: settings
+
+      - name: Audit settings dependencies
+        run: npm audit --audit-level=moderate
+        working-directory: settings
+
+      - name: Build settings frontend
+        run: npm run build
+        working-directory: settings
+
+      - name: Check settings shell
+        run: cargo check --manifest-path settings/src-tauri/Cargo.toml

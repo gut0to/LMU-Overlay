@@ -1,11 +1,19 @@
-# Settings
+# HashOverlay Settings
 
-The current settings interface is the user config opened by:
+Tauri + React + TypeScript settings panel for HashOverlay.
+
+## Development
 
 ```powershell
-cargo run -p hashoverlay -- --configure
+cd settings
+npm install
+npm run tauri dev
 ```
 
-It creates `%APPDATA%\HashOverlay\hashoverlay.toml` with editable overlay position, size, opacity, colors, refresh rate, sample rate and widget toggles.
+The app edits the same local config used by the runtime overlay:
 
-The richer settings app will be added later with Tauri, React and TypeScript. The runtime overlay must keep working when that app is closed or fails.
+```text
+%APPDATA%\HashOverlay\hashoverlay.toml
+```
+
+The overlay keeps working without this app. It loads the config file when started.

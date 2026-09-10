@@ -1,8 +1,8 @@
 /target/
 /settings/node_modules/
 /settings/dist/
+/settings/src-tauri/target/
 /.idea/
 /.vscode/
 *.pdb
 *.log
-
