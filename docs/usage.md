@@ -42,6 +42,14 @@ cargo build
 cargo test
 ```
 
+For the same checks used by CI:
+
+```powershell
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
 ## 5. Run One Telemetry Read
 
 Start Le Mans Ultimate and make sure the shared memory plugin used by LMU-compatible tools is available.
@@ -64,6 +72,18 @@ cargo run -p hashoverlay
 ```
 
 Press `Ctrl+C` to stop.
+
+To wait for LMU if it is not open yet:
+
+```powershell
+cargo run -p hashoverlay -- --wait
+```
+
+To change the CLI logging interval:
+
+```powershell
+cargo run -p hashoverlay -- --interval-ms 50
+```
 
 ## 7. Troubleshooting
 

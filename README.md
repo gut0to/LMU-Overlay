@@ -48,6 +48,8 @@ cargo test
 cargo run -p hashoverlay
 ```
 
+Pull requests run the Windows Rust CI workflow with formatting, Clippy and tests.
+
 ## Architecture
 
 The intended runtime flow is:

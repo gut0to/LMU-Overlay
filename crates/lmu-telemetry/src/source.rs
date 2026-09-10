@@ -2,6 +2,9 @@ use std::{error::Error, fmt, mem::size_of};
 
 use crate::{Gear, TelemetrySample};
 
+#[cfg(windows)]
+use std::slice;
+
 pub trait TelemetrySource {
     fn is_available(&self) -> bool;
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError>;
@@ -67,6 +70,10 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
     }
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
+        if !self.inner.is_available() {
+            self.inner = PlatformTelemetrySource::open()?;
+        }
+
         self.inner.read_sample()
     }
 }
@@ -81,7 +88,7 @@ struct PlatformTelemetrySource {
 impl PlatformTelemetrySource {
     fn open() -> Result<Self, TelemetryError> {
         use std::os::windows::ffi::OsStrExt;
-        use std::{ffi::OsStr, ptr, slice};
+        use std::{ffi::OsStr, ptr};
         use windows_sys::Win32::System::Memory::{
             MapViewOfFile, OpenFileMappingW, FILE_MAP_READ,
         };
@@ -120,7 +127,7 @@ impl PlatformTelemetrySource {
         }
 
         let bytes = unsafe { slice::from_raw_parts(self.view, BUFFER_SIZE) };
-        read_sample_from_bytes(bytes)
+        read_sample_from_bytes(bytes).map(|sample| sample.map(TelemetrySample::sanitized))
     }
 }
 
@@ -196,7 +203,8 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_i32(bytes, vehicle_offset + OFFSET_SECTOR)?,
-    }))
+    }
+    .sanitized()))
 }
 
 fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
