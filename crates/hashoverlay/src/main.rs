@@ -1,14 +1,17 @@
 use std::{
     path::PathBuf,
     process::{Command, ExitCode},
+    sync::mpsc,
     thread,
     time::Duration,
 };
 
 use anyhow::Result;
+use lap_engine::{LapEngine, LapEngineConfig, ReferenceMode};
 use lmu_telemetry::{format_sample_line, SharedMemoryTelemetrySource, TelemetrySource};
 use log::{info, warn};
 use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
+use storage::{ReferenceLapKey, ReferenceLapStore};
 use telemetry_engine::TelemetrySnapshot;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -157,10 +160,36 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
+    let lap_config = lap_engine_config(&config);
     let overlay = TelemetryOverlay::with_config(config)?;
+    let lap_store = ReferenceLapStore::appdata();
+    let lap_key = ReferenceLapKey::fallback();
+    let personal_best = match lap_store.load_personal_best(&lap_key) {
+        Ok(personal_best) => personal_best,
+        Err(error) => {
+            warn!("Could not load personal best reference lap: {error}");
+            None
+        }
+    };
+    let mut lap_engine = LapEngine::new(lap_config).with_personal_best(personal_best);
+    let (lap_writer, lap_receiver) = mpsc::channel();
+    thread::spawn(move || {
+        while let Ok(lap) = lap_receiver.recv() {
+            if let Err(error) = lap_store.save_personal_best(&lap_key, &lap) {
+                warn!("Could not save personal best reference lap: {error}");
+            }
+        }
+    });
 
     overlay.run(move || match source.read_sample() {
-        Ok(Some(sample)) => Some(TelemetrySnapshot::from(sample)),
+        Ok(Some(sample)) => {
+            let mut snapshot = TelemetrySnapshot::from(sample);
+            lap_engine.update(snapshot).apply_to(&mut snapshot);
+            if let Some(lap) = lap_engine.take_new_personal_best() {
+                let _ = lap_writer.send(lap);
+            }
+            Some(snapshot)
+        }
         Ok(None) => None,
         Err(error) => {
             warn!("Could not read telemetry sample: {error}");
@@ -169,6 +198,21 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
     })?;
 
     Ok(())
+}
+
+fn lap_engine_config(config: &OverlayConfig) -> LapEngineConfig {
+    LapEngineConfig {
+        reference_mode: match config.timing.reference_mode.as_str() {
+            "session_best" => ReferenceMode::SessionBest,
+            "best_valid_lap" => ReferenceMode::BestValidLap,
+            "last_lap" => ReferenceMode::LastLap,
+            _ => ReferenceMode::PersonalBest,
+        },
+        mini_sectors: config.timing.mini_sectors,
+        brake_threshold: config.timing.brake_threshold,
+        throttle_threshold: config.timing.throttle_threshold,
+        ..LapEngineConfig::default()
+    }
 }
 
 fn open_overlay_config(config_path: Option<PathBuf>) -> Result<()> {

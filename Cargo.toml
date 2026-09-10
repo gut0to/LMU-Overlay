@@ -1,8 +1,10 @@
 [workspace]
 members = [
   "crates/hashoverlay",
+  "crates/lap-engine",
   "crates/lmu-telemetry",
   "crates/overlay-renderer",
+  "crates/storage",
   "crates/telemetry-engine",
 ]
 resolver = "2"

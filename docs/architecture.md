@@ -5,6 +5,7 @@ LMU
   -> Built-in Shared Memory (LMU_Data)
   -> lmu-telemetry
   -> telemetry-engine
+  -> lap-engine
   -> snapshot
   -> overlay renderer
 ```
@@ -32,6 +33,14 @@ The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU an
 ## Renderer
 
 The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws the first telemetry widget. Position, size, opacity, colors, refresh rate and visible widgets are loaded from the user config file. Drag/resize handles and live edit mode belong to the settings/edit-mode milestone.
+
+## Lap And Delta Engine
+
+`lap-engine` owns reference laps, session best, personal best, live delta, predicted lap, mini-sectors and initial coaching comparisons. It operates on compact telemetry snapshots and does not know anything about Win32, shared memory or rendering.
+
+Reference lap lookup is progress-based, not timestamp-based. The hot-path lookup samples a sorted reference lap by normalized track progress and interpolates between nearby points.
+
+Personal best laps are written by a background thread through `storage`, outside the telemetry/render loop. Track and car names are not mapped from LMU shared memory yet, so storage currently uses a fallback key and documents that limitation instead of inventing metadata.
 
 ## Open Source Direction
 

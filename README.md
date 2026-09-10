@@ -1,6 +1,6 @@
 # LMU Overlay
 
-LMU Overlay is an open source, local-first telemetry overlay for **Le Mans Ultimate**.
+HashOverlay LMU is an open source, local-first telemetry overlay for **Le Mans Ultimate**.
 
 The goal is simple: show useful live telemetry and delta information with very low overhead, while keeping the project fair-play friendly and easy to reason about.
 
@@ -8,17 +8,18 @@ The goal is simple: show useful live telemetry and delta information with very l
 
 This repository is in the first milestone. It currently contains:
 
-- a Rust workspace;
 - a read-only reader for LMU's built-in shared memory interface;
 - a compact telemetry sample model;
 - a small CLI that prints speed, gear, throttle, brake, RPM, lap and sector;
 - a transparent always-on-top telemetry overlay window;
 - a basic telemetry widget with input bars, steering bar, speed, gear, RPM and throttle/brake history;
 - a user config opened from the app for position, size, opacity, colors and visible widgets;
+- lap/reference logic for session best, personal best, live delta, predicted lap and mini-sectors;
+- local binary PB storage under `%APPDATA%\HashOverlay\laps`;
 - a pure telemetry engine crate with a tested ring buffer;
 - architecture notes for the future settings app.
 
-The Tauri settings app, edit mode, delta and PB systems are not implemented yet.
+The richer Tauri settings app, live edit mode, hotkeys and packaging are still being built.
 
 ## Principles
 

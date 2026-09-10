@@ -62,9 +62,9 @@ mod windows_overlay {
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
                 RegisterClassW, SetLayeredWindowAttributes, TranslateMessage, CS_HREDRAW,
-                CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_COLORKEY, MSG, SWP_NOACTIVATE,
-                SW_SHOW, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
+                SWP_NOACTIVATE, SW_SHOW, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -83,6 +83,13 @@ mod windows_overlay {
         y: i32,
         width: i32,
         height: i32,
+    }
+
+    #[derive(Clone, Copy)]
+    struct BarStyle {
+        fill: u32,
+        label: u32,
+        reference: u32,
     }
 
     #[derive(Clone)]
@@ -220,7 +227,7 @@ mod windows_overlay {
                 return Err(OverlayError::WindowCreationFailed);
             }
 
-            SetLayeredWindowAttributes(hwnd, COLOR_KEY, opacity, LWA_COLORKEY);
+            SetLayeredWindowAttributes(hwnd, COLOR_KEY, opacity, LWA_COLORKEY | LWA_ALPHA);
             windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,
@@ -359,9 +366,13 @@ mod windows_overlay {
                     height: 92,
                 },
                 snapshot.throttle,
-                colors.throttle,
                 "THR",
-                colors.secondary_text,
+                BarStyle {
+                    fill: colors.throttle,
+                    label: colors.secondary_text,
+                    reference: colors.reference,
+                },
+                config.widgets.ghost_inputs.then_some(snapshot.reference_throttle).flatten(),
             );
             draw_bar(
                 hdc,
@@ -372,9 +383,13 @@ mod windows_overlay {
                     height: 92,
                 },
                 snapshot.brake,
-                colors.brake,
                 "BRK",
-                colors.secondary_text,
+                BarStyle {
+                    fill: colors.brake,
+                    label: colors.secondary_text,
+                    reference: colors.reference,
+                },
+                config.widgets.ghost_inputs.then_some(snapshot.reference_brake).flatten(),
             );
             draw_bar(
                 hdc,
@@ -385,9 +400,13 @@ mod windows_overlay {
                     height: 92,
                 },
                 snapshot.clutch,
-                colors.clutch,
                 "CLT",
-                colors.secondary_text,
+                BarStyle {
+                    fill: colors.clutch,
+                    label: colors.secondary_text,
+                    reference: colors.reference,
+                },
+                None,
             );
         }
         if config.widgets.steering {
@@ -423,15 +442,23 @@ mod windows_overlay {
                 &format!("lap {} sector {}", snapshot.lap_number, snapshot.sector),
             );
         }
+
+        if config.widgets.delta_timing {
+            draw_delta_widget(hdc, snapshot, config);
+        }
+
+        if config.widgets.coaching {
+            draw_coaching_widget(hdc, snapshot, config);
+        }
     }
 
     unsafe fn draw_bar(
         hdc: HDC,
         area: Area,
         value: f64,
-        color: u32,
         label: &str,
-        label_color: u32,
+        style: BarStyle,
+        reference_value: Option<f64>,
     ) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
@@ -447,7 +474,7 @@ mod windows_overlay {
         SelectObject(hdc, old_pen);
         DeleteObject(outline);
 
-        let brush = CreateSolidBrush(color);
+        let brush = CreateSolidBrush(style.fill);
         let fill_rect = RECT {
             left: area.x + 2,
             top: area.y + area.height - filled + 2,
@@ -460,9 +487,20 @@ mod windows_overlay {
             hdc,
             area.x - 1,
             area.y + area.height + 8,
-            label_color,
+            style.label,
             label,
         );
+
+        if let Some(reference_value) = reference_value {
+            let reference_y = area.y + area.height
+                - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
+            let reference_pen = CreatePen(PS_SOLID, 2, style.reference);
+            let old_pen = SelectObject(hdc, reference_pen);
+            MoveToEx(hdc, area.x, reference_y, ptr::null_mut());
+            LineTo(hdc, area.x + area.width, reference_y);
+            SelectObject(hdc, old_pen);
+            DeleteObject(reference_pen);
+        }
     }
 
     unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
@@ -513,6 +551,86 @@ mod windows_overlay {
         );
     }
 
+    unsafe fn draw_delta_widget(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
+        let colors = colors(config);
+        let x = 18;
+        let y = config.window.height.saturating_sub(52).max(138);
+        if let Some(delta) = snapshot.delta_seconds {
+            let color = if delta <= 0.0 {
+                colors.delta_gain
+            } else {
+                colors.delta_loss
+            };
+            draw_text(hdc, x, y, color, &format!("Delta {}", signed_time(delta)));
+        } else {
+            draw_text(hdc, x, y, colors.secondary_text, "Delta --");
+        }
+
+        if let Some(predicted) = snapshot.predicted_lap_seconds {
+            draw_text(
+                hdc,
+                x,
+                y + 20,
+                colors.secondary_text,
+                &format!("Pred {}", lap_time(predicted)),
+            );
+        }
+
+        if let Some(best) = snapshot.personal_best_seconds {
+            draw_text(
+                hdc,
+                180,
+                y,
+                colors.secondary_text,
+                &format!("PB {}", lap_time(best)),
+            );
+        }
+
+        if let Some(best) = snapshot.session_best_seconds {
+            draw_text(
+                hdc,
+                180,
+                y + 20,
+                colors.secondary_text,
+                &format!("SB {}", lap_time(best)),
+            );
+        }
+
+        if let Some(mini_sector) = snapshot.mini_sector_index {
+            draw_text(
+                hdc,
+                320,
+                y,
+                colors.secondary_text,
+                &format!("MS {}", mini_sector + 1),
+            );
+        }
+    }
+
+    unsafe fn draw_coaching_widget(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
+        let colors = colors(config);
+        let mut y = 52;
+        if let Some(hint) = snapshot.brake_hint_meters {
+            draw_text(
+                hdc,
+                300,
+                y,
+                colors.secondary_text,
+                &format!("BRK {}", meters_hint(hint)),
+            );
+            y += 18;
+        }
+        if let Some(hint) = snapshot.throttle_hint_meters {
+            draw_text(
+                hdc,
+                300,
+                y,
+                colors.secondary_text,
+                &format!("THR {}", meters_hint(hint)),
+            );
+        }
+    }
+
     unsafe fn draw_series(
         hdc: HDC,
         history: &RingBuffer<TelemetrySnapshot>,
@@ -555,6 +673,9 @@ mod windows_overlay {
         brake: u32,
         clutch: u32,
         steering: u32,
+        delta_gain: u32,
+        delta_loss: u32,
+        reference: u32,
     }
 
     fn colors(config: &OverlayConfig) -> Colors {
@@ -567,6 +688,27 @@ mod windows_overlay {
             brake: parse_color(&config.style.brake, 0x002244EE),
             clutch: parse_color(&config.style.clutch, 0x00DDDD22),
             steering: parse_color(&config.style.steering, 0x00EEEEEE),
+            delta_gain: parse_color(&config.style.delta_gain, 0x0022DD44),
+            delta_loss: parse_color(&config.style.delta_loss, 0x002244EE),
+            reference: parse_color(&config.style.reference, 0x00AAAAAA),
+        }
+    }
+
+    fn signed_time(seconds: f64) -> String {
+        format!("{seconds:+.3}")
+    }
+
+    fn lap_time(seconds: f64) -> String {
+        let minutes = (seconds / 60.0).floor() as u32;
+        let seconds = seconds - f64::from(minutes) * 60.0;
+        format!("{minutes}:{seconds:06.3}")
+    }
+
+    fn meters_hint(meters: f64) -> String {
+        if meters >= 0.0 {
+            format!("+{meters:.0}m EARLY")
+        } else {
+            format!("{meters:.0}m LATE")
         }
     }
 }
