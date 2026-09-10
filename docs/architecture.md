@@ -26,3 +26,8 @@ The renderer must never read shared memory directly. It will consume compact sna
 
 The current reader opens `$rFactor2SMMP_Telemetry$` with `OpenFileMappingW` and `FILE_MAP_READ`. It does not call `CreateFileMapping`, because creating an empty buffer would make LMU detection unreliable and would violate the read-only intent.
 
+## Open Source Direction
+
+The repository is intended to stay approachable for contributors. Core telemetry calculation should remain isolated from Win32 integration so it can be tested without LMU running.
+
+Public APIs should be boring and explicit. Avoid clever abstractions until there is repeated pressure from real milestones.
