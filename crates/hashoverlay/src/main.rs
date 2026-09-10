@@ -3,9 +3,12 @@ use std::{process::ExitCode, thread, time::Duration};
 use anyhow::Result;
 use lmu_telemetry::{format_sample_line, SharedMemoryTelemetrySource, TelemetrySource};
 use log::{info, warn};
+use overlay_renderer::TelemetryOverlay;
+use telemetry_engine::TelemetrySnapshot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Cli {
+    overlay: bool,
     once: bool,
     wait: bool,
     interval: Duration,
@@ -24,6 +27,10 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    if cli.overlay {
+        return run_overlay();
+    }
+
     let mut source = SharedMemoryTelemetrySource::open()?;
 
     if !source.is_available() {
@@ -69,6 +76,7 @@ fn run(cli: Cli) -> Result<()> {
 impl Cli {
     fn parse(args: impl IntoIterator<Item = String>) -> Self {
         let mut cli = Self {
+            overlay: false,
             once: false,
             wait: false,
             interval: Duration::from_millis(100),
@@ -77,6 +85,7 @@ impl Cli {
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--overlay" => cli.overlay = true,
                 "--once" => cli.once = true,
                 "--wait" => cli.wait = true,
                 "--interval-ms" => {
@@ -102,14 +111,31 @@ fn print_help() {
 LMU Overlay telemetry probe
 
 Usage:
-  hashoverlay [--once] [--wait] [--interval-ms <milliseconds>]
+  hashoverlay [--overlay] [--once] [--wait] [--interval-ms <milliseconds>]
 
 Options:
+  --overlay                 Open the transparent always-on-top telemetry overlay.
   --once                    Print one telemetry sample and exit after telemetry is detected.
   --wait                    Keep waiting when LMU telemetry is not available yet.
   --interval-ms <value>     Poll interval for CLI logging. Default: 100.
   -h, --help                Show this help."
     );
+}
+
+fn run_overlay() -> Result<()> {
+    let mut source = SharedMemoryTelemetrySource::open()?;
+    let overlay = TelemetryOverlay::new()?;
+
+    overlay.run(move || match source.read_sample() {
+        Ok(Some(sample)) => Some(TelemetrySnapshot::from(sample)),
+        Ok(None) => None,
+        Err(error) => {
+            warn!("Could not read telemetry sample: {error}");
+            None
+        }
+    })?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -121,6 +147,7 @@ mod tests {
         let cli = Cli::parse(Vec::new());
 
         assert!(!cli.once);
+        assert!(!cli.overlay);
         assert!(!cli.wait);
         assert_eq!(cli.interval, Duration::from_millis(100));
     }
@@ -130,12 +157,14 @@ mod tests {
         let cli = Cli::parse([
             "--once".to_string(),
             "--wait".to_string(),
+            "--overlay".to_string(),
             "--interval-ms".to_string(),
             "25".to_string(),
         ]);
 
         assert!(cli.once);
         assert!(cli.wait);
+        assert!(cli.overlay);
         assert_eq!(cli.interval, Duration::from_millis(25));
     }
 }

@@ -91,7 +91,28 @@ To change the CLI logging interval:
 cargo run -p hashoverlay -- --interval-ms 50
 ```
 
-## 7. Troubleshooting
+## 7. Run The Overlay
+
+Start LMU, enter a session, and run:
+
+```powershell
+cargo run -p hashoverlay -- --overlay
+```
+
+The current overlay is intentionally small:
+
+- transparent;
+- always on top;
+- click-through;
+- fixed position near the top-left corner;
+- speed, gear and RPM text;
+- throttle, brake and clutch bars;
+- steering bar;
+- throttle and brake history graphs.
+
+Edit mode, drag/resize and visual customization are planned for the settings/edit-mode milestone.
+
+## 8. Troubleshooting
 
 If PowerShell says `cargo` is not recognized, Rust is not installed or the terminal was opened before Rust updated the PATH.
 
@@ -103,6 +124,6 @@ If the app says the telemetry buffer is not available:
 
 ## Current Limitations
 
-- The Direct2D overlay window is not implemented yet.
 - Delta, predicted lap, PB and ghost telemetry are planned for later milestones.
 - The settings app is planned for the Tauri milestone.
+- The overlay position and style are currently fixed in code.

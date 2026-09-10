@@ -12,10 +12,12 @@ This repository is in the first milestone. It currently contains:
 - a read-only reader for LMU's built-in shared memory interface;
 - a compact telemetry sample model;
 - a small CLI that prints speed, gear, throttle, brake, RPM, lap and sector;
+- a transparent always-on-top telemetry overlay window;
+- a basic telemetry widget with input bars, steering bar, speed, gear, RPM and throttle/brake history;
 - a pure telemetry engine crate with a tested ring buffer;
 - architecture notes for the future overlay renderer and settings app.
 
-The visual overlay, Direct2D renderer and Tauri settings app are not implemented yet.
+The Tauri settings app, edit mode, delta and PB systems are not implemented yet.
 
 ## Principles
 
@@ -34,6 +36,10 @@ See [docs/usage.md](docs/usage.md) for the full step-by-step guide.
 
 ```powershell
 cargo run -p hashoverlay -- --once
+```
+
+```powershell
+cargo run -p hashoverlay -- --overlay
 ```
 
 If LMU is not running or its built-in shared memory interface is unavailable, the command exits cleanly with a warning.

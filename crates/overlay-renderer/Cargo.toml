@@ -1,14 +1,12 @@
 [package]
-name = "hashoverlay"
+name = "overlay-renderer"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
 [dependencies]
-anyhow.workspace = true
-env_logger.workspace = true
 log.workspace = true
-lmu-telemetry = { path = "../lmu-telemetry" }
-overlay-renderer = { path = "../overlay-renderer" }
 telemetry-engine = { path = "../telemetry-engine" }
+windows-sys.workspace = true
+
