@@ -16,11 +16,12 @@ The renderer must never read shared memory directly. It will consume compact sna
 1. Workspace, LMU detection, telemetry sample logging, tests.
 2. Transparent overlay window.
 3. Telemetry widget and input graphs.
-4. Lap tracking, reference lap and live delta.
-5. Delta widget, PB/session best, sectors and mini-sectors.
-6. Ghost telemetry and coaching comparisons.
-7. Tauri settings app, edit mode, hotkeys and presets.
-8. Profiling, packaging and polish.
+4. User-editable overlay configuration.
+5. Lap tracking, reference lap and live delta.
+6. Delta widget, PB/session best, sectors and mini-sectors.
+7. Ghost telemetry and coaching comparisons.
+8. Tauri settings app, edit mode, hotkeys and presets.
+9. Profiling, packaging and polish.
 
 ## Shared Memory Reader
 
@@ -30,7 +31,7 @@ The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU an
 
 ## Renderer
 
-The current renderer milestone creates a lightweight Win32 transparent, always-on-top, click-through window and draws the first telemetry widget. It is deliberately fixed-position for now; edit mode, resize handles and saved layout belong to the settings/edit-mode milestone.
+The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws the first telemetry widget. Position, size, opacity, colors, refresh rate and visible widgets are loaded from the user config file. Drag/resize handles and live edit mode belong to the settings/edit-mode milestone.
 
 ## Open Source Direction
 

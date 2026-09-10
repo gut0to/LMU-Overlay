@@ -14,8 +14,9 @@ This repository is in the first milestone. It currently contains:
 - a small CLI that prints speed, gear, throttle, brake, RPM, lap and sector;
 - a transparent always-on-top telemetry overlay window;
 - a basic telemetry widget with input bars, steering bar, speed, gear, RPM and throttle/brake history;
+- a user config opened from the app for position, size, opacity, colors and visible widgets;
 - a pure telemetry engine crate with a tested ring buffer;
-- architecture notes for the future overlay renderer and settings app.
+- architecture notes for the future settings app.
 
 The Tauri settings app, edit mode, delta and PB systems are not implemented yet.
 
@@ -42,6 +43,12 @@ cargo run -p hashoverlay -- --once
 cargo run -p hashoverlay -- --overlay
 ```
 
+Open the overlay configuration:
+
+```powershell
+cargo run -p hashoverlay -- --configure
+```
+
 If LMU is not running or its built-in shared memory interface is unavailable, the command exits cleanly with a warning.
 
 ## Development
@@ -66,7 +73,7 @@ LMU
   -> Telemetry Reader
   -> Telemetry Engine
   -> Snapshot
-  -> Direct2D Renderer
+  -> Overlay Renderer
 ```
 
 The renderer must not read shared memory directly. It will consume compact snapshots from the telemetry pipeline.
