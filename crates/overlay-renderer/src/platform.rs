@@ -456,16 +456,16 @@ mod windows_overlay {
         };
         FillRect(hdc, &fill_rect, brush);
         DeleteObject(brush);
-        draw_text(hdc, area.x - 1, area.y + area.height + 8, label_color, label);
+        draw_text(
+            hdc,
+            area.x - 1,
+            area.y + area.height + 8,
+            label_color,
+            label,
+        );
     }
 
-    unsafe fn draw_center_bar(
-        hdc: HDC,
-        area: Area,
-        value: f64,
-        color: u32,
-        label_color: u32,
-    ) {
+    unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
         let center = area.x + area.width / 2;
         let end = center + (value.clamp(-1.0, 1.0) * (area.width / 2) as f64).round() as i32;
         let pen = CreatePen(PS_SOLID, area.height, color);
