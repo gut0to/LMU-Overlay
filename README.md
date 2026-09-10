@@ -9,7 +9,7 @@ The goal is simple: show useful live telemetry and delta information with very l
 This repository is in the first milestone. It currently contains:
 
 - a Rust workspace;
-- a read-only shared memory telemetry reader;
+- a read-only reader for LMU's built-in shared memory interface;
 - a compact telemetry sample model;
 - a small CLI that prints speed, gear, throttle, brake, RPM, lap and sector;
 - a pure telemetry engine crate with a tested ring buffer;
@@ -36,7 +36,7 @@ See [docs/usage.md](docs/usage.md) for the full step-by-step guide.
 cargo run -p hashoverlay -- --once
 ```
 
-If LMU or the shared memory plugin is not running, the command exits cleanly with a warning.
+If LMU is not running or its built-in shared memory interface is unavailable, the command exits cleanly with a warning.
 
 ## Development
 
@@ -56,7 +56,7 @@ The intended runtime flow is:
 
 ```text
 LMU
-  -> Shared Memory
+  -> Built-in Shared Memory (LMU_Data)
   -> Telemetry Reader
   -> Telemetry Engine
   -> Snapshot
