@@ -151,9 +151,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "env_logger",
+ "lap-engine",
  "lmu-telemetry",
  "log",
  "overlay-renderer",
+ "storage",
  "telemetry-engine",
 ]
 
@@ -207,6 +209,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "lap-engine"
+version = "0.1.0"
+dependencies = [
+ "lmu-telemetry",
+ "serde",
+ "telemetry-engine",
 ]
 
 [[package]]
@@ -344,6 +355,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "storage"
+version = "0.1.0"
+dependencies = [
+ "lap-engine",
 ]
 
 [[package]]
