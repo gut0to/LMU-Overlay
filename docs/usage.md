@@ -93,24 +93,40 @@ cargo run -p hashoverlay -- --interval-ms 50
 
 ## 7. Run The Overlay
 
+To open the configuration interface first:
+
+```powershell
+cargo run -p hashoverlay -- --configure
+```
+
+This creates and opens:
+
+```text
+%APPDATA%\HashOverlay\hashoverlay.toml
+```
+
+You can change position, size, opacity, colors, refresh rate, sample rate and which widgets are visible. Save the file, then start the overlay.
+
 Start LMU, enter a session, and run:
 
 ```powershell
 cargo run -p hashoverlay -- --overlay
 ```
 
-The current overlay is intentionally small:
+The current overlay includes:
 
 - transparent;
 - always on top;
 - click-through;
-- fixed position near the top-left corner;
+- configurable position and size;
+- configurable opacity and colors;
+- toggles for title, speed/RPM, pedals, steering, lap info and input history;
 - speed, gear and RPM text;
 - throttle, brake and clutch bars;
 - steering bar;
 - throttle and brake history graphs.
 
-Edit mode, drag/resize and visual customization are planned for the settings/edit-mode milestone.
+Drag/resize and a richer settings app are planned for the settings/edit-mode milestone.
 
 ## 8. Troubleshooting
 
@@ -126,4 +142,4 @@ If the app says the telemetry buffer is not available:
 
 - Delta, predicted lap, PB and ghost telemetry are planned for later milestones.
 - The settings app is planned for the Tauri milestone.
-- The overlay position and style are currently fixed in code.
+- Configuration changes are loaded when the overlay starts.
