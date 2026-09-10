@@ -108,7 +108,7 @@ mod windows_overlay {
             });
 
             let mut last_sample = Instant::now();
-            let mut message: MSG = zeroed();
+            let mut message: MSG = unsafe { zeroed() };
 
             loop {
                 unsafe {
