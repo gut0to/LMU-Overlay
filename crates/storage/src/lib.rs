@@ -191,8 +191,7 @@ mod tests {
 
     #[test]
     fn saves_and_loads_reference_lap() {
-        let root =
-            env::temp_dir().join(format!("hashoverlay-storage-test-{}", std::process::id()));
+        let root = env::temp_dir().join(format!("hashoverlay-storage-test-{}", std::process::id()));
         let store = ReferenceLapStore::new(&root);
         let key = ReferenceLapKey::fallback();
         let lap = ReferenceLap::new(
