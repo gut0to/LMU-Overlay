@@ -97,9 +97,7 @@ impl PlatformTelemetrySource {
     fn open() -> Result<Self, TelemetryError> {
         use std::os::windows::ffi::OsStrExt;
         use std::{ffi::OsStr, ptr};
-        use windows_sys::Win32::System::Memory::{
-            MapViewOfFile, OpenFileMappingW, FILE_MAP_READ,
-        };
+        use windows_sys::Win32::System::Memory::{MapViewOfFile, OpenFileMappingW, FILE_MAP_READ};
 
         let wide_name: Vec<u16> = OsStr::new(TELEMETRY_MAP_NAME)
             .encode_wide()

@@ -62,7 +62,10 @@ impl TelemetrySample {
 
     pub fn lap_time_seconds(self) -> Option<f64> {
         let lap_time = self.timestamp_seconds - self.lap_start_seconds;
-        lap_time.is_finite().then_some(lap_time).filter(|time| *time >= 0.0)
+        lap_time
+            .is_finite()
+            .then_some(lap_time)
+            .filter(|time| *time >= 0.0)
     }
 }
 

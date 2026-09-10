@@ -7,7 +7,10 @@ pub struct RingBuffer<T> {
 
 impl<T> RingBuffer<T> {
     pub fn new(capacity: usize) -> Self {
-        assert!(capacity > 0, "ring buffer capacity must be greater than zero");
+        assert!(
+            capacity > 0,
+            "ring buffer capacity must be greater than zero"
+        );
 
         Self {
             items: (0..capacity).map(|_| None).collect(),
