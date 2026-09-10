@@ -21,10 +21,18 @@ pub enum TelemetryError {
 impl fmt::Display for TelemetryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TelemetryError::UnsupportedPlatform => f.write_str("shared memory reading is only supported on Windows"),
-            TelemetryError::MappingFailed => f.write_str("could not map the telemetry shared memory buffer"),
-            TelemetryError::BufferTooSmall => f.write_str("telemetry shared memory buffer is smaller than expected"),
-            TelemetryError::TornFrame => f.write_str("telemetry frame changed while it was being read"),
+            TelemetryError::UnsupportedPlatform => {
+                f.write_str("shared memory reading is only supported on Windows")
+            }
+            TelemetryError::MappingFailed => {
+                f.write_str("could not map the telemetry shared memory buffer")
+            }
+            TelemetryError::BufferTooSmall => {
+                f.write_str("telemetry shared memory buffer is smaller than expected")
+            }
+            TelemetryError::TornFrame => {
+                f.write_str("telemetry frame changed while it was being read")
+            }
         }
     }
 }
@@ -220,8 +228,12 @@ fn read_f64(bytes: &[u8], offset: usize) -> Result<f64, TelemetryError> {
 }
 
 fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], TelemetryError> {
-    let end = offset.checked_add(size_of::<[u8; N]>()).ok_or(TelemetryError::BufferTooSmall)?;
-    let slice = bytes.get(offset..end).ok_or(TelemetryError::BufferTooSmall)?;
+    let end = offset
+        .checked_add(size_of::<[u8; N]>())
+        .ok_or(TelemetryError::BufferTooSmall)?;
+    let slice = bytes
+        .get(offset..end)
+        .ok_or(TelemetryError::BufferTooSmall)?;
     let mut out = [0; N];
     out.copy_from_slice(slice);
     Ok(out)
