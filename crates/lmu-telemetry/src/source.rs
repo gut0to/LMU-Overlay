@@ -89,7 +89,7 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
 #[cfg(windows)]
 struct PlatformTelemetrySource {
     handle: windows_sys::Win32::Foundation::HANDLE,
-    view: *const u8,
+    view: windows_sys::Win32::System::Memory::MEMORY_MAPPED_VIEW_ADDRESS,
 }
 
 #[cfg(windows)]
@@ -97,7 +97,9 @@ impl PlatformTelemetrySource {
     fn open() -> Result<Self, TelemetryError> {
         use std::os::windows::ffi::OsStrExt;
         use std::{ffi::OsStr, ptr};
-        use windows_sys::Win32::System::Memory::{MapViewOfFile, OpenFileMappingW, FILE_MAP_READ};
+        use windows_sys::Win32::System::Memory::{
+            MapViewOfFile, OpenFileMappingW, FILE_MAP_READ, MEMORY_MAPPED_VIEW_ADDRESS,
+        };
 
         let wide_name: Vec<u16> = OsStr::new(TELEMETRY_MAP_NAME)
             .encode_wide()
@@ -108,12 +110,14 @@ impl PlatformTelemetrySource {
         if handle.is_null() {
             return Ok(Self {
                 handle: ptr::null_mut(),
-                view: ptr::null(),
+                view: MEMORY_MAPPED_VIEW_ADDRESS {
+                    Value: ptr::null_mut(),
+                },
             });
         }
 
-        let view = unsafe { MapViewOfFile(handle, FILE_MAP_READ, 0, 0, BUFFER_SIZE) } as *const u8;
-        if view.is_null() {
+        let view = unsafe { MapViewOfFile(handle, FILE_MAP_READ, 0, 0, BUFFER_SIZE) };
+        if view.Value.is_null() {
             unsafe {
                 windows_sys::Win32::Foundation::CloseHandle(handle);
             }
@@ -124,7 +128,7 @@ impl PlatformTelemetrySource {
     }
 
     fn is_available(&self) -> bool {
-        !self.handle.is_null() && !self.view.is_null()
+        !self.handle.is_null() && !self.view.Value.is_null()
     }
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
@@ -132,7 +136,7 @@ impl PlatformTelemetrySource {
             return Ok(None);
         }
 
-        let bytes = unsafe { slice::from_raw_parts(self.view, BUFFER_SIZE) };
+        let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
         read_sample_from_bytes(bytes).map(|sample| sample.map(TelemetrySample::sanitized))
     }
 }
@@ -140,9 +144,9 @@ impl PlatformTelemetrySource {
 #[cfg(windows)]
 impl Drop for PlatformTelemetrySource {
     fn drop(&mut self) {
-        if !self.view.is_null() {
+        if !self.view.Value.is_null() {
             unsafe {
-                windows_sys::Win32::System::Memory::UnmapViewOfFile(self.view as _);
+                windows_sys::Win32::System::Memory::UnmapViewOfFile(self.view);
             }
         }
         if !self.handle.is_null() {
