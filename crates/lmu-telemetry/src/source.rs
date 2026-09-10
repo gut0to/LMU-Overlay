@@ -39,14 +39,27 @@ impl fmt::Display for TelemetryError {
 
 impl Error for TelemetryError {}
 
-const TELEMETRY_MAP_NAME: &str = "$rFactor2SMMP_Telemetry$";
-const VERSION_BLOCK_SIZE: usize = 8;
-const TELEMETRY_HEADER_SIZE: usize = 8;
-const VEHICLE_SIZE: usize = 1_920;
-const MAX_VEHICLES: usize = 128;
-const BUFFER_SIZE: usize = VERSION_BLOCK_SIZE + TELEMETRY_HEADER_SIZE + VEHICLE_SIZE * MAX_VEHICLES;
+const TELEMETRY_MAP_NAME: &str = "LMU_Data";
+const MAX_VEHICLES: usize = 104;
+const BUFFER_SIZE: usize = 324_820;
 
-const VEHICLE0_OFFSET: usize = VERSION_BLOCK_SIZE + TELEMETRY_HEADER_SIZE;
+const OFFSET_SCORING_DATA: usize = 1_632;
+const OFFSET_TELEMETRY_DATA: usize = 128_464;
+
+const SCORING_INFO_SIZE: usize = 548;
+const VEHICLE_SCORING_SIZE: usize = 584;
+const VEHICLE_TELEMETRY_SIZE: usize = 1_888;
+
+const OFFSET_GAME_VERSION: usize = 64;
+const OFFSET_SCORING_CURRENT_ET: usize = OFFSET_SCORING_DATA + 68;
+const OFFSET_TRACK_LENGTH: usize = OFFSET_SCORING_DATA + 88;
+const OFFSET_SCORING_NUM_VEHICLES: usize = OFFSET_SCORING_DATA + 104;
+const OFFSET_TELEMETRY_ACTIVE_VEHICLES: usize = OFFSET_TELEMETRY_DATA;
+const OFFSET_TELEMETRY_PLAYER_INDEX: usize = OFFSET_TELEMETRY_DATA + 1;
+const OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE: usize = OFFSET_TELEMETRY_DATA + 2;
+const OFFSET_SCORING_VEHICLES: usize = OFFSET_SCORING_DATA + SCORING_INFO_SIZE + 12;
+const OFFSET_TELEMETRY_VEHICLES: usize = OFFSET_TELEMETRY_DATA + 4;
+
 const OFFSET_ID: usize = 0;
 const OFFSET_ELAPSED_TIME: usize = 12;
 const OFFSET_LAP_NUMBER: usize = 20;
@@ -59,6 +72,8 @@ const OFFSET_BRAKE: usize = 396;
 const OFFSET_STEERING: usize = 404;
 const OFFSET_CLUTCH: usize = 412;
 const OFFSET_SECTOR: usize = 600;
+
+const OFFSET_SCORING_LAP_DISTANCE: usize = 104;
 
 pub struct SharedMemoryTelemetrySource {
     inner: PlatformTelemetrySource,
@@ -180,29 +195,27 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         return Err(TelemetryError::BufferTooSmall);
     }
 
-    let begin = read_u32(bytes, 0)?;
-    let end_before = read_u32(bytes, 4)?;
-    if begin != end_before {
-        return Err(TelemetryError::TornFrame);
-    }
-
-    let num_vehicles = read_i32(bytes, VERSION_BLOCK_SIZE + 4)?.clamp(0, MAX_VEHICLES as i32);
-    if num_vehicles == 0 {
+    if read_i32(bytes, OFFSET_GAME_VERSION)? == 0 {
         return Ok(None);
     }
 
-    let vehicle_offset = (0..num_vehicles as usize)
-        .map(|index| VEHICLE0_OFFSET + index * VEHICLE_SIZE)
-        .find(|offset| read_i32(bytes, offset + OFFSET_ID).unwrap_or(-1) >= 0)
-        .ok_or(TelemetryError::BufferTooSmall)?;
+    let active_vehicles = read_u8(bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES)? as usize;
+    let scoring_vehicles =
+        read_i32(bytes, OFFSET_SCORING_NUM_VEHICLES)?.clamp(0, MAX_VEHICLES as i32) as usize;
+    let player_index = read_u8(bytes, OFFSET_TELEMETRY_PLAYER_INDEX)? as usize;
+    let player_has_vehicle = read_bool(bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE)?;
 
-    let end_after = read_u32(bytes, 4)?;
-    if begin != end_after {
-        return Err(TelemetryError::TornFrame);
+    if !player_has_vehicle || player_index >= active_vehicles || player_index >= MAX_VEHICLES {
+        return Ok(None);
     }
 
+    let vehicle_offset = OFFSET_TELEMETRY_VEHICLES + player_index * VEHICLE_TELEMETRY_SIZE;
+    let scoring_offset = (player_index < scoring_vehicles)
+        .then_some(OFFSET_SCORING_VEHICLES + player_index * VEHICLE_SCORING_SIZE);
+
     let sample = TelemetrySample {
-        timestamp_seconds: read_f64(bytes, vehicle_offset + OFFSET_ELAPSED_TIME)?,
+        timestamp_seconds: read_f64(bytes, OFFSET_SCORING_CURRENT_ET)
+            .or_else(|_| read_f64(bytes, vehicle_offset + OFFSET_ELAPSED_TIME))?,
         speed_mps: read_f64(bytes, vehicle_offset + OFFSET_LOCAL_VEL + 8)?,
         rpm: read_f64(bytes, vehicle_offset + OFFSET_RPM)?,
         gear: Gear::from(read_i32(bytes, vehicle_offset + OFFSET_GEAR)?),
@@ -210,6 +223,10 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         brake: read_f64(bytes, vehicle_offset + OFFSET_BRAKE)?,
         clutch: read_f64(bytes, vehicle_offset + OFFSET_CLUTCH)?,
         steering: read_f64(bytes, vehicle_offset + OFFSET_STEERING)?,
+        lap_distance_m: scoring_offset
+            .map(|offset| read_f64(bytes, offset + OFFSET_SCORING_LAP_DISTANCE))
+            .transpose()?,
+        track_length_m: Some(read_f64(bytes, OFFSET_TRACK_LENGTH)?),
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_i32(bytes, vehicle_offset + OFFSET_SECTOR)?,
@@ -222,8 +239,12 @@ fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
     read_array::<4>(bytes, offset).map(i32::from_le_bytes)
 }
 
-fn read_u32(bytes: &[u8], offset: usize) -> Result<u32, TelemetryError> {
-    read_array::<4>(bytes, offset).map(u32::from_le_bytes)
+fn read_u8(bytes: &[u8], offset: usize) -> Result<u8, TelemetryError> {
+    read_array::<1>(bytes, offset).map(|bytes| bytes[0])
+}
+
+fn read_bool(bytes: &[u8], offset: usize) -> Result<bool, TelemetryError> {
+    read_u8(bytes, offset).map(|value| value != 0)
 }
 
 fn read_f64(bytes: &[u8], offset: usize) -> Result<f64, TelemetryError> {
@@ -253,43 +274,55 @@ mod tests {
     }
 
     #[test]
-    fn detects_torn_frame() {
+    fn ignores_missing_player_vehicle() {
         let mut bytes = vec![0; BUFFER_SIZE];
-        bytes[0..4].copy_from_slice(&1_u32.to_le_bytes());
-        bytes[4..8].copy_from_slice(&2_u32.to_le_bytes());
+        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES, 1);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_INDEX, 0);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE, 0);
 
-        assert!(matches!(
-            read_sample_from_bytes(&bytes),
-            Err(TelemetryError::TornFrame)
-        ));
+        assert_eq!(read_sample_from_bytes(&bytes).unwrap(), None);
     }
 
     #[test]
-    fn reads_first_vehicle_sample() {
+    fn reads_player_vehicle_sample() {
         let mut bytes = vec![0; BUFFER_SIZE];
-        write_u32(&mut bytes, 0, 4);
-        write_u32(&mut bytes, 4, 4);
-        write_i32(&mut bytes, VERSION_BLOCK_SIZE + 4, 1);
+        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
+        write_f64(&mut bytes, OFFSET_SCORING_CURRENT_ET, 12.5);
+        write_f64(&mut bytes, OFFSET_TRACK_LENGTH, 5_000.0);
+        write_i32(&mut bytes, OFFSET_SCORING_NUM_VEHICLES, 2);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES, 2);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_INDEX, 1);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE, 1);
 
-        let offset = VEHICLE0_OFFSET;
-        write_i32(&mut bytes, offset + OFFSET_ID, 7);
-        write_f64(&mut bytes, offset + OFFSET_ELAPSED_TIME, 12.5);
-        write_i32(&mut bytes, offset + OFFSET_LAP_NUMBER, 3);
-        write_f64(&mut bytes, offset + OFFSET_LAP_START_ET, 8.0);
-        write_f64(&mut bytes, offset + OFFSET_LOCAL_VEL + 8, 72.0);
-        write_i32(&mut bytes, offset + OFFSET_GEAR, 4);
-        write_f64(&mut bytes, offset + OFFSET_RPM, 8_800.0);
-        write_f64(&mut bytes, offset + OFFSET_THROTTLE, 0.9);
-        write_f64(&mut bytes, offset + OFFSET_BRAKE, 0.1);
-        write_f64(&mut bytes, offset + OFFSET_STEERING, -0.2);
-        write_f64(&mut bytes, offset + OFFSET_CLUTCH, 0.0);
-        write_i32(&mut bytes, offset + OFFSET_SECTOR, 1);
+        let telemetry_offset = OFFSET_TELEMETRY_VEHICLES + VEHICLE_TELEMETRY_SIZE;
+        write_i32(&mut bytes, telemetry_offset + OFFSET_ID, 7);
+        write_i32(&mut bytes, telemetry_offset + OFFSET_LAP_NUMBER, 3);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_LAP_START_ET, 8.0);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_LOCAL_VEL + 8, 72.0);
+        write_i32(&mut bytes, telemetry_offset + OFFSET_GEAR, 4);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_RPM, 8_800.0);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_THROTTLE, 0.9);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_BRAKE, 0.1);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_STEERING, -0.2);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_CLUTCH, 0.0);
+        write_i32(&mut bytes, telemetry_offset + OFFSET_SECTOR, 1);
+
+        let scoring_offset = OFFSET_SCORING_VEHICLES + VEHICLE_SCORING_SIZE;
+        write_f64(
+            &mut bytes,
+            scoring_offset + OFFSET_SCORING_LAP_DISTANCE,
+            1_250.0,
+        );
 
         let sample = read_sample_from_bytes(&bytes).unwrap().unwrap();
 
         assert_eq!(sample.gear, Gear::Forward(4));
         assert_eq!(sample.lap_number, 3);
         assert_eq!(sample.speed_mps, 72.0);
+        assert_eq!(sample.lap_distance_m, Some(1_250.0));
+        assert_eq!(sample.track_length_m, Some(5_000.0));
+        assert_eq!(sample.lap_progress(), Some(0.25));
         assert_eq!(sample.sector, 1);
     }
 
@@ -297,8 +330,8 @@ mod tests {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 
-    fn write_u32(bytes: &mut [u8], offset: usize, value: u32) {
-        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    fn write_u8(bytes: &mut [u8], offset: usize, value: u8) {
+        bytes[offset] = value;
     }
 
     fn write_f64(bytes: &mut [u8], offset: usize, value: f64) {

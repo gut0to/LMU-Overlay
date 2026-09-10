@@ -52,7 +52,13 @@ cargo test --workspace
 
 ## 5. Run One Telemetry Read
 
-Start Le Mans Ultimate and make sure the shared memory plugin used by LMU-compatible tools is available.
+Start Le Mans Ultimate and enable plugins in the game settings:
+
+```text
+Settings -> Gameplay -> Enable Plugins -> On
+```
+
+LMU Overlay reads LMU's built-in `LMU_Data` shared memory interface on Windows. It does not require the rFactor 2 shared memory plugin for LMU.
 
 Then run:
 
@@ -92,7 +98,7 @@ If PowerShell says `cargo` is not recognized, Rust is not installed or the termi
 If the app says the telemetry buffer is not available:
 
 - start LMU before running the command;
-- confirm telemetry/shared memory support is enabled;
+- confirm `Enable Plugins` is turned on in LMU's gameplay settings;
 - run the terminal as the same Windows user that is running the game.
 
 ## Current Limitations

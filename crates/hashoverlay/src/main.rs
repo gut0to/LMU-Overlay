@@ -28,7 +28,7 @@ fn run(cli: Cli) -> Result<()> {
 
     if !source.is_available() {
         warn!(
-            "LMU telemetry buffer is not available. Start LMU with the shared memory plugin enabled."
+            "LMU telemetry buffer is not available. Start LMU with built-in shared memory enabled."
         );
         if !cli.wait {
             return Ok(());

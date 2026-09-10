@@ -10,6 +10,7 @@ pub struct TelemetrySnapshot {
     pub rpm: f64,
     pub gear: Gear,
     pub speed_kph: f64,
+    pub lap_progress: Option<f64>,
     pub lap_number: i32,
     pub sector: i32,
 }
@@ -26,6 +27,7 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             rpm: sample.rpm,
             gear: sample.gear,
             speed_kph: sample.speed_kph(),
+            lap_progress: sample.lap_progress(),
             lap_number: sample.lap_number,
             sector: sample.sector,
         }
@@ -47,6 +49,8 @@ mod tests {
             brake: 0.25,
             clutch: 0.0,
             steering: -2.0,
+            lap_distance_m: Some(100.0),
+            track_length_m: Some(1_000.0),
             lap_number: 4,
             lap_start_seconds: 0.0,
             sector: 1,
@@ -56,5 +60,6 @@ mod tests {
         assert_eq!(snapshot.rpm, 0.0);
         assert_eq!(snapshot.throttle, 1.0);
         assert_eq!(snapshot.steering, -1.0);
+        assert_eq!(snapshot.lap_progress, Some(0.1));
     }
 }

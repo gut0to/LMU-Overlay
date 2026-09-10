@@ -2,7 +2,7 @@
 
 ```text
 LMU
-  -> Shared Memory
+  -> Built-in Shared Memory (LMU_Data)
   -> lmu-telemetry
   -> telemetry-engine
   -> snapshot
@@ -24,7 +24,9 @@ The renderer must never read shared memory directly. It will consume compact sna
 
 ## Shared Memory Reader
 
-The current reader opens `$rFactor2SMMP_Telemetry$` with `OpenFileMappingW` and `FILE_MAP_READ`. It does not call `CreateFileMapping`, because creating an empty buffer would make LMU detection unreliable and would violate the read-only intent.
+The current reader opens LMU's built-in `LMU_Data` shared memory interface with `OpenFileMappingW` and `FILE_MAP_READ`. It does not call `CreateFileMapping`, because creating an empty buffer would make LMU detection unreliable and would violate the read-only intent.
+
+The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU and should not be the default Windows path.
 
 ## Open Source Direction
 

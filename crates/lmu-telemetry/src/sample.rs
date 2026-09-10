@@ -40,6 +40,8 @@ pub struct TelemetrySample {
     pub brake: f64,
     pub clutch: f64,
     pub steering: f64,
+    pub lap_distance_m: Option<f64>,
+    pub track_length_m: Option<f64>,
     pub lap_number: i32,
     pub lap_start_seconds: f64,
     pub sector: i32,
@@ -53,6 +55,8 @@ impl TelemetrySample {
         self.brake = normalized_input(self.brake);
         self.clutch = normalized_input(self.clutch);
         self.steering = self.steering.clamp(-1.0, 1.0);
+        self.lap_distance_m = self.lap_distance_m.map(non_negative_finite);
+        self.track_length_m = self.track_length_m.map(non_negative_finite);
         self
     }
 
@@ -66,6 +70,13 @@ impl TelemetrySample {
             .is_finite()
             .then_some(lap_time)
             .filter(|time| *time >= 0.0)
+    }
+
+    pub fn lap_progress(self) -> Option<f64> {
+        let distance = self.lap_distance_m?;
+        let length = self.track_length_m?;
+
+        (length > 0.0).then_some((distance / length).clamp(0.0, 1.0))
     }
 }
 
@@ -121,6 +132,8 @@ mod tests {
             brake: 0.25,
             clutch: 0.0,
             steering: -0.1,
+            lap_distance_m: Some(1_000.0),
+            track_length_m: Some(5_000.0),
             lap_number: 3,
             lap_start_seconds: 30.0,
             sector: 2,
@@ -143,6 +156,8 @@ mod tests {
             brake: -0.5,
             clutch: f64::INFINITY,
             steering: 3.0,
+            lap_distance_m: Some(-10.0),
+            track_length_m: Some(f64::NAN),
             lap_number: 1,
             lap_start_seconds: 10.0,
             sector: 0,
@@ -155,6 +170,29 @@ mod tests {
         assert_eq!(sample.brake, 0.0);
         assert_eq!(sample.clutch, 0.0);
         assert_eq!(sample.steering, 1.0);
+        assert_eq!(sample.lap_distance_m, Some(0.0));
+        assert_eq!(sample.track_length_m, Some(0.0));
         assert_eq!(sample.lap_time_seconds(), Some(2.0));
+    }
+
+    #[test]
+    fn computes_lap_progress_when_track_length_is_available() {
+        let sample = TelemetrySample {
+            timestamp_seconds: 0.0,
+            speed_mps: 0.0,
+            rpm: 0.0,
+            gear: Gear::Neutral,
+            throttle: 0.0,
+            brake: 0.0,
+            clutch: 0.0,
+            steering: 0.0,
+            lap_distance_m: Some(2_500.0),
+            track_length_m: Some(5_000.0),
+            lap_number: 1,
+            lap_start_seconds: 0.0,
+            sector: 0,
+        };
+
+        assert_eq!(sample.lap_progress(), Some(0.5));
     }
 }
