@@ -46,8 +46,26 @@ pub struct TelemetrySample {
 }
 
 impl TelemetrySample {
+    pub fn sanitized(mut self) -> Self {
+        self.speed_mps = non_negative_finite(self.speed_mps);
+        self.rpm = non_negative_finite(self.rpm);
+        self.throttle = normalized_input(self.throttle);
+        self.brake = normalized_input(self.brake);
+        self.clutch = normalized_input(self.clutch);
+        self.steering = self.steering.clamp(-1.0, 1.0);
+        self
+    }
+
     pub fn speed_kph(self) -> f64 {
         self.speed_mps * 3.6
+    }
+
+    pub fn lap_time_seconds(self) -> Option<f64> {
+        let lap_time = self.timestamp_seconds - self.lap_start_seconds;
+        lap_time
+            .is_finite()
+            .then_some(lap_time)
+            .filter(|time| *time >= 0.0)
     }
 }
 
@@ -62,6 +80,22 @@ pub fn format_sample_line(sample: &TelemetrySample) -> String {
         sample.lap_number,
         sample.sector
     )
+}
+
+fn normalized_input(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+fn non_negative_finite(value: f64) -> f64 {
+    if value.is_finite() && value >= 0.0 {
+        value
+    } else {
+        0.0
+    }
 }
 
 #[cfg(test)]
@@ -97,5 +131,30 @@ mod tests {
             "speed=180.0 km/h gear=4 throttle=50% brake=25% rpm=7123 lap=3 sector=2"
         );
     }
-}
 
+    #[test]
+    fn sanitizes_sample_values_for_ui_consumers() {
+        let sample = TelemetrySample {
+            timestamp_seconds: 12.0,
+            speed_mps: f64::NAN,
+            rpm: -1.0,
+            gear: Gear::Neutral,
+            throttle: 1.5,
+            brake: -0.5,
+            clutch: f64::INFINITY,
+            steering: 3.0,
+            lap_number: 1,
+            lap_start_seconds: 10.0,
+            sector: 0,
+        }
+        .sanitized();
+
+        assert_eq!(sample.speed_mps, 0.0);
+        assert_eq!(sample.rpm, 0.0);
+        assert_eq!(sample.throttle, 1.0);
+        assert_eq!(sample.brake, 0.0);
+        assert_eq!(sample.clutch, 0.0);
+        assert_eq!(sample.steering, 1.0);
+        assert_eq!(sample.lap_time_seconds(), Some(2.0));
+    }
+}

@@ -2,6 +2,9 @@ use std::{error::Error, fmt, mem::size_of};
 
 use crate::{Gear, TelemetrySample};
 
+#[cfg(windows)]
+use std::slice;
+
 pub trait TelemetrySource {
     fn is_available(&self) -> bool;
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError>;
@@ -18,10 +21,18 @@ pub enum TelemetryError {
 impl fmt::Display for TelemetryError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TelemetryError::UnsupportedPlatform => f.write_str("shared memory reading is only supported on Windows"),
-            TelemetryError::MappingFailed => f.write_str("could not map the telemetry shared memory buffer"),
-            TelemetryError::BufferTooSmall => f.write_str("telemetry shared memory buffer is smaller than expected"),
-            TelemetryError::TornFrame => f.write_str("telemetry frame changed while it was being read"),
+            TelemetryError::UnsupportedPlatform => {
+                f.write_str("shared memory reading is only supported on Windows")
+            }
+            TelemetryError::MappingFailed => {
+                f.write_str("could not map the telemetry shared memory buffer")
+            }
+            TelemetryError::BufferTooSmall => {
+                f.write_str("telemetry shared memory buffer is smaller than expected")
+            }
+            TelemetryError::TornFrame => {
+                f.write_str("telemetry frame changed while it was being read")
+            }
         }
     }
 }
@@ -67,6 +78,10 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
     }
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
+        if !self.inner.is_available() {
+            self.inner = PlatformTelemetrySource::open()?;
+        }
+
         self.inner.read_sample()
     }
 }
@@ -74,16 +89,16 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
 #[cfg(windows)]
 struct PlatformTelemetrySource {
     handle: windows_sys::Win32::Foundation::HANDLE,
-    view: *const u8,
+    view: windows_sys::Win32::System::Memory::MEMORY_MAPPED_VIEW_ADDRESS,
 }
 
 #[cfg(windows)]
 impl PlatformTelemetrySource {
     fn open() -> Result<Self, TelemetryError> {
         use std::os::windows::ffi::OsStrExt;
-        use std::{ffi::OsStr, ptr, slice};
+        use std::{ffi::OsStr, ptr};
         use windows_sys::Win32::System::Memory::{
-            MapViewOfFile, OpenFileMappingW, FILE_MAP_READ,
+            MapViewOfFile, OpenFileMappingW, FILE_MAP_READ, MEMORY_MAPPED_VIEW_ADDRESS,
         };
 
         let wide_name: Vec<u16> = OsStr::new(TELEMETRY_MAP_NAME)
@@ -95,12 +110,14 @@ impl PlatformTelemetrySource {
         if handle.is_null() {
             return Ok(Self {
                 handle: ptr::null_mut(),
-                view: ptr::null(),
+                view: MEMORY_MAPPED_VIEW_ADDRESS {
+                    Value: ptr::null_mut(),
+                },
             });
         }
 
-        let view = unsafe { MapViewOfFile(handle, FILE_MAP_READ, 0, 0, BUFFER_SIZE) } as *const u8;
-        if view.is_null() {
+        let view = unsafe { MapViewOfFile(handle, FILE_MAP_READ, 0, 0, BUFFER_SIZE) };
+        if view.Value.is_null() {
             unsafe {
                 windows_sys::Win32::Foundation::CloseHandle(handle);
             }
@@ -111,7 +128,7 @@ impl PlatformTelemetrySource {
     }
 
     fn is_available(&self) -> bool {
-        !self.handle.is_null() && !self.view.is_null()
+        !self.handle.is_null() && !self.view.Value.is_null()
     }
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
@@ -119,17 +136,17 @@ impl PlatformTelemetrySource {
             return Ok(None);
         }
 
-        let bytes = unsafe { slice::from_raw_parts(self.view, BUFFER_SIZE) };
-        read_sample_from_bytes(bytes)
+        let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
+        read_sample_from_bytes(bytes).map(|sample| sample.map(TelemetrySample::sanitized))
     }
 }
 
 #[cfg(windows)]
 impl Drop for PlatformTelemetrySource {
     fn drop(&mut self) {
-        if !self.view.is_null() {
+        if !self.view.Value.is_null() {
             unsafe {
-                windows_sys::Win32::System::Memory::UnmapViewOfFile(self.view as _);
+                windows_sys::Win32::System::Memory::UnmapViewOfFile(self.view);
             }
         }
         if !self.handle.is_null() {
@@ -184,7 +201,7 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         return Err(TelemetryError::TornFrame);
     }
 
-    Ok(Some(TelemetrySample {
+    let sample = TelemetrySample {
         timestamp_seconds: read_f64(bytes, vehicle_offset + OFFSET_ELAPSED_TIME)?,
         speed_mps: read_f64(bytes, vehicle_offset + OFFSET_LOCAL_VEL + 8)?,
         rpm: read_f64(bytes, vehicle_offset + OFFSET_RPM)?,
@@ -196,7 +213,9 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_i32(bytes, vehicle_offset + OFFSET_SECTOR)?,
-    }))
+    };
+
+    Ok(Some(sample.sanitized()))
 }
 
 fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
@@ -212,8 +231,12 @@ fn read_f64(bytes: &[u8], offset: usize) -> Result<f64, TelemetryError> {
 }
 
 fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], TelemetryError> {
-    let end = offset.checked_add(size_of::<[u8; N]>()).ok_or(TelemetryError::BufferTooSmall)?;
-    let slice = bytes.get(offset..end).ok_or(TelemetryError::BufferTooSmall)?;
+    let end = offset
+        .checked_add(size_of::<[u8; N]>())
+        .ok_or(TelemetryError::BufferTooSmall)?;
+    let slice = bytes
+        .get(offset..end)
+        .ok_or(TelemetryError::BufferTooSmall)?;
     let mut out = [0; N];
     out.copy_from_slice(slice);
     Ok(out)
