@@ -59,13 +59,14 @@ mod windows_overlay {
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::SetProcessDpiAwarenessContext,
+            Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
-                RegisterClassW, RegisterHotKey, SetLayeredWindowAttributes, ShowWindow,
-                TranslateMessage, UnregisterHotKey, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-                GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG, SWP_NOACTIVATE, SW_HIDE,
-                SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
+                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA,
+                LWA_COLORKEY, MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY,
+                WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
