@@ -501,7 +501,7 @@ mod tests {
         engine.update(snapshot(1, 0.35, 35.0, 0.0, 0.0));
         let analysis = engine.update(snapshot(1, 0.45, 45.0, 0.2, 0.0));
 
-        assert_eq!(analysis.brake_hint_meters, Some(250.0));
+        assert!((analysis.brake_hint_meters.unwrap() - 250.0).abs() < 0.001);
     }
 
     #[test]
