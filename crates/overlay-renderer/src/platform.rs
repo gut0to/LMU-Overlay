@@ -67,6 +67,14 @@ mod windows_overlay {
     ];
     const COLOR_KEY: u32 = 0x000000;
 
+    #[derive(Clone, Copy)]
+    struct Area {
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    }
+
     #[derive(Clone)]
     struct SharedState {
         latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
@@ -302,9 +310,42 @@ mod windows_overlay {
                 snapshot.speed_kph, snapshot.gear, snapshot.rpm
             ),
         );
-        draw_bar(hdc, 22, 72, 34, 92, snapshot.throttle, 0x0022DD44, "THR");
-        draw_bar(hdc, 70, 72, 34, 92, snapshot.brake, 0x002244EE, "BRK");
-        draw_bar(hdc, 118, 72, 34, 92, snapshot.clutch, 0x00DDDD22, "CLT");
+        draw_bar(
+            hdc,
+            Area {
+                x: 22,
+                y: 72,
+                width: 34,
+                height: 92,
+            },
+            snapshot.throttle,
+            0x0022DD44,
+            "THR",
+        );
+        draw_bar(
+            hdc,
+            Area {
+                x: 70,
+                y: 72,
+                width: 34,
+                height: 92,
+            },
+            snapshot.brake,
+            0x002244EE,
+            "BRK",
+        );
+        draw_bar(
+            hdc,
+            Area {
+                x: 118,
+                y: 72,
+                width: 34,
+                height: 92,
+            },
+            snapshot.clutch,
+            0x00DDDD22,
+            "CLT",
+        );
         draw_center_bar(hdc, 180, 86, 190, 18, snapshot.steering, 0x00EEEEEE);
 
         if let Some(progress) = snapshot.lap_progress {
@@ -327,32 +368,35 @@ mod windows_overlay {
 
     unsafe fn draw_bar(
         hdc: HDC,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
+        area: Area,
         value: f64,
         color: u32,
         label: &str,
     ) {
         let clamped = value.clamp(0.0, 1.0);
-        let filled = (height as f64 * clamped).round() as i32;
+        let filled = (area.height as f64 * clamped).round() as i32;
         let outline = CreatePen(PS_SOLID, 1, 0x00888888);
         let old_pen = SelectObject(hdc, outline);
-        Rectangle(hdc, x, y, x + width, y + height);
+        Rectangle(
+            hdc,
+            area.x,
+            area.y,
+            area.x + area.width,
+            area.y + area.height,
+        );
         SelectObject(hdc, old_pen);
         DeleteObject(outline);
 
         let brush = CreateSolidBrush(color);
         let fill_rect = RECT {
-            left: x + 2,
-            top: y + height - filled + 2,
-            right: x + width - 2,
-            bottom: y + height - 2,
+            left: area.x + 2,
+            top: area.y + area.height - filled + 2,
+            right: area.x + area.width - 2,
+            bottom: area.y + area.height - 2,
         };
         FillRect(hdc, &fill_rect, brush);
         DeleteObject(brush);
-        draw_text(hdc, x - 1, y + height + 8, 0x00D0D0D0, label);
+        draw_text(hdc, area.x - 1, area.y + area.height + 8, 0x00D0D0D0, label);
     }
 
     unsafe fn draw_center_bar(
@@ -383,20 +427,24 @@ mod windows_overlay {
         draw_series(
             hdc,
             history,
-            origin_x,
-            origin_y,
-            width,
-            height,
+            Area {
+                x: origin_x,
+                y: origin_y,
+                width,
+                height,
+            },
             0x0022DD44,
             |s| s.throttle,
         );
         draw_series(
             hdc,
             history,
-            origin_x,
-            origin_y + 42,
-            width,
-            height,
+            Area {
+                x: origin_x,
+                y: origin_y + 42,
+                width,
+                height,
+            },
             0x002244EE,
             |s| s.brake,
         );
@@ -405,10 +453,7 @@ mod windows_overlay {
     unsafe fn draw_series(
         hdc: HDC,
         history: &RingBuffer<TelemetrySnapshot>,
-        x: i32,
-        y: i32,
-        width: i32,
-        height: i32,
+        area: Area,
         color: u32,
         value: impl Fn(TelemetrySnapshot) -> f64,
     ) {
@@ -416,10 +461,14 @@ mod windows_overlay {
         let old_pen = SelectObject(hdc, pen);
         let samples: Vec<_> = history.iter().copied().collect();
         for (index, pair) in samples.windows(2).enumerate() {
-            let x1 = x + ((index as f64 / samples.len().max(1) as f64) * width as f64) as i32;
-            let x2 = x + (((index + 1) as f64 / samples.len().max(1) as f64) * width as f64) as i32;
-            let y1 = y + height - (value(pair[0]).clamp(0.0, 1.0) * height as f64) as i32;
-            let y2 = y + height - (value(pair[1]).clamp(0.0, 1.0) * height as f64) as i32;
+            let x1 = area.x
+                + ((index as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
+            let x2 = area.x
+                + (((index + 1) as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
+            let y1 = area.y + area.height
+                - (value(pair[0]).clamp(0.0, 1.0) * area.height as f64) as i32;
+            let y2 = area.y + area.height
+                - (value(pair[1]).clamp(0.0, 1.0) * area.height as f64) as i32;
             MoveToEx(hdc, x1, y1, ptr::null_mut());
             LineTo(hdc, x2, y2);
         }
