@@ -295,7 +295,6 @@ mod tests {
         write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE, 1);
 
         let telemetry_offset = OFFSET_TELEMETRY_VEHICLES + VEHICLE_TELEMETRY_SIZE;
-        write_i32(&mut bytes, telemetry_offset + OFFSET_ID, 7);
         write_i32(&mut bytes, telemetry_offset + OFFSET_LAP_NUMBER, 3);
         write_f64(&mut bytes, telemetry_offset + OFFSET_LAP_START_ET, 8.0);
         write_f64(&mut bytes, telemetry_offset + OFFSET_LOCAL_VEL + 8, 72.0);
