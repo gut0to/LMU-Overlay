@@ -199,7 +199,7 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         return Err(TelemetryError::TornFrame);
     }
 
-    Ok(Some(TelemetrySample {
+    let sample = TelemetrySample {
         timestamp_seconds: read_f64(bytes, vehicle_offset + OFFSET_ELAPSED_TIME)?,
         speed_mps: read_f64(bytes, vehicle_offset + OFFSET_LOCAL_VEL + 8)?,
         rpm: read_f64(bytes, vehicle_offset + OFFSET_RPM)?,
@@ -211,8 +211,9 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_i32(bytes, vehicle_offset + OFFSET_SECTOR)?,
-    }
-    .sanitized()))
+    };
+
+    Ok(Some(sample.sanitized()))
 }
 
 fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
