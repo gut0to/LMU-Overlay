@@ -371,11 +371,7 @@ mod windows_overlay {
         } else {
             ex_style &= !(WS_EX_TRANSPARENT as isize);
         }
-        windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
-            hwnd,
-            GWL_EXSTYLE,
-            ex_style,
-        );
+        windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex_style);
     }
 
     unsafe fn paint(hwnd: HWND) {
