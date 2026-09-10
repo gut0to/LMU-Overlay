@@ -366,13 +366,7 @@ mod windows_overlay {
         );
     }
 
-    unsafe fn draw_bar(
-        hdc: HDC,
-        area: Area,
-        value: f64,
-        color: u32,
-        label: &str,
-    ) {
+    unsafe fn draw_bar(hdc: HDC, area: Area, value: f64, color: u32, label: &str) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
         let outline = CreatePen(PS_SOLID, 1, 0x00888888);
@@ -461,14 +455,14 @@ mod windows_overlay {
         let old_pen = SelectObject(hdc, pen);
         let samples: Vec<_> = history.iter().copied().collect();
         for (index, pair) in samples.windows(2).enumerate() {
-            let x1 = area.x
-                + ((index as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
+            let x1 =
+                area.x + ((index as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
             let x2 = area.x
                 + (((index + 1) as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
-            let y1 = area.y + area.height
-                - (value(pair[0]).clamp(0.0, 1.0) * area.height as f64) as i32;
-            let y2 = area.y + area.height
-                - (value(pair[1]).clamp(0.0, 1.0) * area.height as f64) as i32;
+            let y1 =
+                area.y + area.height - (value(pair[0]).clamp(0.0, 1.0) * area.height as f64) as i32;
+            let y2 =
+                area.y + area.height - (value(pair[1]).clamp(0.0, 1.0) * area.height as f64) as i32;
             MoveToEx(hdc, x1, y1, ptr::null_mut());
             LineTo(hdc, x2, y2);
         }
