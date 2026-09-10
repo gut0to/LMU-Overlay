@@ -61,9 +61,10 @@ mod windows_overlay {
             HiDpi::SetProcessDpiAwarenessContext,
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
-                RegisterClassW, SetLayeredWindowAttributes, TranslateMessage, CS_HREDRAW,
-                CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_SHOW, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
+                RegisterClassW, RegisterHotKey, SetLayeredWindowAttributes, ShowWindow,
+                TranslateMessage, UnregisterHotKey, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+                GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG, SWP_NOACTIVATE, SW_HIDE,
+                SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
                 WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
@@ -76,6 +77,8 @@ mod windows_overlay {
         'r' as u16, 'l' as u16, 'a' as u16, 'y' as u16, 0,
     ];
     const COLOR_KEY: u32 = 0x000000;
+    const HOTKEY_TOGGLE_OVERLAY: i32 = 1;
+    const HOTKEY_EDIT_MODE: i32 = 2;
 
     #[derive(Clone, Copy)]
     struct Area {
@@ -97,7 +100,27 @@ mod windows_overlay {
         latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
         history: Arc<Mutex<RingBuffer<TelemetrySnapshot>>>,
         running: Arc<AtomicBool>,
+        visible: Arc<AtomicBool>,
+        edit_mode: Arc<AtomicBool>,
+        stats: Arc<Mutex<PerfStats>>,
         config: Arc<OverlayConfig>,
+    }
+
+    #[derive(Debug, Default)]
+    struct PerfStats {
+        telemetry_samples: u64,
+        render_frames: u64,
+        telemetry_hz: u64,
+        render_fps: u64,
+    }
+
+    impl PerfStats {
+        fn refresh(&mut self) {
+            self.telemetry_hz = self.telemetry_samples;
+            self.render_fps = self.render_frames;
+            self.telemetry_samples = 0;
+            self.render_frames = 0;
+        }
     }
 
     pub struct TelemetryOverlay {
@@ -116,6 +139,9 @@ mod windows_overlay {
                     latest: Arc::new(Mutex::new(None)),
                     history: Arc::new(Mutex::new(RingBuffer::new(history_samples))),
                     running: Arc::new(AtomicBool::new(true)),
+                    visible: Arc::new(AtomicBool::new(true)),
+                    edit_mode: Arc::new(AtomicBool::new(false)),
+                    stats: Arc::new(Mutex::new(PerfStats::default())),
                     config: Arc::new(config),
                 },
             })
@@ -142,6 +168,7 @@ mod windows_overlay {
             });
 
             let mut last_sample = Instant::now();
+            let mut last_stats = Instant::now();
             let mut message: MSG = unsafe { zeroed() };
             let sample_interval = Duration::from_millis(self.state.config.window.sample_ms);
 
@@ -172,8 +199,18 @@ mod windows_overlay {
                         if let Ok(mut history) = self.state.history.lock() {
                             history.push(snapshot);
                         }
+                        if let Ok(mut stats) = self.state.stats.lock() {
+                            stats.telemetry_samples += 1;
+                        }
                     }
                     last_sample = Instant::now();
+                }
+
+                if last_stats.elapsed() >= Duration::from_secs(1) {
+                    if let Ok(mut stats) = self.state.stats.lock() {
+                        stats.refresh();
+                    }
+                    last_stats = Instant::now();
                 }
 
                 thread::sleep(Duration::from_millis(1));
@@ -202,6 +239,8 @@ mod windows_overlay {
             let width = state.config.window.width;
             let height = state.config.window.height;
             let opacity = state.config.style.opacity;
+            let toggle_hotkey = virtual_key(&state.config.hotkeys.toggle_overlay);
+            let edit_hotkey = virtual_key(&state.config.hotkeys.edit_mode);
             let state_ptr = Box::into_raw(Box::new(state));
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED
@@ -237,7 +276,13 @@ mod windows_overlay {
                 height,
                 SWP_NOACTIVATE,
             );
-            windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(hwnd, SW_SHOW);
+            ShowWindow(hwnd, SW_SHOW);
+            if let Some(key) = toggle_hotkey {
+                RegisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY, 0, key);
+            }
+            if let Some(key) = edit_hotkey {
+                RegisterHotKey(hwnd, HOTKEY_EDIT_MODE, 0, key);
+            }
 
             Ok(hwnd)
         }
@@ -265,7 +310,13 @@ mod windows_overlay {
                 paint(hwnd);
                 0
             }
+            WM_HOTKEY => {
+                handle_hotkey(hwnd, wparam as i32);
+                0
+            }
             WM_DESTROY => {
+                UnregisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY);
+                UnregisterHotKey(hwnd, HOTKEY_EDIT_MODE);
                 let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
                     hwnd,
                     windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
@@ -279,6 +330,52 @@ mod windows_overlay {
             }
             _ => DefWindowProcW(hwnd, message, wparam, lparam),
         }
+    }
+
+    unsafe fn handle_hotkey(hwnd: HWND, id: i32) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+
+        match id {
+            HOTKEY_TOGGLE_OVERLAY => {
+                let visible = !state.visible.load(Ordering::Relaxed);
+                state.visible.store(visible, Ordering::Relaxed);
+                ShowWindow(hwnd, if visible { SW_SHOW } else { SW_HIDE });
+            }
+            HOTKEY_EDIT_MODE => {
+                let edit_mode = !state.edit_mode.load(Ordering::Relaxed);
+                state.edit_mode.store(edit_mode, Ordering::Relaxed);
+                state.visible.store(true, Ordering::Relaxed);
+                ShowWindow(hwnd, SW_SHOW);
+                set_click_through(hwnd, !edit_mode);
+            }
+            _ => {}
+        }
+    }
+
+    unsafe fn shared_state(hwnd: HWND) -> Option<&'static SharedState> {
+        let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
+            hwnd,
+            windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
+        ) as *mut SharedState;
+
+        (!state_ptr.is_null()).then_some(&*state_ptr)
+    }
+
+    unsafe fn set_click_through(hwnd: HWND, enabled: bool) {
+        let mut ex_style =
+            windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        if enabled {
+            ex_style |= WS_EX_TRANSPARENT as isize;
+        } else {
+            ex_style &= !(WS_EX_TRANSPARENT as isize);
+        }
+        windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
+            hwnd,
+            GWL_EXSTYLE,
+            ex_style,
+        );
     }
 
     unsafe fn paint(hwnd: HWND) {
@@ -302,6 +399,9 @@ mod windows_overlay {
         }
 
         let state = &*state_ptr;
+        if let Ok(mut stats) = state.stats.lock() {
+            stats.render_frames += 1;
+        }
         let latest = state.latest.lock().ok().and_then(|value| *value);
 
         draw_panel(hdc, state.config.as_ref());
@@ -321,6 +421,10 @@ mod windows_overlay {
                 colors(&state.config).primary_text,
                 "Waiting for LMU telemetry...",
             );
+        }
+
+        if state.config.widgets.performance_monitor {
+            draw_performance_monitor(hdc, state);
         }
 
         EndPaint(hwnd, &paint);
@@ -639,6 +743,28 @@ mod windows_overlay {
         }
     }
 
+    unsafe fn draw_performance_monitor(hdc: HDC, state: &SharedState) {
+        let colors = colors(&state.config);
+        let ring_usage = state
+            .history
+            .lock()
+            .ok()
+            .map(|history| format!("{}/{}", history.len(), history.capacity()))
+            .unwrap_or_else(|| "--".to_string());
+        if let Ok(stats) = state.stats.lock() {
+            draw_text(
+                hdc,
+                18,
+                state.config.window.height.saturating_sub(18),
+                colors.secondary_text,
+                &format!(
+                    "telemetry {} Hz  render {} FPS  ring {}",
+                    stats.telemetry_hz, stats.render_fps, ring_usage
+                ),
+            );
+        }
+    }
+
     unsafe fn draw_series(
         hdc: HDC,
         history: &RingBuffer<TelemetrySnapshot>,
@@ -717,6 +843,25 @@ mod windows_overlay {
             format!("+{meters:.0}m EARLY")
         } else {
             format!("{meters:.0}m LATE")
+        }
+    }
+
+    fn virtual_key(value: &str) -> Option<u32> {
+        let key = value.trim().to_ascii_uppercase();
+        match key.as_str() {
+            "F1" => Some(0x70),
+            "F2" => Some(0x71),
+            "F3" => Some(0x72),
+            "F4" => Some(0x73),
+            "F5" => Some(0x74),
+            "F6" => Some(0x75),
+            "F7" => Some(0x76),
+            "F8" => Some(0x77),
+            "F9" => Some(0x78),
+            "F10" => Some(0x79),
+            "F11" => Some(0x7A),
+            "F12" => Some(0x7B),
+            _ => None,
         }
     }
 }

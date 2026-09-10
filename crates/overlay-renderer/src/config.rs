@@ -9,6 +9,8 @@ pub struct OverlayConfig {
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
     pub timing: TimingConfig,
+    pub hotkeys: HotkeyConfig,
+    pub performance: PerformanceConfig,
 }
 
 impl OverlayConfig {
@@ -33,6 +35,21 @@ impl OverlayConfig {
     fn normalize(&mut self) {
         self.window.width = self.window.width.clamp(280, 1200);
         self.window.height = self.window.height.clamp(140, 800);
+        match self.performance.mode.as_str() {
+            "eco" => {
+                self.window.refresh_hz = 30;
+                self.window.sample_ms = 20;
+            }
+            "high_refresh" => {
+                self.window.refresh_hz = 120;
+                self.window.sample_ms = 10;
+            }
+            "normal" => {
+                self.window.refresh_hz = 60;
+                self.window.sample_ms = 10;
+            }
+            _ => {}
+        }
         self.window.refresh_hz = self.window.refresh_hz.clamp(15, 144);
         self.window.sample_ms = self.window.sample_ms.clamp(5, 250);
         self.window.history_samples = self.window.history_samples.clamp(16, 900);
@@ -117,6 +134,7 @@ pub struct WidgetConfig {
     pub delta_timing: bool,
     pub ghost_inputs: bool,
     pub coaching: bool,
+    pub performance_monitor: bool,
 }
 
 impl Default for WidgetConfig {
@@ -131,6 +149,7 @@ impl Default for WidgetConfig {
             delta_timing: true,
             ghost_inputs: true,
             coaching: true,
+            performance_monitor: false,
         }
     }
 }
@@ -142,6 +161,36 @@ pub struct TimingConfig {
     pub mini_sectors: u16,
     pub brake_threshold: f64,
     pub throttle_threshold: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct HotkeyConfig {
+    pub toggle_overlay: String,
+    pub edit_mode: String,
+}
+
+impl Default for HotkeyConfig {
+    fn default() -> Self {
+        Self {
+            toggle_overlay: "F9".to_string(),
+            edit_mode: "F10".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PerformanceConfig {
+    pub mode: String,
+}
+
+impl Default for PerformanceConfig {
+    fn default() -> Self {
+        Self {
+            mode: "normal".to_string(),
+        }
+    }
 }
 
 impl Default for TimingConfig {
@@ -221,12 +270,24 @@ input_history = true
 delta_timing = true
 ghost_inputs = true
 coaching = true
+performance_monitor = false
 
 [timing]
 reference_mode = "personal_best"
 mini_sectors = 40
 brake_threshold = 0.10
 throttle_threshold = 0.10
+
+[hotkeys]
+toggle_overlay = "F9"
+edit_mode = "F10"
+
+[performance]
+# eco = 50 Hz telemetry / 30 FPS render
+# normal = 100 Hz telemetry / 60 FPS render
+# high_refresh = 100 Hz telemetry / 120 FPS render
+# custom = keep refresh_hz and sample_ms from [window]
+mode = "normal"
 "##
 }
 
@@ -257,6 +318,8 @@ mod tests {
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
+        assert_eq!(config.hotkeys.toggle_overlay, "F9");
+        assert_eq!(config.performance.mode, "normal");
     }
 
     #[test]
@@ -282,6 +345,8 @@ mod tests {
             },
             widgets: WidgetConfig::default(),
             timing: TimingConfig::default(),
+            hotkeys: HotkeyConfig::default(),
+            performance: PerformanceConfig::default(),
         };
 
         config.normalize();
