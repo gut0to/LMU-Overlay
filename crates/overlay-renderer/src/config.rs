@@ -346,7 +346,9 @@ mod tests {
             widgets: WidgetConfig::default(),
             timing: TimingConfig::default(),
             hotkeys: HotkeyConfig::default(),
-            performance: PerformanceConfig::default(),
+            performance: PerformanceConfig {
+                mode: "custom".to_string(),
+            },
         };
 
         config.normalize();
