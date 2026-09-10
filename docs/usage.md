@@ -125,6 +125,10 @@ The current overlay includes:
 - throttle, brake and clutch bars;
 - steering bar;
 - throttle and brake history graphs.
+- live delta once a reference lap exists;
+- predicted lap, personal best, session best and mini-sector indicator;
+- ghost input markers for throttle/brake when a reference lap exists;
+- brake/throttle timing hints against the reference lap.
 
 Drag/resize and a richer settings app are planned for the settings/edit-mode milestone.
 
@@ -140,6 +144,6 @@ If the app says the telemetry buffer is not available:
 
 ## Current Limitations
 
-- Delta, predicted lap, PB and ghost telemetry are planned for later milestones.
-- The settings app is planned for the Tauri milestone.
+- Track/car names are not yet read from LMU shared memory, so PB storage currently uses a fallback key until those fields are mapped.
+- The richer settings app is planned for the Tauri milestone.
 - Configuration changes are loaded when the overlay starts.

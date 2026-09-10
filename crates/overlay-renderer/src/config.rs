@@ -2,12 +2,13 @@ use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OverlayConfig {
     pub window: WindowConfig,
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
+    pub timing: TimingConfig,
 }
 
 impl OverlayConfig {
@@ -36,6 +37,9 @@ impl OverlayConfig {
         self.window.sample_ms = self.window.sample_ms.clamp(5, 250);
         self.window.history_samples = self.window.history_samples.clamp(16, 900);
         self.style.opacity = self.style.opacity.clamp(32, 255);
+        self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
+        self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
+        self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
     }
 }
 
@@ -77,6 +81,9 @@ pub struct StyleConfig {
     pub brake: String,
     pub clutch: String,
     pub steering: String,
+    pub delta_gain: String,
+    pub delta_loss: String,
+    pub reference: String,
 }
 
 impl Default for StyleConfig {
@@ -91,6 +98,9 @@ impl Default for StyleConfig {
             brake: "#ee4422".to_string(),
             clutch: "#22dddd".to_string(),
             steering: "#eeeeee".to_string(),
+            delta_gain: "#44dd22".to_string(),
+            delta_loss: "#ee4422".to_string(),
+            reference: "#aaaaaa".to_string(),
         }
     }
 }
@@ -104,6 +114,9 @@ pub struct WidgetConfig {
     pub steering: bool,
     pub lap_info: bool,
     pub input_history: bool,
+    pub delta_timing: bool,
+    pub ghost_inputs: bool,
+    pub coaching: bool,
 }
 
 impl Default for WidgetConfig {
@@ -115,6 +128,29 @@ impl Default for WidgetConfig {
             steering: true,
             lap_info: true,
             input_history: true,
+            delta_timing: true,
+            ghost_inputs: true,
+            coaching: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TimingConfig {
+    pub reference_mode: String,
+    pub mini_sectors: u16,
+    pub brake_threshold: f64,
+    pub throttle_threshold: f64,
+}
+
+impl Default for TimingConfig {
+    fn default() -> Self {
+        Self {
+            reference_mode: "personal_best".to_string(),
+            mini_sectors: 40,
+            brake_threshold: 0.10,
+            throttle_threshold: 0.10,
         }
     }
 }
@@ -171,6 +207,9 @@ throttle = "#44dd22"
 brake = "#ee4422"
 clutch = "#22dddd"
 steering = "#eeeeee"
+delta_gain = "#44dd22"
+delta_loss = "#ee4422"
+reference = "#aaaaaa"
 
 [widgets]
 title = true
@@ -179,6 +218,15 @@ pedals = true
 steering = true
 lap_info = true
 input_history = true
+delta_timing = true
+ghost_inputs = true
+coaching = true
+
+[timing]
+reference_mode = "personal_best"
+mini_sectors = 40
+brake_threshold = 0.10
+throttle_threshold = 0.10
 "##
 }
 
@@ -208,6 +256,7 @@ mod tests {
 
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
+        assert_eq!(config.timing.mini_sectors, 40);
     }
 
     #[test]
@@ -232,6 +281,7 @@ mod tests {
                 ..StyleConfig::default()
             },
             widgets: WidgetConfig::default(),
+            timing: TimingConfig::default(),
         };
 
         config.normalize();
@@ -242,5 +292,6 @@ mod tests {
         assert_eq!(config.window.sample_ms, 5);
         assert_eq!(config.window.history_samples, 16);
         assert_eq!(config.style.opacity, 32);
+        assert_eq!(config.timing.mini_sectors, 40);
     }
 }
