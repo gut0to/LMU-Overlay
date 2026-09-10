@@ -11,8 +11,12 @@ pub enum OverlayError {
 impl fmt::Display for OverlayError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnsupportedPlatform => f.write_str("overlay rendering is only supported on Windows"),
-            Self::WindowCreationFailed => f.write_str("could not create the telemetry overlay window"),
+            Self::UnsupportedPlatform => {
+                f.write_str("overlay rendering is only supported on Windows")
+            }
+            Self::WindowCreationFailed => {
+                f.write_str("could not create the telemetry overlay window")
+            }
         }
     }
 }
@@ -47,9 +51,9 @@ mod windows_overlay {
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, InvalidateRect,
                 PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, TranslateMessage,
-                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_COLORKEY, MSG, SW_SHOW,
-                SWP_NOACTIVATE, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_COLORKEY, MSG,
+                SWP_NOACTIVATE, SW_SHOW, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -115,8 +119,7 @@ mod windows_overlay {
                         windows_sys::Win32::UI::WindowsAndMessaging::PM_REMOVE,
                     ) != 0
                     {
-                        if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT
-                        {
+                        if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT {
                             self.state.running.store(false, Ordering::Relaxed);
                             return Ok(());
                         }
@@ -207,8 +210,8 @@ mod windows_overlay {
     ) -> LRESULT {
         match message {
             windows_sys::Win32::UI::WindowsAndMessaging::WM_NCCREATE => {
-                let create = lparam
-                    as *const windows_sys::Win32::UI::WindowsAndMessaging::CREATESTRUCTW;
+                let create =
+                    lparam as *const windows_sys::Win32::UI::WindowsAndMessaging::CREATESTRUCTW;
                 let state = (*create).lpCreateParams;
                 windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
                     hwnd,
@@ -304,7 +307,13 @@ mod windows_overlay {
         draw_center_bar(hdc, 180, 86, 190, 18, snapshot.steering, 0x00EEEEEE);
 
         if let Some(progress) = snapshot.lap_progress {
-            draw_text(hdc, 180, 112, 0x00D0D0D0, &format!("lap {:.1}%", progress * 100.0));
+            draw_text(
+                hdc,
+                180,
+                112,
+                0x00D0D0D0,
+                &format!("lap {:.1}%", progress * 100.0),
+            );
         }
         draw_text(
             hdc,
