@@ -1,0 +1,19 @@
+[workspace]
+members = [
+  "crates/hashoverlay",
+  "crates/lmu-telemetry",
+  "crates/telemetry-engine",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/guto/hashoverlay"
+
+[workspace.dependencies]
+anyhow = "1.0"
+env_logger = "0.11"
+log = "0.4"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Memory"] }
+

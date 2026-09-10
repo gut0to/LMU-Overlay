@@ -1,0 +1,8 @@
+/target/
+/settings/node_modules/
+/settings/dist/
+/.idea/
+/.vscode/
+*.pdb
+*.log
+
