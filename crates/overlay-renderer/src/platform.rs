@@ -94,6 +94,7 @@ mod windows_overlay {
         fill: u32,
         label: u32,
         reference: u32,
+        line_width: i32,
     }
 
     #[derive(Clone)]
@@ -478,6 +479,7 @@ mod windows_overlay {
                     fill: colors.throttle,
                     label: colors.secondary_text,
                     reference: colors.reference,
+                    line_width: config.style.line_thickness,
                 },
                 config
                     .widgets
@@ -499,6 +501,7 @@ mod windows_overlay {
                     fill: colors.brake,
                     label: colors.secondary_text,
                     reference: colors.reference,
+                    line_width: config.style.line_thickness,
                 },
                 config
                     .widgets
@@ -520,6 +523,7 @@ mod windows_overlay {
                     fill: colors.clutch,
                     label: colors.secondary_text,
                     reference: colors.reference,
+                    line_width: config.style.line_thickness,
                 },
                 None,
             );
@@ -577,7 +581,7 @@ mod windows_overlay {
     ) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
-        let outline = CreatePen(PS_SOLID, config.style.line_thickness.max(1), 0x00888888);
+        let outline = CreatePen(PS_SOLID, style.line_width.max(1), 0x00888888);
         let old_pen = SelectObject(hdc, outline);
         Rectangle(
             hdc,
@@ -611,7 +615,7 @@ mod windows_overlay {
                 - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
             let reference_pen = CreatePen(
                 PS_SOLID,
-                config.style.line_thickness.max(1),
+                style.line_width.max(1),
                 style.reference,
             );
             let old_pen = SelectObject(hdc, reference_pen);
@@ -654,6 +658,7 @@ mod windows_overlay {
                 height,
             },
             colors.throttle,
+            config.style.line_thickness,
             |s| s.throttle,
         );
         draw_series(
@@ -666,6 +671,7 @@ mod windows_overlay {
                 height,
             },
             colors.brake,
+            config.style.line_thickness,
             |s| s.brake,
         );
     }
@@ -781,9 +787,10 @@ mod windows_overlay {
         history: &RingBuffer<TelemetrySnapshot>,
         area: Area,
         color: u32,
+        line_width: i32,
         value: impl Fn(TelemetrySnapshot) -> f64,
     ) {
-        let pen = CreatePen(PS_SOLID, config.style.line_thickness.max(1), color);
+        let pen = CreatePen(PS_SOLID, line_width.max(1), color);
         let old_pen = SelectObject(hdc, pen);
         let samples: Vec<_> = history.iter().copied().collect();
         for (index, pair) in samples.windows(2).enumerate() {
