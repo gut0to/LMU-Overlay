@@ -1,5 +1,6 @@
 use std::{error::Error, fmt};
 
+#[cfg(not(windows))]
 use telemetry_engine::TelemetrySnapshot;
 
 #[derive(Debug)]
@@ -41,19 +42,19 @@ mod windows_overlay {
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
         Graphics::Gdi::{
-            BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, LineTo,
-            MoveToEx, Rectangle, SelectObject, SetBkMode, SetTextColor, TextOutW, HDC, PAINTSTRUCT,
-            PS_SOLID, TRANSPARENT,
+            BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
+            InvalidateRect, LineTo, MoveToEx, Rectangle, SelectObject, SetBkMode, SetTextColor,
+            TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::SetProcessDpiAwarenessContext,
             WindowsAndMessaging::{
-                CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, InvalidateRect,
-                PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, TranslateMessage,
-                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_SHOW, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
+                RegisterClassW, SetLayeredWindowAttributes, TranslateMessage, CS_HREDRAW,
+                CS_VREDRAW, CW_USEDEFAULT, HWND_TOPMOST, LWA_COLORKEY, MSG, SWP_NOACTIVATE,
+                SW_SHOW, WM_DESTROY, WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -107,7 +108,7 @@ mod windows_overlay {
             });
 
             let mut last_sample = Instant::now();
-            let mut message = MSG::default();
+            let mut message: MSG = zeroed();
 
             loop {
                 unsafe {
@@ -428,7 +429,7 @@ mod windows_overlay {
 
     unsafe fn draw_text(hdc: HDC, x: i32, y: i32, color: u32, text: &str) {
         let wide: Vec<u16> = text.encode_utf16().collect();
-        SetBkMode(hdc, TRANSPARENT);
+        SetBkMode(hdc, TRANSPARENT as i32);
         SetTextColor(hdc, color);
         TextOutW(hdc, x, y, wide.as_ptr(), wide.len() as i32);
     }
