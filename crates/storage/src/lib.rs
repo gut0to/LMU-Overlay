@@ -53,7 +53,10 @@ impl ReferenceLapStore {
         Self { root: root.into() }
     }
 
-    pub fn load_personal_best(&self, key: &ReferenceLapKey) -> Result<Option<ReferenceLap>, StorageError> {
+    pub fn load_personal_best(
+        &self,
+        key: &ReferenceLapKey,
+    ) -> Result<Option<ReferenceLap>, StorageError> {
         let path = self.personal_best_path(key);
         if !path.exists() {
             return Ok(None);
@@ -188,19 +191,13 @@ mod tests {
 
     #[test]
     fn saves_and_loads_reference_lap() {
-        let root = env::temp_dir().join(format!(
-            "hashoverlay-storage-test-{}",
-            std::process::id()
-        ));
+        let root =
+            env::temp_dir().join(format!("hashoverlay-storage-test-{}", std::process::id()));
         let store = ReferenceLapStore::new(&root);
         let key = ReferenceLapKey::fallback();
         let lap = ReferenceLap::new(
             90.0,
-            vec![
-                point(0.0, 0.0),
-                point(0.5, 45.0),
-                point(1.0, 90.0),
-            ],
+            vec![point(0.0, 0.0), point(0.5, 45.0), point(1.0, 90.0)],
         )
         .unwrap();
 

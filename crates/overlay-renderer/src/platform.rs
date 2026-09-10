@@ -372,7 +372,11 @@ mod windows_overlay {
                     label: colors.secondary_text,
                     reference: colors.reference,
                 },
-                config.widgets.ghost_inputs.then_some(snapshot.reference_throttle).flatten(),
+                config
+                    .widgets
+                    .ghost_inputs
+                    .then_some(snapshot.reference_throttle)
+                    .flatten(),
             );
             draw_bar(
                 hdc,
@@ -389,7 +393,11 @@ mod windows_overlay {
                     label: colors.secondary_text,
                     reference: colors.reference,
                 },
-                config.widgets.ghost_inputs.then_some(snapshot.reference_brake).flatten(),
+                config
+                    .widgets
+                    .ghost_inputs
+                    .then_some(snapshot.reference_brake)
+                    .flatten(),
             );
             draw_bar(
                 hdc,

@@ -136,7 +136,11 @@ impl ReferenceLap {
             throttle: lerp(before.throttle, after.throttle, amount),
             brake: lerp(before.brake, after.brake, amount),
             speed_kph: lerp(before.speed_kph, after.speed_kph, amount),
-            gear: if amount < 0.5 { before.gear } else { after.gear },
+            gear: if amount < 0.5 {
+                before.gear
+            } else {
+                after.gear
+            },
             steering: lerp(before.steering, after.steering, amount),
         })
     }
@@ -239,8 +243,8 @@ impl LapEngine {
             throttle_hint_meters,
         ) = {
             let reference = self.selected_reference();
-            let reference_point =
-                progress.and_then(|progress| reference.and_then(|reference| reference.sample_at(progress)));
+            let reference_point = progress
+                .and_then(|progress| reference.and_then(|reference| reference.sample_at(progress)));
             let delta = lap_time
                 .zip(reference_point)
                 .map(|(lap_time, reference_point)| lap_time - reference_point.time_seconds);
@@ -278,10 +282,7 @@ impl LapEngine {
         LapAnalysis {
             delta_seconds: delta,
             predicted_lap_seconds: predicted,
-            session_best_seconds: self
-                .session_best
-                .as_ref()
-                .map(|lap| lap.total_time_seconds),
+            session_best_seconds: self.session_best.as_ref().map(|lap| lap.total_time_seconds),
             personal_best_seconds: self
                 .personal_best
                 .as_ref()
@@ -447,8 +448,7 @@ mod tests {
 
     #[test]
     fn computes_delta_and_predicted_lap() {
-        let mut engine =
-            LapEngine::default().with_personal_best(Some(reference_lap(100.0)));
+        let mut engine = LapEngine::default().with_personal_best(Some(reference_lap(100.0)));
         let analysis = engine.update(snapshot(1, 0.5, 52.0, 0.0, 0.0));
 
         assert_eq!(analysis.delta_seconds, Some(2.0));
@@ -488,10 +488,7 @@ mod tests {
     fn reports_brake_point_difference_in_meters() {
         let reference = ReferenceLap::new(
             100.0,
-            vec![
-                point(0.40, 40.0, 0.0, 0.0),
-                point(0.50, 50.0, 0.0, 0.2),
-            ],
+            vec![point(0.40, 40.0, 0.0, 0.0), point(0.50, 50.0, 0.0, 0.2)],
         )
         .unwrap();
         let mut engine = LapEngine::new(LapEngineConfig {
