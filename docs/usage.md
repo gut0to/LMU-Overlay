@@ -1,0 +1,82 @@
+# Usage Guide
+
+This guide explains how to clone, build and run the current milestone of LMU Overlay.
+
+## 1. Install Requirements
+
+Install:
+
+- Windows 10 or newer;
+- Git;
+- Rust stable from <https://rustup.rs/>.
+
+After installing Rust, open a new PowerShell window and check:
+
+```powershell
+rustc --version
+cargo --version
+```
+
+## 2. Clone the Repository
+
+```powershell
+git clone https://github.com/gut0to/LMU-Overlay.git
+cd LMU-Overlay
+```
+
+If you already cloned it:
+
+```powershell
+git pull
+```
+
+## 3. Build
+
+```powershell
+cargo build
+```
+
+## 4. Run Tests
+
+```powershell
+cargo test
+```
+
+## 5. Run One Telemetry Read
+
+Start Le Mans Ultimate and make sure the shared memory plugin used by LMU-compatible tools is available.
+
+Then run:
+
+```powershell
+cargo run -p hashoverlay -- --once
+```
+
+Expected behavior:
+
+- If telemetry is available, the app prints speed, gear, throttle, brake, RPM, lap and sector.
+- If telemetry is not available, the app exits cleanly with a warning.
+
+## 6. Run Continuous Logging
+
+```powershell
+cargo run -p hashoverlay
+```
+
+Press `Ctrl+C` to stop.
+
+## 7. Troubleshooting
+
+If PowerShell says `cargo` is not recognized, Rust is not installed or the terminal was opened before Rust updated the PATH.
+
+If the app says the telemetry buffer is not available:
+
+- start LMU before running the command;
+- confirm telemetry/shared memory support is enabled;
+- run the terminal as the same Windows user that is running the game.
+
+## Current Limitations
+
+- The Direct2D overlay window is not implemented yet.
+- Delta, predicted lap, PB and ghost telemetry are planned for later milestones.
+- The settings app is planned for the Tauri milestone.

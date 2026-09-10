@@ -1,4 +1,4 @@
-use std::{error::Error, ffi::OsStr, fmt, mem::size_of, ptr, slice};
+use std::{error::Error, fmt, mem::size_of};
 
 use crate::{Gear, TelemetrySample};
 
@@ -81,19 +81,20 @@ struct PlatformTelemetrySource {
 impl PlatformTelemetrySource {
     fn open() -> Result<Self, TelemetryError> {
         use std::os::windows::ffi::OsStrExt;
+        use std::{ffi::OsStr, ptr, slice};
         use windows_sys::Win32::System::Memory::{
             MapViewOfFile, OpenFileMappingW, FILE_MAP_READ,
         };
 
-        let mut wide_name: Vec<u16> = OsStr::new(TELEMETRY_MAP_NAME)
+        let wide_name: Vec<u16> = OsStr::new(TELEMETRY_MAP_NAME)
             .encode_wide()
             .chain([0])
             .collect();
-        let handle = unsafe { OpenFileMappingW(FILE_MAP_READ, 0, wide_name.as_mut_ptr()) };
+        let handle = unsafe { OpenFileMappingW(FILE_MAP_READ, 0, wide_name.as_ptr()) };
 
-        if handle == 0 {
+        if handle.is_null() {
             return Ok(Self {
-                handle,
+                handle: ptr::null_mut(),
                 view: ptr::null(),
             });
         }
@@ -110,7 +111,7 @@ impl PlatformTelemetrySource {
     }
 
     fn is_available(&self) -> bool {
-        self.handle != 0 && !self.view.is_null()
+        !self.handle.is_null() && !self.view.is_null()
     }
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
@@ -131,7 +132,7 @@ impl Drop for PlatformTelemetrySource {
                 windows_sys::Win32::System::Memory::UnmapViewOfFile(self.view as _);
             }
         }
-        if self.handle != 0 {
+        if !self.handle.is_null() {
             unsafe {
                 windows_sys::Win32::Foundation::CloseHandle(self.handle);
             }
