@@ -31,23 +31,23 @@ impl Error for TelemetryError {}
 const TELEMETRY_MAP_NAME: &str = "$rFactor2SMMP_Telemetry$";
 const VERSION_BLOCK_SIZE: usize = 8;
 const TELEMETRY_HEADER_SIZE: usize = 8;
-const VEHICLE_SIZE: usize = 1_368;
+const VEHICLE_SIZE: usize = 1_920;
 const MAX_VEHICLES: usize = 128;
 const BUFFER_SIZE: usize = VERSION_BLOCK_SIZE + TELEMETRY_HEADER_SIZE + VEHICLE_SIZE * MAX_VEHICLES;
 
 const VEHICLE0_OFFSET: usize = VERSION_BLOCK_SIZE + TELEMETRY_HEADER_SIZE;
 const OFFSET_ID: usize = 0;
-const OFFSET_ELAPSED_TIME: usize = 16;
-const OFFSET_LAP_NUMBER: usize = 24;
-const OFFSET_LAP_START_ET: usize = 28;
-const OFFSET_LOCAL_VEL: usize = 200;
-const OFFSET_GEAR: usize = 344;
-const OFFSET_RPM: usize = 348;
+const OFFSET_ELAPSED_TIME: usize = 12;
+const OFFSET_LAP_NUMBER: usize = 20;
+const OFFSET_LAP_START_ET: usize = 24;
+const OFFSET_LOCAL_VEL: usize = 184;
+const OFFSET_GEAR: usize = 352;
+const OFFSET_RPM: usize = 356;
 const OFFSET_THROTTLE: usize = 388;
 const OFFSET_BRAKE: usize = 396;
 const OFFSET_STEERING: usize = 404;
 const OFFSET_CLUTCH: usize = 412;
-const OFFSET_SECTOR: usize = 500;
+const OFFSET_SECTOR: usize = 600;
 
 pub struct SharedMemoryTelemetrySource {
     inner: PlatformTelemetrySource,
@@ -281,4 +281,3 @@ mod tests {
         bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
 }
-
