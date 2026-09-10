@@ -232,6 +232,8 @@ impl LapEngine {
             self.finish_current_lap(snapshot);
         }
 
+        self.record_thresholds(snapshot);
+
         let progress = snapshot.lap_progress;
         let lap_time = snapshot.lap_time_seconds;
         let (
@@ -277,7 +279,6 @@ impl LapEngine {
         };
 
         self.record_point(snapshot);
-        self.record_thresholds(snapshot);
 
         LapAnalysis {
             delta_seconds: delta,
