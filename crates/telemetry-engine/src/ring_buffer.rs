@@ -62,7 +62,11 @@ impl<T> RingBuffer<T> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &T> {
-        let start = if self.len == self.capacity() { self.next } else { 0 };
+        let start = if self.len == self.capacity() {
+            self.next
+        } else {
+            0
+        };
 
         (0..self.len).filter_map(move |index| {
             let physical_index = (start + index) % self.capacity();

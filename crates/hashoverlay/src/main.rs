@@ -27,7 +27,9 @@ fn run(cli: Cli) -> Result<()> {
     let mut source = SharedMemoryTelemetrySource::open()?;
 
     if !source.is_available() {
-        warn!("LMU telemetry buffer is not available. Start LMU with the shared memory plugin enabled.");
+        warn!(
+            "LMU telemetry buffer is not available. Start LMU with the shared memory plugin enabled."
+        );
         if !cli.wait {
             return Ok(());
         }
@@ -47,7 +49,9 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 println!("{}", format_sample_line(&sample));
             }
-            Ok(None) if detected => warn!("Telemetry buffer is present, but no player sample is available yet."),
+            Ok(None) if detected => {
+                warn!("Telemetry buffer is present, but no player sample is available yet.");
+            }
             Ok(None) => {}
             Err(error) => warn!("Could not read telemetry sample: {error}"),
         }
@@ -94,9 +98,17 @@ impl Cli {
 
 fn print_help() {
     println!(
-        "LMU Overlay telemetry probe\n\n\
-Usage:\n  hashoverlay [--once] [--wait] [--interval-ms <milliseconds>]\n\n\
-Options:\n  --once                    Print one telemetry sample and exit after telemetry is detected.\n  --wait                    Keep waiting when LMU telemetry is not available yet.\n  --interval-ms <value>     Poll interval for CLI logging. Default: 100.\n  -h, --help                Show this help."
+        "\
+LMU Overlay telemetry probe
+
+Usage:
+  hashoverlay [--once] [--wait] [--interval-ms <milliseconds>]
+
+Options:
+  --once                    Print one telemetry sample and exit after telemetry is detected.
+  --wait                    Keep waiting when LMU telemetry is not available yet.
+  --interval-ms <value>     Poll interval for CLI logging. Default: 100.
+  -h, --help                Show this help."
     );
 }
 
