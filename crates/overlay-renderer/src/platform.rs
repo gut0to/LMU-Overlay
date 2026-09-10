@@ -613,11 +613,7 @@ mod windows_overlay {
         if let Some(reference_value) = reference_value {
             let reference_y = area.y + area.height
                 - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
-            let reference_pen = CreatePen(
-                PS_SOLID,
-                style.line_width.max(1),
-                style.reference,
-            );
+            let reference_pen = CreatePen(PS_SOLID, style.line_width.max(1), style.reference);
             let old_pen = SelectObject(hdc, reference_pen);
             MoveToEx(hdc, area.x, reference_y, ptr::null_mut());
             LineTo(hdc, area.x + area.width, reference_y);
