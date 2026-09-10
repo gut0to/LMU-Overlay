@@ -2,22 +2,12 @@ use std::{fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OverlayConfig {
     pub window: WindowConfig,
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
-}
-
-impl Default for OverlayConfig {
-    fn default() -> Self {
-        Self {
-            window: WindowConfig::default(),
-            style: StyleConfig::default(),
-            widgets: WidgetConfig::default(),
-        }
-    }
 }
 
 impl OverlayConfig {
