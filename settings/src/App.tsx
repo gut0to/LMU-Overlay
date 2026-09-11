@@ -57,6 +57,9 @@ type WidgetConfig = {
   pedals: boolean;
   steering: boolean;
   lap_info: boolean;
+  lap_timing: boolean;
+  sectors: boolean;
+  mini_sector_widget: boolean;
   input_history: boolean;
   delta_timing: boolean;
   ghost_inputs: boolean;
@@ -78,12 +81,15 @@ type LayoutConfig = {
   snap_distance: number;
   telemetry: WidgetLayout;
   inputs: WidgetLayout;
+  lap_timing: WidgetLayout;
   timing: WidgetLayout;
+  sectors: WidgetLayout;
+  mini_sectors: WidgetLayout;
   coaching: WidgetLayout;
   performance: WidgetLayout;
 };
 
-type LayoutWidgetKey = "telemetry" | "inputs" | "timing" | "coaching" | "performance";
+type LayoutWidgetKey = "telemetry" | "inputs" | "lap_timing" | "timing" | "sectors" | "mini_sectors" | "coaching" | "performance";
 
 type UnitsConfig = {
   speed: string;
@@ -181,6 +187,9 @@ const widgetLabels: Array<[keyof WidgetConfig, string]> = [
   ["pedals", "Pedals"],
   ["steering", "Steering"],
   ["lap_info", "Lap info"],
+  ["lap_timing", "Lap timing"],
+  ["sectors", "Sectors"],
+  ["mini_sector_widget", "Mini sectors"],
   ["input_history", "Input history"],
   ["delta_timing", "Delta timing"],
   ["ghost_inputs", "Ghost inputs"],
@@ -191,7 +200,10 @@ const widgetLabels: Array<[keyof WidgetConfig, string]> = [
 const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["telemetry", "Telemetry"],
   ["inputs", "Inputs"],
+  ["lap_timing", "Lap timing"],
   ["timing", "Timing"],
+  ["sectors", "Sectors"],
+  ["mini_sectors", "Mini sectors"],
   ["coaching", "Coaching"],
   ["performance", "Performance"],
 ];
@@ -696,7 +708,7 @@ function TextInput(props: { label: string; value: string; onChange: (value: stri
   );
 }
 
-function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs" | "timing" | "coaching" | "performance">>(
+function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs" | "lap_timing" | "timing" | "sectors" | "mini_sectors" | "coaching" | "performance">>(
   config: OverlayConfig,
   setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
   key: K,

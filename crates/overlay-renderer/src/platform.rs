@@ -116,7 +116,10 @@ mod windows_overlay {
     enum WidgetId {
         Telemetry,
         Inputs,
+        LapTiming,
         Timing,
+        Sectors,
+        MiniSectors,
         Coaching,
         Performance,
     }
@@ -779,12 +782,20 @@ mod windows_overlay {
     unsafe fn draw_snapshot(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
         let telemetry_area = area_from_layout(&config.layout.telemetry);
         let input_area = area_from_layout(&config.layout.inputs);
+        let lap_timing_area = area_from_layout(&config.layout.lap_timing);
         let timing_area = area_from_layout(&config.layout.timing);
+        let sectors_area = area_from_layout(&config.layout.sectors);
+        let mini_sectors_area = area_from_layout(&config.layout.mini_sectors);
         let coaching_area = area_from_layout(&config.layout.coaching);
 
-        if config.widgets.title || config.widgets.speed_gear_rpm || config.widgets.lap_info {
+        if config.widgets.title || config.widgets.speed_gear_rpm {
             draw_widget_panel(hdc, telemetry_area, config);
             draw_telemetry_widget(hdc, snapshot, config, telemetry_area);
+        }
+
+        if config.widgets.lap_info || config.widgets.lap_timing {
+            draw_widget_panel(hdc, lap_timing_area, config);
+            draw_lap_timing_widget(hdc, snapshot, config, lap_timing_area);
         }
 
         if config.widgets.pedals || config.widgets.steering || config.widgets.input_history {
@@ -795,6 +806,16 @@ mod windows_overlay {
         if config.widgets.delta_timing {
             draw_widget_panel(hdc, timing_area, config);
             draw_delta_widget(hdc, snapshot, config, timing_area);
+        }
+
+        if config.widgets.sectors {
+            draw_widget_panel(hdc, sectors_area, config);
+            draw_sectors_widget(hdc, snapshot, config, sectors_area);
+        }
+
+        if config.widgets.mini_sector_widget {
+            draw_widget_panel(hdc, mini_sectors_area, config);
+            draw_mini_sectors_widget(hdc, snapshot, config, mini_sectors_area);
         }
 
         if config.widgets.coaching {
@@ -834,8 +855,17 @@ mod windows_overlay {
                 ),
             );
         }
+    }
+
+    unsafe fn draw_lap_timing_widget(
+        hdc: HDC,
+        snapshot: TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+    ) {
+        let colors = colors(config);
         if config.widgets.lap_info {
-            let lap_x = area.x + (area.width / 2).max(scale_size(config, 160));
+            let lap_x = area.x + scale_px(config, 10);
             if let Some(progress) = snapshot.lap_progress {
                 draw_text(
                     hdc,
@@ -1096,13 +1126,57 @@ mod windows_overlay {
             );
         }
 
+    }
+
+    unsafe fn draw_sectors_widget(
+        hdc: HDC,
+        snapshot: TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+    ) {
+        let colors = colors(config);
+        draw_text(
+            hdc,
+            area.x + scale_px(config, 10),
+            area.y + scale_px(config, 8),
+            colors.secondary_text,
+            &format!("Sector {}", snapshot.sector),
+        );
+        draw_text(
+            hdc,
+            area.x + scale_px(config, 10),
+            area.y + scale_px(config, 26),
+            colors.secondary_text,
+            "S1 --  S2 --  S3 --",
+        );
+    }
+
+    unsafe fn draw_mini_sectors_widget(
+        hdc: HDC,
+        snapshot: TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+    ) {
+        let colors = colors(config);
         if let Some(mini_sector) = snapshot.mini_sector_index {
+            let delta = snapshot
+                .mini_sector_delta_seconds
+                .map(signed_time)
+                .unwrap_or_else(|| "--".to_string());
             draw_text(
                 hdc,
-                area.x + area.width.saturating_sub(scale_size(config, 70)),
-                y,
+                area.x + scale_px(config, 10),
+                area.y + scale_px(config, 8),
                 colors.secondary_text,
-                &format!("MS {}", mini_sector + 1),
+                &format!("MS {}  {}", mini_sector + 1, delta),
+            );
+        } else {
+            draw_text(
+                hdc,
+                area.x + scale_px(config, 10),
+                area.y + scale_px(config, 8),
+                colors.secondary_text,
+                "MS --",
             );
         }
     }
@@ -1255,7 +1329,10 @@ mod windows_overlay {
         [
             (WidgetId::Telemetry, &config.layout.telemetry),
             (WidgetId::Inputs, &config.layout.inputs),
+            (WidgetId::LapTiming, &config.layout.lap_timing),
             (WidgetId::Timing, &config.layout.timing),
+            (WidgetId::Sectors, &config.layout.sectors),
+            (WidgetId::MiniSectors, &config.layout.mini_sectors),
             (WidgetId::Coaching, &config.layout.coaching),
             (WidgetId::Performance, &config.layout.performance),
         ]
@@ -1277,7 +1354,10 @@ mod windows_overlay {
         match widget {
             WidgetId::Telemetry => &config.layout.telemetry,
             WidgetId::Inputs => &config.layout.inputs,
+            WidgetId::LapTiming => &config.layout.lap_timing,
             WidgetId::Timing => &config.layout.timing,
+            WidgetId::Sectors => &config.layout.sectors,
+            WidgetId::MiniSectors => &config.layout.mini_sectors,
             WidgetId::Coaching => &config.layout.coaching,
             WidgetId::Performance => &config.layout.performance,
         }
@@ -1287,7 +1367,10 @@ mod windows_overlay {
         match widget {
             WidgetId::Telemetry => &mut config.layout.telemetry,
             WidgetId::Inputs => &mut config.layout.inputs,
+            WidgetId::LapTiming => &mut config.layout.lap_timing,
             WidgetId::Timing => &mut config.layout.timing,
+            WidgetId::Sectors => &mut config.layout.sectors,
+            WidgetId::MiniSectors => &mut config.layout.mini_sectors,
             WidgetId::Coaching => &mut config.layout.coaching,
             WidgetId::Performance => &mut config.layout.performance,
         }

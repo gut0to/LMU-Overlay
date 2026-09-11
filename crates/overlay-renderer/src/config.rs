@@ -174,7 +174,7 @@ impl Default for WindowConfig {
             x: 40,
             y: 40,
             width: 420,
-            height: 190,
+            height: 230,
             refresh_hz: 60,
             sample_ms: 10,
             history_samples: 180,
@@ -270,6 +270,9 @@ pub struct WidgetConfig {
     pub pedals: bool,
     pub steering: bool,
     pub lap_info: bool,
+    pub lap_timing: bool,
+    pub sectors: bool,
+    pub mini_sector_widget: bool,
     pub input_history: bool,
     pub delta_timing: bool,
     pub ghost_inputs: bool,
@@ -285,6 +288,9 @@ impl Default for WidgetConfig {
             pedals: true,
             steering: true,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: true,
             delta_timing: true,
             ghost_inputs: true,
@@ -302,7 +308,10 @@ pub struct LayoutConfig {
     pub snap_distance: i32,
     pub telemetry: WidgetLayout,
     pub inputs: WidgetLayout,
+    pub lap_timing: WidgetLayout,
     pub timing: WidgetLayout,
+    pub sectors: WidgetLayout,
+    pub mini_sectors: WidgetLayout,
     pub coaching: WidgetLayout,
     pub performance: WidgetLayout,
 }
@@ -312,7 +321,10 @@ impl LayoutConfig {
         self.snap_distance = self.snap_distance.clamp(0, 64);
         self.telemetry.normalize();
         self.inputs.normalize();
+        self.lap_timing.normalize();
         self.timing.normalize();
+        self.sectors.normalize();
+        self.mini_sectors.normalize();
         self.coaching.normalize();
         self.performance.normalize();
     }
@@ -338,11 +350,32 @@ impl Default for LayoutConfig {
                 height: 106,
                 locked: false,
             },
+            lap_timing: WidgetLayout {
+                x: 170,
+                y: 64,
+                width: 236,
+                height: 42,
+                locked: false,
+            },
             timing: WidgetLayout {
                 x: 170,
                 y: 108,
                 width: 236,
                 height: 66,
+                locked: false,
+            },
+            sectors: WidgetLayout {
+                x: 14,
+                y: 174,
+                width: 190,
+                height: 42,
+                locked: false,
+            },
+            mini_sectors: WidgetLayout {
+                x: 210,
+                y: 174,
+                width: 196,
+                height: 42,
                 locked: false,
             },
             coaching: WidgetLayout {
@@ -492,6 +525,9 @@ pub struct PresetProfileConfig {
     pub pedals: bool,
     pub steering: bool,
     pub lap_info: bool,
+    pub lap_timing: bool,
+    pub sectors: bool,
+    pub mini_sector_widget: bool,
     pub input_history: bool,
     pub delta_timing: bool,
     pub ghost_inputs: bool,
@@ -510,6 +546,9 @@ impl PresetProfileConfig {
             pedals: true,
             steering: true,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: true,
             delta_timing: true,
             ghost_inputs: true,
@@ -528,6 +567,9 @@ impl PresetProfileConfig {
             pedals: true,
             steering: true,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: true,
             delta_timing: true,
             ghost_inputs: true,
@@ -546,6 +588,9 @@ impl PresetProfileConfig {
             pedals: true,
             steering: false,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: false,
             delta_timing: true,
             ghost_inputs: false,
@@ -623,7 +668,7 @@ config_version = 3
 x = 40
 y = 40
 width = 420
-height = 190
+height = 230
 refresh_hz = 60
 sample_ms = 10
 history_samples = 180
@@ -659,6 +704,9 @@ speed_gear_rpm = true
 pedals = true
 steering = true
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = true
 delta_timing = true
 ghost_inputs = true
@@ -684,11 +732,32 @@ width = 240
 height = 106
 locked = false
 
+[layout.lap_timing]
+x = 170
+y = 64
+width = 236
+height = 42
+locked = false
+
 [layout.timing]
 x = 170
 y = 108
 width = 236
 height = 66
+locked = false
+
+[layout.sectors]
+x = 14
+y = 174
+width = 190
+height = 42
+locked = false
+
+[layout.mini_sectors]
+x = 210
+y = 174
+width = 196
+height = 42
 locked = false
 
 [layout.coaching]
@@ -737,6 +806,9 @@ speed_gear_rpm = true
 pedals = true
 steering = true
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = true
 delta_timing = true
 ghost_inputs = true
@@ -752,6 +824,9 @@ speed_gear_rpm = true
 pedals = true
 steering = true
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = true
 delta_timing = true
 ghost_inputs = true
@@ -767,6 +842,9 @@ speed_gear_rpm = true
 pedals = true
 steering = false
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = false
 delta_timing = true
 ghost_inputs = false
