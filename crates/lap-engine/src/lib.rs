@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use telemetry_engine::TelemetrySnapshot;
 
+const NORMALIZED_REFERENCE_POINTS: usize = 2_001;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReferenceMode {
     PersonalBest,
@@ -101,7 +103,13 @@ impl ReferenceLap {
         points.sort_by(|a, b| a.progress.total_cmp(&b.progress));
         points.dedup_by(|a, b| (a.progress - b.progress).abs() < f64::EPSILON);
 
-        (!points.is_empty()).then_some(Self {
+        if points.is_empty() {
+            return None;
+        }
+
+        let points = normalize_reference_points(&points);
+
+        Some(Self {
             total_time_seconds,
             points,
         })
@@ -109,21 +117,13 @@ impl ReferenceLap {
 
     pub fn sample_at(&self, progress: f64) -> Option<ReferencePoint> {
         let progress = progress.clamp(0.0, 1.0);
-        let first = *self.points.first()?;
-        let last = *self.points.last()?;
+        let max_index = self.points.len().checked_sub(1)?;
+        let scaled = progress * max_index as f64;
+        let lower = scaled.floor() as usize;
+        let upper = scaled.ceil() as usize;
+        let before = self.points[lower.min(max_index)];
+        let after = self.points[upper.min(max_index)];
 
-        if progress <= first.progress {
-            return Some(first);
-        }
-        if progress >= last.progress {
-            return Some(last);
-        }
-
-        let upper = self
-            .points
-            .partition_point(|point| point.progress < progress);
-        let before = self.points[upper.saturating_sub(1)];
-        let after = self.points[upper];
         let span = after.progress - before.progress;
         if span <= f64::EPSILON {
             return Some(before);
@@ -150,10 +150,21 @@ impl ReferenceLap {
         value: impl Fn(ReferencePoint) -> f64,
         threshold: f64,
     ) -> Option<f64> {
-        self.points
-            .windows(2)
-            .find(|pair| value(pair[0]) < threshold && value(pair[1]) >= threshold)
-            .map(|pair| pair[1].progress)
+        self.points.windows(2).find_map(|pair| {
+            let before = value(pair[0]);
+            let after = value(pair[1]);
+            if before >= threshold || after < threshold {
+                return None;
+            }
+
+            let span = after - before;
+            if span <= f64::EPSILON {
+                return Some(pair[1].progress);
+            }
+
+            let amount = (threshold - before) / span;
+            Some(lerp(pair[0].progress, pair[1].progress, amount))
+        })
     }
 }
 
@@ -199,6 +210,7 @@ pub struct LapEngine {
     previous_throttle: f64,
     current_brake_crossing: Option<f64>,
     current_throttle_crossing: Option<f64>,
+    current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
     session_best: Option<ReferenceLap>,
     personal_best: Option<ReferenceLap>,
@@ -215,6 +227,7 @@ impl LapEngine {
             previous_throttle: 0.0,
             current_brake_crossing: None,
             current_throttle_crossing: None,
+            current_lap_valid: false,
             last_lap: None,
             session_best: None,
             personal_best: None,
@@ -232,7 +245,14 @@ impl LapEngine {
             self.finish_current_lap(snapshot);
         }
 
-        self.record_thresholds(snapshot);
+        let sample_is_valid = is_lap_sample_valid(snapshot);
+        if !sample_is_valid {
+            self.current_lap_valid = false;
+        }
+
+        if sample_is_valid {
+            self.record_thresholds(snapshot);
+        }
 
         let progress = snapshot.lap_progress;
         let lap_time = snapshot.lap_time_seconds;
@@ -244,7 +264,7 @@ impl LapEngine {
             brake_hint_meters,
             throttle_hint_meters,
         ) = {
-            let reference = self.selected_reference();
+            let reference = sample_is_valid.then(|| self.selected_reference()).flatten();
             let reference_point = progress
                 .and_then(|progress| reference.and_then(|reference| reference.sample_at(progress)));
             let delta = lap_time
@@ -278,7 +298,9 @@ impl LapEngine {
             )
         };
 
-        self.record_point(snapshot);
+        if sample_is_valid {
+            self.record_point(snapshot);
+        }
 
         LapAnalysis {
             delta_seconds: delta,
@@ -313,7 +335,9 @@ impl LapEngine {
 
     fn finish_current_lap(&mut self, snapshot: TelemetrySnapshot) {
         if let Some(lap_time) = self.current_points.last().map(|point| point.time_seconds) {
-            if self.current_points.len() >= self.config.min_reference_points {
+            if self.current_lap_valid
+                && self.current_points.len() >= self.config.min_reference_points
+            {
                 if let Some(lap) = ReferenceLap::new(lap_time, self.current_points.clone()) {
                     self.last_lap = Some(lap.clone());
                     if is_better(&self.session_best, &lap) {
@@ -333,6 +357,7 @@ impl LapEngine {
         self.previous_throttle = snapshot.throttle;
         self.current_brake_crossing = None;
         self.current_throttle_crossing = None;
+        self.current_lap_valid = is_lap_sample_valid(snapshot);
     }
 
     fn record_point(&mut self, snapshot: TelemetrySnapshot) {
@@ -414,6 +439,62 @@ impl Default for LapEngine {
     }
 }
 
+fn normalize_reference_points(points: &[ReferencePoint]) -> Vec<ReferencePoint> {
+    let mut normalized = Vec::with_capacity(NORMALIZED_REFERENCE_POINTS);
+    for index in 0..NORMALIZED_REFERENCE_POINTS {
+        let progress = index as f64 / (NORMALIZED_REFERENCE_POINTS - 1) as f64;
+        normalized.push(interpolate_points(points, progress));
+    }
+    normalized
+}
+
+fn interpolate_points(points: &[ReferencePoint], progress: f64) -> ReferencePoint {
+    let first = points[0];
+    let last = points[points.len() - 1];
+
+    if progress <= first.progress {
+        return ReferencePoint { progress, ..first };
+    }
+    if progress >= last.progress {
+        return ReferencePoint { progress, ..last };
+    }
+
+    let upper = points.partition_point(|point| point.progress < progress);
+    let before = points[upper.saturating_sub(1)];
+    let after = points[upper];
+    let span = after.progress - before.progress;
+    if span <= f64::EPSILON {
+        return ReferencePoint { progress, ..before };
+    }
+
+    let amount = (progress - before.progress) / span;
+    ReferencePoint {
+        progress,
+        time_seconds: lerp(before.time_seconds, after.time_seconds, amount),
+        throttle: lerp(before.throttle, after.throttle, amount),
+        brake: lerp(before.brake, after.brake, amount),
+        speed_kph: lerp(before.speed_kph, after.speed_kph, amount),
+        gear: if amount < 0.5 {
+            before.gear
+        } else {
+            after.gear
+        },
+        steering: lerp(before.steering, after.steering, amount),
+    }
+}
+
+fn is_lap_sample_valid(snapshot: TelemetrySnapshot) -> bool {
+    snapshot.game_phase == lmu_telemetry::GamePhase::GreenFlag
+        && !snapshot.in_pits
+        && !snapshot.in_garage
+        && snapshot
+            .lap_time_seconds
+            .is_some_and(|time| time.is_finite() && time >= 0.0)
+        && snapshot
+            .lap_progress
+            .is_some_and(|progress| progress.is_finite())
+}
+
 fn is_better(current: &Option<ReferenceLap>, candidate: &ReferenceLap) -> bool {
     current
         .as_ref()
@@ -445,6 +526,7 @@ mod tests {
 
         assert_eq!(point.time_seconds, 25.0);
         assert_eq!(point.speed_kph, 125.0);
+        assert_eq!(lap.points.len(), NORMALIZED_REFERENCE_POINTS);
     }
 
     #[test]
@@ -499,7 +581,7 @@ mod tests {
         .with_personal_best(Some(reference));
 
         engine.update(snapshot(1, 0.35, 35.0, 0.0, 0.0));
-        let analysis = engine.update(snapshot(1, 0.45, 45.0, 0.2, 0.0));
+        let analysis = engine.update(snapshot(1, 0.40, 40.0, 0.2, 0.0));
 
         assert!((analysis.brake_hint_meters.unwrap() - 250.0).abs() < 0.001);
     }
@@ -514,6 +596,24 @@ mod tests {
         let analysis = engine.update(snapshot(1, 0.5, 50.0, 0.0, 0.0));
 
         assert_eq!(analysis.mini_sector_index, Some(20));
+    }
+
+    #[test]
+    fn does_not_save_invalid_laps_as_best_references() {
+        let mut engine = LapEngine::new(LapEngineConfig {
+            min_reference_points: 2,
+            ..LapEngineConfig::default()
+        });
+
+        engine.update(snapshot(1, 0.1, 10.0, 0.0, 0.0));
+        let mut invalid = snapshot(1, 0.9, 90.0, 0.0, 0.0);
+        invalid.in_pits = true;
+        engine.update(invalid);
+        engine.update(snapshot(2, 0.1, 8.0, 0.0, 0.0));
+
+        assert!(engine.session_best().is_none());
+        assert!(engine.personal_best().is_none());
+        assert!(engine.take_new_personal_best().is_none());
     }
 
     fn reference_lap(total_time_seconds: f64) -> ReferenceLap {

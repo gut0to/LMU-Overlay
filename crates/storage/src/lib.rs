@@ -204,7 +204,7 @@ mod tests {
         let loaded = store.load_personal_best(&key).unwrap().unwrap();
 
         assert_eq!(loaded.total_time_seconds, 90.0);
-        assert_eq!(loaded.points.len(), 3);
+        assert_eq!(loaded.points.len(), 2_001);
     }
 
     #[test]

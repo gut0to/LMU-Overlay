@@ -8,7 +8,9 @@ use std::{
 
 use anyhow::Result;
 use lap_engine::{LapEngine, LapEngineConfig, ReferenceMode};
-use lmu_telemetry::{format_sample_line, SharedMemoryTelemetrySource, TelemetrySource};
+use lmu_telemetry::{
+    format_sample_line, SharedMemoryTelemetrySource, TelemetrySample, TelemetrySource,
+};
 use log::{info, warn};
 use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
 use storage::{ReferenceLapKey, ReferenceLapStore};
@@ -163,19 +165,13 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
     let lap_config = lap_engine_config(&config);
     let overlay = TelemetryOverlay::with_config(config)?;
     let lap_store = ReferenceLapStore::appdata();
-    let lap_key = ReferenceLapKey::fallback();
-    let personal_best = match lap_store.load_personal_best(&lap_key) {
-        Ok(personal_best) => personal_best,
-        Err(error) => {
-            warn!("Could not load personal best reference lap: {error}");
-            None
-        }
-    };
-    let mut lap_engine = LapEngine::new(lap_config).with_personal_best(personal_best);
+    let lap_writer_store = lap_store.clone();
+    let mut current_lap_key = None;
+    let mut lap_engine = LapEngine::new(lap_config.clone());
     let (lap_writer, lap_receiver) = mpsc::channel();
     thread::spawn(move || {
-        while let Ok(lap) = lap_receiver.recv() {
-            if let Err(error) = lap_store.save_personal_best(&lap_key, &lap) {
+        while let Ok((lap_key, lap)) = lap_receiver.recv() {
+            if let Err(error) = lap_writer_store.save_personal_best(&lap_key, &lap) {
                 warn!("Could not save personal best reference lap: {error}");
             }
         }
@@ -183,10 +179,25 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
 
     overlay.run(move || match source.read_sample() {
         Ok(Some(sample)) => {
+            let lap_key = reference_lap_key(&sample);
+            if current_lap_key.as_ref() != Some(&lap_key) {
+                let personal_best = match lap_store.load_personal_best(&lap_key) {
+                    Ok(personal_best) => personal_best,
+                    Err(error) => {
+                        warn!("Could not load personal best reference lap: {error}");
+                        None
+                    }
+                };
+                lap_engine = LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
+                current_lap_key = Some(lap_key.clone());
+            }
+
             let mut snapshot = TelemetrySnapshot::from(sample);
             lap_engine.update(snapshot).apply_to(&mut snapshot);
             if let Some(lap) = lap_engine.take_new_personal_best() {
-                let _ = lap_writer.send(lap);
+                if let Some(lap_key) = &current_lap_key {
+                    let _ = lap_writer.send((lap_key.clone(), lap));
+                }
             }
             Some(snapshot)
         }
@@ -198,6 +209,26 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
     })?;
 
     Ok(())
+}
+
+fn reference_lap_key(sample: &TelemetrySample) -> ReferenceLapKey {
+    ReferenceLapKey {
+        track: sample
+            .metadata
+            .track_name
+            .clone()
+            .unwrap_or_else(|| "unknown-track".to_string()),
+        car: sample
+            .metadata
+            .vehicle_name
+            .clone()
+            .unwrap_or_else(|| "unknown-car".to_string()),
+        layout: sample
+            .metadata
+            .vehicle_class
+            .clone()
+            .unwrap_or_else(|| "default".to_string()),
+    }
 }
 
 fn lap_engine_config(config: &OverlayConfig) -> LapEngineConfig {
@@ -273,5 +304,39 @@ mod tests {
         assert!(cli.print_config_path);
         assert_eq!(cli.config_path, Some(PathBuf::from("custom.toml")));
         assert_eq!(cli.interval, Duration::from_millis(25));
+    }
+
+    #[test]
+    fn builds_reference_lap_key_from_telemetry_metadata() {
+        let sample = TelemetrySample {
+            timestamp_seconds: 0.0,
+            speed_mps: 0.0,
+            rpm: 0.0,
+            gear: lmu_telemetry::Gear::Neutral,
+            throttle: 0.0,
+            brake: 0.0,
+            clutch: 0.0,
+            steering: 0.0,
+            lap_distance_m: None,
+            track_length_m: None,
+            lap_number: 1,
+            lap_start_seconds: 0.0,
+            sector: 0,
+            metadata: lmu_telemetry::TelemetryMetadata {
+                track_name: Some("Sebring".to_string()),
+                vehicle_name: Some("Porsche 963".to_string()),
+                vehicle_class: Some("Hypercar".to_string()),
+                ..lmu_telemetry::TelemetryMetadata::default()
+            },
+        };
+
+        assert_eq!(
+            reference_lap_key(&sample),
+            ReferenceLapKey {
+                track: "Sebring".to_string(),
+                car: "Porsche 963".to_string(),
+                layout: "Hypercar".to_string(),
+            }
+        );
     }
 }
