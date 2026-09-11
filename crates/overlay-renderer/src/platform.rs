@@ -800,8 +800,7 @@ mod windows_overlay {
                 continue;
             };
 
-            let x1 =
-                area.x + (((index - 1) as f64 / segment_count) * area.width as f64) as i32;
+            let x1 = area.x + (((index - 1) as f64 / segment_count) * area.width as f64) as i32;
             let x2 = area.x + ((index as f64 / segment_count) * area.width as f64) as i32;
             let y1 =
                 area.y + area.height - (value(before).clamp(0.0, 1.0) * area.height as f64) as i32;
