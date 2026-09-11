@@ -152,7 +152,19 @@ The current overlay includes:
 - F9 show/hide by default;
 - F10 edit mode by default.
 
-## 9. Troubleshooting
+## 9. Reference Laps And PB Storage
+
+HashOverlay stores personal-best reference laps under:
+
+```text
+%APPDATA%\HashOverlay\laps
+```
+
+Reference laps are keyed by LMU telemetry metadata, using track, vehicle and class. That keeps a Sebring/Porsche PB separate from a Le Mans/Ferrari PB.
+
+Only clean green-flag samples outside the pits and garage are eligible for session-best and personal-best references. Pit/garage/out-of-session samples can still be shown by the overlay, but they do not overwrite your reference laps.
+
+## 10. Troubleshooting
 
 If PowerShell says `cargo` is not recognized, Rust is not installed or the terminal was opened before Rust updated the PATH.
 
@@ -162,8 +174,7 @@ If the app says the telemetry buffer is not available:
 - confirm `Enable Plugins` is turned on in LMU's gameplay settings;
 - run the terminal as the same Windows user that is running the game.
 
-## Current Limitations
+## 11. Current Limitations
 
-- Track/car names are not yet read from LMU shared memory, so PB storage currently uses a fallback key until those fields are mapped.
 - Configuration changes are loaded when the overlay starts.
 - Edit mode currently makes the overlay clickable; persistent drag/resize handles are the next native renderer refinement.
