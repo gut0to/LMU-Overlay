@@ -239,6 +239,10 @@ impl LapEngine {
             self.current_lap_valid = false;
         }
 
+        if sample_is_valid {
+            self.record_thresholds(snapshot);
+        }
+
         let progress = snapshot.lap_progress;
         let lap_time = snapshot.lap_time_seconds;
         let (
@@ -284,7 +288,6 @@ impl LapEngine {
         };
 
         if sample_is_valid {
-            self.record_thresholds(snapshot);
             self.record_point(snapshot);
         }
 
