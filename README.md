@@ -16,10 +16,12 @@ This repository is in the first milestone. It currently contains:
 - a user config opened from the app for position, size, opacity, colors and visible widgets;
 - lap/reference logic for session best, personal best, live delta, predicted lap and mini-sectors;
 - local binary PB storage under `%APPDATA%\HashOverlay\laps`;
+- a Tauri + React + TypeScript settings app with presets and visual controls;
 - a pure telemetry engine crate with a tested ring buffer;
-- architecture notes for the future settings app.
+- hotkeys for show/hide and edit mode;
+- a debug performance monitor.
 
-The richer Tauri settings app, live edit mode, hotkeys and packaging are still being built.
+Packaging and deeper renderer profiling are still being refined.
 
 ## Principles
 
@@ -48,6 +50,14 @@ Open the overlay configuration:
 
 ```powershell
 cargo run -p hashoverlay -- --configure
+```
+
+Run the settings app:
+
+```powershell
+cd settings
+npm install
+npm run tauri dev
 ```
 
 If LMU is not running or its built-in shared memory interface is unavailable, the command exits cleanly with a warning.

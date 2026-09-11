@@ -11,6 +11,7 @@ pub struct OverlayConfig {
     pub timing: TimingConfig,
     pub hotkeys: HotkeyConfig,
     pub performance: PerformanceConfig,
+    pub presets: PresetConfig,
 }
 
 impl OverlayConfig {
@@ -32,7 +33,17 @@ impl OverlayConfig {
         Ok(())
     }
 
-    fn normalize(&mut self) {
+    pub fn save(&mut self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
+        self.normalize();
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, toml::to_string_pretty(self)?)?;
+        Ok(())
+    }
+
+    pub fn normalize(&mut self) {
         self.window.width = self.window.width.clamp(280, 1200);
         self.window.height = self.window.height.clamp(140, 800);
         match self.performance.mode.as_str() {
@@ -54,9 +65,12 @@ impl OverlayConfig {
         self.window.sample_ms = self.window.sample_ms.clamp(5, 250);
         self.window.history_samples = self.window.history_samples.clamp(16, 900);
         self.style.opacity = self.style.opacity.clamp(32, 255);
+        self.style.scale = self.style.scale.clamp(0.65, 1.75);
+        self.style.line_thickness = self.style.line_thickness.clamp(1, 8);
         self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
         self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
+        self.presets.normalize();
     }
 }
 
@@ -86,10 +100,12 @@ impl Default for WindowConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct StyleConfig {
     pub opacity: u8,
+    pub scale: f64,
+    pub line_thickness: i32,
     pub background: String,
     pub border: String,
     pub primary_text: String,
@@ -107,6 +123,8 @@ impl Default for StyleConfig {
     fn default() -> Self {
         Self {
             opacity: 230,
+            scale: 1.0,
+            line_thickness: 2,
             background: "#202020".to_string(),
             border: "#666666".to_string(),
             primary_text: "#ffffff".to_string(),
@@ -193,6 +211,116 @@ impl Default for PerformanceConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PresetConfig {
+    pub practice: PresetProfileConfig,
+    pub qualifying: PresetProfileConfig,
+    pub race: PresetProfileConfig,
+}
+
+impl PresetConfig {
+    fn normalize(&mut self) {
+        self.practice.normalize();
+        self.qualifying.normalize();
+        self.race.normalize();
+    }
+}
+
+impl Default for PresetConfig {
+    fn default() -> Self {
+        Self {
+            practice: PresetProfileConfig::practice(),
+            qualifying: PresetProfileConfig::qualifying(),
+            race: PresetProfileConfig::race(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PresetProfileConfig {
+    pub performance_mode: String,
+    pub reference_mode: String,
+    pub mini_sectors: u16,
+    pub title: bool,
+    pub speed_gear_rpm: bool,
+    pub pedals: bool,
+    pub steering: bool,
+    pub lap_info: bool,
+    pub input_history: bool,
+    pub delta_timing: bool,
+    pub ghost_inputs: bool,
+    pub coaching: bool,
+    pub performance_monitor: bool,
+}
+
+impl PresetProfileConfig {
+    fn practice() -> Self {
+        Self {
+            performance_mode: "normal".to_string(),
+            reference_mode: "last_lap".to_string(),
+            mini_sectors: 40,
+            title: true,
+            speed_gear_rpm: true,
+            pedals: true,
+            steering: true,
+            lap_info: true,
+            input_history: true,
+            delta_timing: true,
+            ghost_inputs: true,
+            coaching: true,
+            performance_monitor: false,
+        }
+    }
+
+    fn qualifying() -> Self {
+        Self {
+            performance_mode: "high_refresh".to_string(),
+            reference_mode: "personal_best".to_string(),
+            mini_sectors: 60,
+            title: true,
+            speed_gear_rpm: true,
+            pedals: true,
+            steering: true,
+            lap_info: true,
+            input_history: true,
+            delta_timing: true,
+            ghost_inputs: true,
+            coaching: true,
+            performance_monitor: false,
+        }
+    }
+
+    fn race() -> Self {
+        Self {
+            performance_mode: "eco".to_string(),
+            reference_mode: "session_best".to_string(),
+            mini_sectors: 20,
+            title: false,
+            speed_gear_rpm: true,
+            pedals: true,
+            steering: false,
+            lap_info: true,
+            input_history: false,
+            delta_timing: true,
+            ghost_inputs: false,
+            coaching: false,
+            performance_monitor: false,
+        }
+    }
+
+    fn normalize(&mut self) {
+        self.mini_sectors = self.mini_sectors.clamp(1, 200);
+    }
+}
+
+impl Default for PresetProfileConfig {
+    fn default() -> Self {
+        Self::practice()
+    }
+}
+
 impl Default for TimingConfig {
     fn default() -> Self {
         Self {
@@ -208,6 +336,7 @@ impl Default for TimingConfig {
 pub enum ConfigError {
     Io(io::Error),
     Toml(toml::de::Error),
+    TomlSer(toml::ser::Error),
 }
 
 impl From<io::Error> for ConfigError {
@@ -222,11 +351,18 @@ impl From<toml::de::Error> for ConfigError {
     }
 }
 
+impl From<toml::ser::Error> for ConfigError {
+    fn from(error: toml::ser::Error) -> Self {
+        Self::TomlSer(error)
+    }
+}
+
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Io(error) => write!(f, "could not read overlay config: {error}"),
             Self::Toml(error) => write!(f, "overlay config has invalid TOML: {error}"),
+            Self::TomlSer(error) => write!(f, "could not write overlay config: {error}"),
         }
     }
 }
@@ -248,6 +384,8 @@ history_samples = 180
 
 [style]
 opacity = 230
+scale = 1.0
+line_thickness = 2
 background = "#202020"
 border = "#666666"
 primary_text = "#ffffff"
@@ -288,6 +426,51 @@ edit_mode = "F10"
 # high_refresh = 100 Hz telemetry / 120 FPS render
 # custom = keep refresh_hz and sample_ms from [window]
 mode = "normal"
+
+[presets.practice]
+performance_mode = "normal"
+reference_mode = "last_lap"
+mini_sectors = 40
+title = true
+speed_gear_rpm = true
+pedals = true
+steering = true
+lap_info = true
+input_history = true
+delta_timing = true
+ghost_inputs = true
+coaching = true
+performance_monitor = false
+
+[presets.qualifying]
+performance_mode = "high_refresh"
+reference_mode = "personal_best"
+mini_sectors = 60
+title = true
+speed_gear_rpm = true
+pedals = true
+steering = true
+lap_info = true
+input_history = true
+delta_timing = true
+ghost_inputs = true
+coaching = true
+performance_monitor = false
+
+[presets.race]
+performance_mode = "eco"
+reference_mode = "session_best"
+mini_sectors = 20
+title = false
+speed_gear_rpm = true
+pedals = true
+steering = false
+lap_info = true
+input_history = false
+delta_timing = true
+ghost_inputs = false
+coaching = false
+performance_monitor = false
 "##
 }
 
@@ -320,6 +503,9 @@ mod tests {
         assert_eq!(config.timing.mini_sectors, 40);
         assert_eq!(config.hotkeys.toggle_overlay, "F9");
         assert_eq!(config.performance.mode, "normal");
+        assert_eq!(config.style.scale, 1.0);
+        assert_eq!(config.style.line_thickness, 2);
+        assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
     }
 
     #[test]
@@ -341,6 +527,8 @@ mod tests {
             },
             style: StyleConfig {
                 opacity: 1,
+                scale: 10.0,
+                line_thickness: 99,
                 ..StyleConfig::default()
             },
             widgets: WidgetConfig::default(),
@@ -349,6 +537,7 @@ mod tests {
             performance: PerformanceConfig {
                 mode: "custom".to_string(),
             },
+            presets: PresetConfig::default(),
         };
 
         config.normalize();
@@ -359,6 +548,8 @@ mod tests {
         assert_eq!(config.window.sample_ms, 5);
         assert_eq!(config.window.history_samples, 16);
         assert_eq!(config.style.opacity, 32);
+        assert_eq!(config.style.scale, 1.75);
+        assert_eq!(config.style.line_thickness, 8);
         assert_eq!(config.timing.mini_sectors, 40);
     }
 }
