@@ -72,6 +72,7 @@ h1 {
 
 .iconButton,
 .primaryButton,
+.dangerButton,
 .presetBar button,
 .segmented button {
   border: 1px solid #3a4149;
@@ -99,6 +100,22 @@ h1 {
 .primaryButton.wide {
   justify-content: center;
   width: 100%;
+}
+
+.dangerButton {
+  padding: 0 14px;
+  background: #3a1717;
+  border-color: #bd4b4b;
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.buttonRow button {
+  min-height: 36px;
 }
 
 .presetBar {
@@ -321,6 +338,24 @@ h1 {
 .presetItem input {
   min-width: 0;
   padding: 6px 8px;
+}
+
+.field.stack {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.field textarea {
+  min-height: 260px;
+  resize: vertical;
+  border-radius: 6px;
+  border: 1px solid #3a4149;
+  background: #101214;
+  color: #f7f2e8;
+  padding: 10px;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .hotkeyButton {

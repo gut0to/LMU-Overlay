@@ -259,9 +259,12 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [selectedLayout, setSelectedLayout] = useState<LayoutWidgetKey>("telemetry");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
+  const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
+  const [configText, setConfigText] = useState("");
 
   useEffect(() => {
     void loadConfig();
+    void loadDefaultConfig();
   }, []);
 
   async function loadConfig() {
@@ -290,6 +293,58 @@ function App() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function loadDefaultConfig() {
+    try {
+      const nextDefault = await invoke<OverlayConfig>("default_config");
+      setDefaultConfigState(nextDefault);
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function exportConfigText() {
+    if (!config) {
+      return;
+    }
+    try {
+      const text = await invoke<string>("export_config", { config });
+      setConfigText(text);
+      setStatus("Config exported");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function importConfigText() {
+    try {
+      const response = await invoke<LoadResponse>("import_config", { text: configText });
+      setConfig(response.config);
+      setPath(response.path);
+      setStatus("Config imported");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function resetConfig() {
+    try {
+      const response = await invoke<LoadResponse>("reset_config");
+      setConfig(response.config);
+      setPath(response.path);
+      setStatus("Config reset");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  function resetLayout() {
+    if (!defaultConfigState) {
+      return;
+    }
+    setConfig((current) => current ? { ...current, window: defaultConfigState.window, layout: defaultConfigState.layout } : current);
+    setStatus("Layout reset");
   }
 
   function applyPreset(name: StandardPresetKey) {
@@ -522,6 +577,27 @@ function App() {
               </div>
             ))}
           </div>
+        </Section>}
+
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Import and Export">
+          <div className="buttonRow">
+            <button className="primaryButton" onClick={exportConfigText}>
+              Export
+            </button>
+            <button className="primaryButton" onClick={importConfigText} disabled={!configText.trim()}>
+              Import
+            </button>
+            <button className="primaryButton" onClick={resetLayout} disabled={!defaultConfigState}>
+              Reset layout
+            </button>
+            <button className="dangerButton" onClick={resetConfig}>
+              Reset all
+            </button>
+          </div>
+          <label className="field stack">
+            <span>Config TOML</span>
+            <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} />
+          </label>
         </Section>}
       </div>
 
