@@ -150,10 +150,21 @@ impl ReferenceLap {
         value: impl Fn(ReferencePoint) -> f64,
         threshold: f64,
     ) -> Option<f64> {
-        self.points
-            .windows(2)
-            .find(|pair| value(pair[0]) < threshold && value(pair[1]) >= threshold)
-            .map(|pair| pair[1].progress)
+        self.points.windows(2).find_map(|pair| {
+            let before = value(pair[0]);
+            let after = value(pair[1]);
+            if before >= threshold || after < threshold {
+                return None;
+            }
+
+            let span = after - before;
+            if span <= f64::EPSILON {
+                return Some(pair[1].progress);
+            }
+
+            let amount = (threshold - before) / span;
+            Some(lerp(pair[0].progress, pair[1].progress, amount))
+        })
     }
 }
 
@@ -570,7 +581,7 @@ mod tests {
         .with_personal_best(Some(reference));
 
         engine.update(snapshot(1, 0.35, 35.0, 0.0, 0.0));
-        let analysis = engine.update(snapshot(1, 0.45, 45.0, 0.2, 0.0));
+        let analysis = engine.update(snapshot(1, 0.40, 40.0, 0.2, 0.0));
 
         assert!((analysis.brake_hint_meters.unwrap() - 250.0).abs() < 0.001);
     }
