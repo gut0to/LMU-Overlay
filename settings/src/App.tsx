@@ -3,6 +3,8 @@ import {
   Activity,
   Gauge,
   LayoutGrid,
+  Lock,
+  Magnet,
   Paintbrush,
   RotateCcw,
   Save,
@@ -51,6 +53,27 @@ type WidgetConfig = {
   performance_monitor: boolean;
 };
 
+type WidgetLayout = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  locked: boolean;
+};
+
+type LayoutConfig = {
+  lock_all: boolean;
+  snap_to_edges: boolean;
+  snap_distance: number;
+  telemetry: WidgetLayout;
+  inputs: WidgetLayout;
+  timing: WidgetLayout;
+  coaching: WidgetLayout;
+  performance: WidgetLayout;
+};
+
+type LayoutWidgetKey = "telemetry" | "inputs" | "timing" | "coaching" | "performance";
+
 type TimingConfig = {
   reference_mode: string;
   mini_sectors: number;
@@ -80,9 +103,11 @@ type PresetConfig = {
 };
 
 type OverlayConfig = {
+  config_version: number;
   window: WindowConfig;
   style: StyleConfig;
   widgets: WidgetConfig;
+  layout: LayoutConfig;
   timing: TimingConfig;
   hotkeys: HotkeyConfig;
   performance: PerformanceConfig;
@@ -127,6 +152,14 @@ const widgetLabels: Array<[keyof WidgetConfig, string]> = [
   ["performance_monitor", "Performance monitor"],
 ];
 
+const layoutLabels: Array<[LayoutWidgetKey, string]> = [
+  ["telemetry", "Telemetry"],
+  ["inputs", "Inputs"],
+  ["timing", "Timing"],
+  ["coaching", "Coaching"],
+  ["performance", "Performance"],
+];
+
 const colorLabels: Array<[keyof StyleConfig, string]> = [
   ["background", "Background"],
   ["border", "Border"],
@@ -146,6 +179,7 @@ function App() {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
+  const [selectedLayout, setSelectedLayout] = useState<LayoutWidgetKey>("telemetry");
 
   useEffect(() => {
     void loadConfig();
@@ -253,6 +287,10 @@ function App() {
       </section>
 
       <div className="grid">
+        <Section icon={<Activity />} title="Live Preview">
+          <OverlayPreview config={config} selected={selectedLayout} onSelect={setSelectedLayout} />
+        </Section>
+
         <Section icon={<LayoutGrid />} title="Layout">
           <NumberField label="X" value={config.window.x} onChange={(value) => setWindow(config, setConfig, "x", value)} />
           <NumberField label="Y" value={config.window.y} onChange={(value) => setWindow(config, setConfig, "y", value)} />
@@ -260,6 +298,37 @@ function App() {
           <NumberField label="Height" value={config.window.height} onChange={(value) => setWindow(config, setConfig, "height", value)} />
           <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
           <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
+        </Section>
+
+        <Section icon={<Magnet />} title="Widget Layout">
+          <div className="segmented">
+            {layoutLabels.map(([key, label]) => (
+              <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="toggle full">
+            <input
+              type="checkbox"
+              checked={config.layout.lock_all}
+              onChange={(event) => setLayoutFlag(config, setConfig, "lock_all", event.target.checked)}
+            />
+            <span>Lock all widgets</span>
+          </label>
+          <label className="toggle full">
+            <input
+              type="checkbox"
+              checked={config.layout.snap_to_edges}
+              onChange={(event) => setLayoutFlag(config, setConfig, "snap_to_edges", event.target.checked)}
+            />
+            <span>Snap to screen edges</span>
+          </label>
+          <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
+          <WidgetLayoutFields
+            layout={config.layout[selectedLayout]}
+            onChange={(key, value) => setWidgetLayout(config, setConfig, selectedLayout, key, value)}
+          />
         </Section>
 
         <Section icon={<Gauge />} title="Performance">
@@ -318,6 +387,51 @@ function App() {
   );
 }
 
+function OverlayPreview(props: {
+  config: OverlayConfig;
+  selected: LayoutWidgetKey;
+  onSelect: (value: LayoutWidgetKey) => void;
+}) {
+  const scale = Math.min(1, 320 / props.config.window.width);
+  const previewWidth = props.config.window.width * scale;
+  const previewHeight = props.config.window.height * scale;
+  return (
+    <div className="previewWrap">
+      <div
+        className="preview"
+        style={{
+          width: previewWidth,
+          height: previewHeight,
+          backgroundColor: props.config.style.background,
+          borderColor: props.config.style.border,
+          color: props.config.style.primary_text,
+        }}
+      >
+        {layoutLabels.map(([key, label]) => {
+          const layout = props.config.layout[key];
+          return (
+            <button
+              key={key}
+              className={`previewWidget ${props.selected === key ? "selected" : ""}`}
+              style={{
+                left: layout.x * scale,
+                top: layout.y * scale,
+                width: layout.width * scale,
+                height: layout.height * scale,
+                borderColor: props.config.style.border,
+              }}
+              onClick={() => props.onSelect(key)}
+              title={label}
+            >
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Section({ icon, title, children }: SectionProps) {
   return (
     <section className="panel">
@@ -327,6 +441,25 @@ function Section({ icon, title, children }: SectionProps) {
       </h2>
       <div className="fields">{children}</div>
     </section>
+  );
+}
+
+function WidgetLayoutFields(props: {
+  layout: WidgetLayout;
+  onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
+}) {
+  return (
+    <>
+      <NumberField label="Widget X" value={props.layout.x} onChange={(value) => props.onChange("x", value)} />
+      <NumberField label="Widget Y" value={props.layout.y} onChange={(value) => props.onChange("y", value)} />
+      <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
+      <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
+      <label className="toggle full">
+        <input type="checkbox" checked={props.layout.locked} onChange={(event) => props.onChange("locked", event.target.checked)} />
+        <Lock size={16} />
+        <span>Lock this widget</span>
+      </label>
+    </>
   );
 }
 
@@ -384,6 +517,32 @@ function setTiming<K extends keyof TimingConfig>(config: OverlayConfig, setConfi
 
 function setWidget(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof WidgetConfig, value: boolean) {
   setConfig({ ...config, widgets: { ...config.widgets, [key]: value } });
+}
+
+function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs" | "timing" | "coaching" | "performance">>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  key: K,
+  value: LayoutConfig[K],
+) {
+  setConfig({ ...config, layout: { ...config.layout, [key]: value } });
+}
+
+function setWidgetLayout<K extends keyof WidgetLayout>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  widget: LayoutWidgetKey,
+  key: K,
+  value: WidgetLayout[K],
+) {
+  const layout = config.layout[widget] as WidgetLayout;
+  setConfig({
+    ...config,
+    layout: {
+      ...config.layout,
+      [widget]: { ...layout, [key]: value },
+    },
+  });
 }
 
 function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof HotkeyConfig, value: string) {

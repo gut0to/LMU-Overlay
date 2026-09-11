@@ -202,10 +202,55 @@ h1 {
   font-size: 13px;
 }
 
+.toggle.full {
+  grid-column: 1 / -1;
+}
+
 .toggle input {
   width: 18px;
   height: 18px;
   accent-color: #d83a2f;
+}
+
+.previewWrap {
+  min-height: 216px;
+  display: grid;
+  place-items: center;
+}
+
+.preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #666666;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.previewWidget {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  overflow: hidden;
+}
+
+.previewWidget.selected {
+  border-color: #f2bc57 !important;
+  background: rgba(242, 188, 87, 0.16);
+}
+
+.previewWidget span {
+  max-width: 100%;
+  padding: 2px 4px;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .swatches {

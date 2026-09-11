@@ -345,6 +345,7 @@ fn read_metadata(
             .map(|offset| read_bool(bytes, offset + OFFSET_SCORING_IN_GARAGE_STALL))
             .transpose()?
             .unwrap_or(false),
+        lap_invalidated: None,
         player_slot_id: scoring_offset
             .map(|offset| read_i32(bytes, offset + OFFSET_SCORING_SLOT_ID))
             .transpose()?

@@ -22,7 +22,7 @@ The renderer must never read shared memory directly. It will consume compact sna
 6. Delta widget, PB/session best, sectors and mini-sectors.
 7. Ghost telemetry and coaching comparisons.
 8. Tauri settings app, hotkeys, presets and clickable edit mode.
-9. Persistent drag/resize handles, profiling, packaging and polish.
+9. Persistent widget drag/resize handles, profiling, packaging and polish.
 
 ## Shared Memory Reader
 
@@ -32,9 +32,11 @@ The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU an
 
 ## Renderer
 
-The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, delta and coaching widgets. Position, size, scale, opacity, colors, refresh rate, performance mode, hotkeys and visible widgets are loaded from the user config file.
+The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, delta, coaching and performance widgets. Window placement, widget layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visible widgets are loaded from the user config file.
 
-F9 toggles visibility by default. F10 toggles edit mode by default, which makes the overlay clickable so native move/resize handling can be refined without changing the fair-play boundary.
+F9 toggles visibility by default. F10 toggles edit mode by default, which makes the overlay clickable so each unlocked widget can be selected, moved, resized and saved back to the config file.
+
+Saved config changes are hot reloaded while the overlay is running. This lets the Settings app change colors, layout, opacity and timing behavior without restarting the overlay.
 
 The renderer still uses GDI drawing while the Direct2D/DirectComposition backend is being refined. The module boundary keeps that swap isolated from telemetry and lap logic.
 
@@ -44,7 +46,7 @@ The renderer still uses GDI drawing while the Direct2D/DirectComposition backend
 
 Reference lap lookup is progress-based, not timestamp-based. The hot-path lookup samples a sorted reference lap by normalized track progress and interpolates between nearby points.
 
-Personal best laps are written by a background thread through `storage`, outside the telemetry/render loop. Track and car names are not mapped from LMU shared memory yet, so storage currently uses a fallback key and documents that limitation instead of inventing metadata.
+Personal best laps are written by a background thread through `storage`, outside the telemetry/render loop. Reference lap files are keyed from LMU telemetry metadata using track, vehicle and class.
 
 ## Open Source Direction
 
@@ -54,4 +56,4 @@ Public APIs should be boring and explicit. Avoid clever abstractions until there
 
 ## Settings App
 
-`settings/` contains the Tauri + React + TypeScript settings panel. It edits the same TOML config consumed by the runtime overlay and is not required while driving. Presets are stored structurally in the config so contributors can adjust Practice, Qualifying and Race defaults without touching the renderer.
+`settings/` contains the Tauri + React + TypeScript settings panel. It edits the same TOML config consumed by the runtime overlay and is not required while driving. Presets are stored structurally in the config so contributors can adjust Practice, Qualifying and Race defaults without touching the renderer. The app includes a live layout preview so users can position widgets without editing TOML.

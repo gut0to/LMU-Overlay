@@ -1,12 +1,24 @@
 use std::{
-    env, fs, io,
+    env,
+    fs::{self, File},
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
 use lap_engine::{ReferenceLap, ReferencePoint};
 
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+};
+
 const MAGIC: &[u8; 8] = b"HOLAP001";
+const SUPPORTED_MAGIC: [&[u8; 8]; 1] = [MAGIC];
 const POINT_SIZE: usize = 52;
+const MAX_STORED_POINTS: usize = 2_001;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceLapKey {
@@ -118,18 +130,28 @@ fn write_reference_lap(path: &Path, lap: &ReferenceLap) -> Result<(), StorageErr
         bytes.extend_from_slice(&point.steering.to_le_bytes());
     }
 
-    fs::write(path, bytes)?;
+    atomic_write(path, &bytes)?;
     Ok(())
 }
 
 fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
     let bytes = fs::read(path)?;
-    if bytes.len() < 20 || bytes.get(..8) != Some(MAGIC) {
+    if bytes.len() < 20 {
+        return Err(StorageError::InvalidFormat);
+    }
+    let magic = bytes.get(..8).ok_or(StorageError::InvalidFormat)?;
+    if !SUPPORTED_MAGIC
+        .iter()
+        .any(|supported| magic == supported.as_slice())
+    {
         return Err(StorageError::InvalidFormat);
     }
 
     let total_time_seconds = read_f64(&bytes, 8)?;
     let point_count = read_u32(&bytes, 16)? as usize;
+    if point_count == 0 || point_count > MAX_STORED_POINTS {
+        return Err(StorageError::InvalidFormat);
+    }
     let expected_len = 20 + point_count * POINT_SIZE;
     if bytes.len() != expected_len {
         return Err(StorageError::InvalidFormat);
@@ -151,6 +173,53 @@ fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
     }
 
     ReferenceLap::new(total_time_seconds, points).ok_or(StorageError::InvalidFormat)
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let temp_path = temp_path(path);
+    let mut file = File::create(&temp_path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+    replace_file(&temp_path, path)
+}
+
+fn temp_path(path: &Path) -> PathBuf {
+    let mut temp_path = path.to_path_buf();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!("{value}.tmp"))
+        .unwrap_or_else(|| "tmp".to_string());
+    temp_path.set_extension(extension);
+    temp_path
+}
+
+#[cfg(windows)]
+fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
+    let temp = wide_path(temp_path);
+    let target = wide_path(path);
+    let replaced = unsafe {
+        MoveFileExW(
+            temp.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn wide_path(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+#[cfg(not(windows))]
+fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
+    fs::rename(temp_path, path)
 }
 
 fn read_f64(bytes: &[u8], offset: usize) -> Result<f64, StorageError> {
@@ -216,6 +285,56 @@ mod tests {
         };
 
         assert_eq!(key.file_stem(), "le-mans-24h__car-hyper__2026");
+    }
+
+    #[test]
+    fn rejects_invalid_magic() {
+        let root = env::temp_dir().join(format!(
+            "hashoverlay-storage-invalid-magic-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("bad.pb-lap");
+        fs::write(&path, b"NOTALAP1").unwrap();
+
+        assert!(matches!(
+            read_reference_lap(&path),
+            Err(StorageError::InvalidFormat)
+        ));
+    }
+
+    #[test]
+    fn rejects_absurd_point_count() {
+        let root = env::temp_dir().join(format!(
+            "hashoverlay-storage-absurd-count-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("bad.pb-lap");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(MAGIC);
+        bytes.extend_from_slice(&90.0f64.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes());
+        fs::write(&path, bytes).unwrap();
+
+        assert!(matches!(
+            read_reference_lap(&path),
+            Err(StorageError::InvalidFormat)
+        ));
+    }
+
+    #[test]
+    fn ignores_interrupted_temp_file() {
+        let root = env::temp_dir().join(format!(
+            "hashoverlay-storage-temp-file-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let store = ReferenceLapStore::new(&root);
+        let key = ReferenceLapKey::fallback();
+        fs::write(temp_path(&store.personal_best_path(&key)), b"partial").unwrap();
+
+        assert!(store.load_personal_best(&key).unwrap().is_none());
     }
 
     fn point(progress: f64, time_seconds: f64) -> ReferencePoint {

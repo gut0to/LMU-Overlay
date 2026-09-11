@@ -121,6 +121,8 @@ The settings app can change:
 - presets for Practice, Qualifying and Race;
 - visible widgets;
 - position, size, scale and opacity;
+- per-widget position, size, lock state and snap behavior;
+- live layout preview with mock widget boxes;
 - colors and line thickness;
 - telemetry history, render FPS and sample interval;
 - delta reference, mini-sectors and coaching thresholds;
@@ -139,6 +141,7 @@ This creates and opens:
 ```
 
 You can edit the same settings in TOML. Save the file, then start the overlay.
+When the overlay is already running, saved settings are hot reloaded automatically.
 
 ## 9. Run The Overlay
 
@@ -154,6 +157,7 @@ The current overlay includes:
 - always on top;
 - click-through;
 - configurable position and size;
+- independent widget position and size;
 - configurable scale, opacity, colors and line thickness;
 - toggles for title, speed/RPM, pedals, steering, lap info and input history;
 - speed, gear and RPM text;
@@ -168,7 +172,9 @@ The current overlay includes:
 - coaching cues for releasing brake, adding throttle and carrying more speed.
 - F9 show/hide by default;
 - F10 edit mode by default;
-- drag-to-move and edge/corner resize while edit mode is enabled.
+- drag-to-move and corner resize for each unlocked widget while edit mode is enabled;
+- persistent layout saves when a widget is moved or resized;
+- hot reload when the Settings app saves config changes.
 
 ## 10. Reference Laps And PB Storage
 
@@ -194,4 +200,4 @@ If the app says the telemetry buffer is not available:
 
 ## 12. Current Limitations
 
-- Configuration changes are loaded when the overlay starts.
+- The renderer still uses the current Win32/GDI backend while the Direct2D/DirectWrite backend is prepared.

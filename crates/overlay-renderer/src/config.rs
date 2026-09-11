@@ -1,13 +1,28 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
+
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+};
 
 use serde::{Deserialize, Serialize};
+
+const CURRENT_CONFIG_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OverlayConfig {
+    pub config_version: u32,
     pub window: WindowConfig,
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
+    pub layout: LayoutConfig,
     pub timing: TimingConfig,
     pub hotkeys: HotkeyConfig,
     pub performance: PerformanceConfig,
@@ -16,9 +31,18 @@ pub struct OverlayConfig {
 
 impl OverlayConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        let path = path.as_ref();
         let text = fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&text)?;
+        let needs_migration = config.config_version < CURRENT_CONFIG_VERSION;
+        if needs_migration {
+            write_migration_backup(path, &text)?;
+            config.config_version = CURRENT_CONFIG_VERSION;
+        }
         config.normalize();
+        if needs_migration {
+            atomic_write(path, toml::to_string_pretty(&config)?)?;
+        }
         Ok(config)
     }
 
@@ -39,11 +63,14 @@ impl OverlayConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, toml::to_string_pretty(self)?)?;
+        atomic_write(path, toml::to_string_pretty(self)?)?;
         Ok(())
     }
 
     pub fn normalize(&mut self) {
+        if self.config_version == 0 || self.config_version > CURRENT_CONFIG_VERSION {
+            self.config_version = CURRENT_CONFIG_VERSION;
+        }
         self.window.width = self.window.width.clamp(280, 1200);
         self.window.height = self.window.height.clamp(140, 800);
         match self.performance.mode.as_str() {
@@ -67,11 +94,61 @@ impl OverlayConfig {
         self.style.opacity = self.style.opacity.clamp(32, 255);
         self.style.scale = self.style.scale.clamp(0.65, 1.75);
         self.style.line_thickness = self.style.line_thickness.clamp(1, 8);
+        self.layout.normalize();
         self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
         self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
         self.presets.normalize();
     }
+}
+
+fn write_migration_backup(path: &Path, text: &str) -> io::Result<()> {
+    let backup_path = path.with_extension("toml.v2.bak");
+    fs::write(backup_path, text)
+}
+
+fn atomic_write(path: &Path, text: String) -> io::Result<()> {
+    let temp_path = temp_config_path(path);
+    fs::write(&temp_path, text)?;
+    replace_file(&temp_path, path)
+}
+
+fn temp_config_path(path: &Path) -> PathBuf {
+    let mut temp_path = path.to_path_buf();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!("{value}.tmp"))
+        .unwrap_or_else(|| "tmp".to_string());
+    temp_path.set_extension(extension);
+    temp_path
+}
+
+#[cfg(windows)]
+fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
+    let temp = wide_path(temp_path);
+    let target = wide_path(path);
+    let replaced = unsafe {
+        MoveFileExW(
+            temp.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn wide_path(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+#[cfg(not(windows))]
+fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
+    fs::rename(temp_path, path)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,6 +245,106 @@ impl Default for WidgetConfig {
             ghost_inputs: true,
             coaching: true,
             performance_monitor: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LayoutConfig {
+    pub lock_all: bool,
+    pub snap_to_edges: bool,
+    pub snap_distance: i32,
+    pub telemetry: WidgetLayout,
+    pub inputs: WidgetLayout,
+    pub timing: WidgetLayout,
+    pub coaching: WidgetLayout,
+    pub performance: WidgetLayout,
+}
+
+impl LayoutConfig {
+    fn normalize(&mut self) {
+        self.snap_distance = self.snap_distance.clamp(0, 64);
+        self.telemetry.normalize();
+        self.inputs.normalize();
+        self.timing.normalize();
+        self.coaching.normalize();
+        self.performance.normalize();
+    }
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            lock_all: false,
+            snap_to_edges: true,
+            snap_distance: 12,
+            telemetry: WidgetLayout {
+                x: 14,
+                y: 10,
+                width: 392,
+                height: 52,
+                locked: false,
+            },
+            inputs: WidgetLayout {
+                x: 14,
+                y: 64,
+                width: 240,
+                height: 106,
+                locked: false,
+            },
+            timing: WidgetLayout {
+                x: 170,
+                y: 108,
+                width: 236,
+                height: 66,
+                locked: false,
+            },
+            coaching: WidgetLayout {
+                x: 260,
+                y: 48,
+                width: 146,
+                height: 58,
+                locked: false,
+            },
+            performance: WidgetLayout {
+                x: 14,
+                y: 170,
+                width: 392,
+                height: 20,
+                locked: false,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WidgetLayout {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub locked: bool,
+}
+
+impl WidgetLayout {
+    fn normalize(&mut self) {
+        self.x = self.x.clamp(-2000, 8000);
+        self.y = self.y.clamp(-2000, 8000);
+        self.width = self.width.clamp(48, 1600);
+        self.height = self.height.clamp(20, 1000);
+    }
+}
+
+impl Default for WidgetLayout {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width: 160,
+            height: 80,
+            locked: false,
         }
     }
 }
@@ -373,6 +550,8 @@ pub fn default_config_text() -> &'static str {
     r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
+config_version = 3
+
 [window]
 x = 40
 y = 40
@@ -409,6 +588,46 @@ delta_timing = true
 ghost_inputs = true
 coaching = true
 performance_monitor = false
+
+[layout]
+lock_all = false
+snap_to_edges = true
+snap_distance = 12
+
+[layout.telemetry]
+x = 14
+y = 10
+width = 392
+height = 52
+locked = false
+
+[layout.inputs]
+x = 14
+y = 64
+width = 240
+height = 106
+locked = false
+
+[layout.timing]
+x = 170
+y = 108
+width = 236
+height = 66
+locked = false
+
+[layout.coaching]
+x = 260
+y = 48
+width = 146
+height = 58
+locked = false
+
+[layout.performance]
+x = 14
+y = 170
+width = 392
+height = 20
+locked = false
 
 [timing]
 reference_mode = "personal_best"
@@ -498,6 +717,7 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
+        assert_eq!(config.config_version, 3);
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
@@ -505,6 +725,8 @@ mod tests {
         assert_eq!(config.performance.mode, "normal");
         assert_eq!(config.style.scale, 1.0);
         assert_eq!(config.style.line_thickness, 2);
+        assert!(config.layout.snap_to_edges);
+        assert_eq!(config.layout.inputs.width, 240);
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
     }
 
@@ -517,6 +739,7 @@ mod tests {
     #[test]
     fn normalizes_risky_values() {
         let mut config = OverlayConfig {
+            config_version: 0,
             window: WindowConfig {
                 width: 1,
                 height: 9999,
@@ -532,6 +755,15 @@ mod tests {
                 ..StyleConfig::default()
             },
             widgets: WidgetConfig::default(),
+            layout: LayoutConfig {
+                snap_distance: 99,
+                telemetry: WidgetLayout {
+                    width: 1,
+                    height: 1,
+                    ..WidgetLayout::default()
+                },
+                ..LayoutConfig::default()
+            },
             timing: TimingConfig::default(),
             hotkeys: HotkeyConfig::default(),
             performance: PerformanceConfig {
@@ -542,6 +774,7 @@ mod tests {
 
         config.normalize();
 
+        assert_eq!(config.config_version, 3);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
@@ -550,6 +783,9 @@ mod tests {
         assert_eq!(config.style.opacity, 32);
         assert_eq!(config.style.scale, 1.75);
         assert_eq!(config.style.line_thickness, 8);
+        assert_eq!(config.layout.snap_distance, 64);
+        assert_eq!(config.layout.telemetry.width, 48);
+        assert_eq!(config.layout.telemetry.height, 20);
         assert_eq!(config.timing.mini_sectors, 40);
     }
 }
