@@ -16,7 +16,7 @@ This repository is in the first milestone. It currently contains:
 - a user config opened from the app for position, size, opacity, colors, fonts, units, visible widgets and per-widget layout;
 - lap/reference logic for session best, personal best, live delta, predicted lap and mini-sectors;
 - local binary PB storage under `%APPDATA%\HashOverlay\laps`;
-- a Tauri + React + TypeScript settings app with tabs, presets, custom presets, live layout preview and visual controls;
+- a Tauri + React + TypeScript settings app with tabs, presets, custom presets, coaching controls, import/export/reset tools, live layout preview and visual controls;
 - a pure telemetry engine crate with a tested ring buffer;
 - hotkeys for show/hide and edit mode;
 - native drag/resize edit mode with persistent widget layout;
@@ -73,7 +73,7 @@ cargo test
 cargo run -p hashoverlay
 ```
 
-Pull requests run the Windows Rust CI workflow with formatting, Clippy and tests.
+Pull requests run Windows CI for Rust formatting, Clippy, tests, the Settings frontend build and the Settings Tauri shell check.
 
 ## Architecture
 

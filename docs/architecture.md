@@ -32,11 +32,11 @@ The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU an
 
 ## Renderer
 
-The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, delta, coaching and performance widgets. Window placement, widget layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visible widgets are loaded from the user config file.
+The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, lap timing, delta, sector, mini-sector, coaching and performance widgets. Window placement, widget layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visible widgets are loaded from the user config file.
 
 F9 toggles visibility by default. F10 toggles edit mode by default, which makes the overlay clickable so each unlocked widget can be selected, moved, resized and saved back to the config file.
 
-Saved config changes are hot reloaded while the overlay is running. This lets the Settings app change colors, layout, opacity and timing behavior without restarting the overlay.
+Saved config changes are hot reloaded while the overlay is running. This lets the Settings app change colors, layout, opacity, units, coaching and timing behavior without restarting the overlay.
 
 The renderer still uses GDI drawing while the Direct2D/DirectComposition backend is being refined. The module boundary keeps that swap isolated from telemetry and lap logic.
 
@@ -56,4 +56,11 @@ Public APIs should be boring and explicit. Avoid clever abstractions until there
 
 ## Settings App
 
-`settings/` contains the Tauri + React + TypeScript settings panel. It edits the same TOML config consumed by the runtime overlay and is not required while driving. Presets are stored structurally in the config so contributors can adjust Practice, Qualifying and Race defaults without touching the renderer. The app includes a live layout preview so users can position widgets without editing TOML.
+`settings/` contains the Tauri + React + TypeScript settings panel. It edits the same TOML config consumed by the runtime overlay and is not required while driving. Presets are stored structurally in the config so contributors can adjust Practice, Qualifying and Race defaults without touching the renderer. The app includes a live layout preview, widget drag/resize controls, coaching controls, import/export and config reset actions so normal use does not require hand-editing TOML.
+
+## CI
+
+Pull requests run two Windows jobs:
+
+- Rust formatting, Clippy and workspace tests.
+- Settings dependency install, npm audit, frontend build and Tauri shell check.
