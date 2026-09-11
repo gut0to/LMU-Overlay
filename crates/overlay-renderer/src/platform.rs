@@ -756,13 +756,7 @@ mod windows_overlay {
             y += scale_size(config, 18);
         }
         if let Some(message) = input_coaching_message(snapshot) {
-            draw_text(
-                hdc,
-                scale_px(config, 300),
-                y,
-                colors.reference,
-                message,
-            );
+            draw_text(hdc, scale_px(config, 300), y, colors.reference, message);
         }
     }
 
