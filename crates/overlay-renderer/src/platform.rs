@@ -828,14 +828,23 @@ mod windows_overlay {
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig) {
         let colors = colors(config);
-        let pen = CreatePen(PS_SOLID, config.style.line_thickness.max(2), colors.reference);
+        let pen = CreatePen(
+            PS_SOLID,
+            config.style.line_thickness.max(2),
+            colors.reference,
+        );
         let old_pen = SelectObject(hdc, pen);
         let right = config.window.width.saturating_sub(scale_size(config, 8));
         let bottom = config.window.height.saturating_sub(scale_size(config, 8));
         let step = scale_size(config, 5);
         for index in 0..3 {
             let inset = step * index;
-            MoveToEx(hdc, right - scale_size(config, 22) + inset, bottom, ptr::null_mut());
+            MoveToEx(
+                hdc,
+                right - scale_size(config, 22) + inset,
+                bottom,
+                ptr::null_mut(),
+            );
             LineTo(hdc, right, bottom - scale_size(config, 22) + inset);
         }
         SelectObject(hdc, old_pen);
