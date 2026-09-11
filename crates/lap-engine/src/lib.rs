@@ -210,6 +210,8 @@ pub struct LapEngine {
     previous_throttle: f64,
     current_brake_crossing: Option<f64>,
     current_throttle_crossing: Option<f64>,
+    previous_mini_sector_index: Option<u16>,
+    completed_mini_sector_delta: Option<f64>,
     current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
     session_best: Option<ReferenceLap>,
@@ -227,6 +229,8 @@ impl LapEngine {
             previous_throttle: 0.0,
             current_brake_crossing: None,
             current_throttle_crossing: None,
+            previous_mini_sector_index: None,
+            completed_mini_sector_delta: None,
             current_lap_valid: false,
             last_lap: None,
             session_best: None,
@@ -256,6 +260,7 @@ impl LapEngine {
 
         let progress = snapshot.lap_progress;
         let lap_time = snapshot.lap_time_seconds;
+        let mini_sector_index = progress.map(|progress| self.mini_sector_index(progress));
         let (
             reference_lap_seconds,
             reference_point,
@@ -299,6 +304,7 @@ impl LapEngine {
         };
 
         if sample_is_valid {
+            self.record_mini_sector_delta(mini_sector_index, delta);
             self.record_point(snapshot);
         }
 
@@ -311,8 +317,8 @@ impl LapEngine {
                 .as_ref()
                 .map(|lap| lap.total_time_seconds),
             reference_lap_seconds,
-            mini_sector_index: progress.map(|progress| self.mini_sector_index(progress)),
-            mini_sector_delta_seconds: delta,
+            mini_sector_index,
+            mini_sector_delta_seconds: self.completed_mini_sector_delta,
             brake_hint_meters,
             throttle_hint_meters,
             reference_throttle: reference_point.map(|point| point.throttle),
@@ -357,6 +363,8 @@ impl LapEngine {
         self.previous_throttle = snapshot.throttle;
         self.current_brake_crossing = None;
         self.current_throttle_crossing = None;
+        self.previous_mini_sector_index = None;
+        self.completed_mini_sector_delta = None;
         self.current_lap_valid = is_lap_sample_valid(snapshot);
     }
 
@@ -389,6 +397,21 @@ impl LapEngine {
 
         self.previous_brake = snapshot.brake;
         self.previous_throttle = snapshot.throttle;
+    }
+
+    fn record_mini_sector_delta(&mut self, index: Option<u16>, delta: Option<f64>) {
+        let Some(index) = index else {
+            return;
+        };
+
+        if self
+            .previous_mini_sector_index
+            .is_some_and(|previous| index > previous)
+        {
+            self.completed_mini_sector_delta = delta;
+        }
+
+        self.previous_mini_sector_index = Some(index);
     }
 
     fn selected_reference(&self) -> Option<&ReferenceLap> {
@@ -596,6 +619,21 @@ mod tests {
         let analysis = engine.update(snapshot(1, 0.5, 50.0, 0.0, 0.0));
 
         assert_eq!(analysis.mini_sector_index, Some(20));
+    }
+
+    #[test]
+    fn reports_last_completed_mini_sector_delta() {
+        let mut engine = LapEngine::new(LapEngineConfig {
+            mini_sectors: 40,
+            ..LapEngineConfig::default()
+        })
+        .with_personal_best(Some(reference_lap(100.0)));
+
+        let first = engine.update(snapshot(1, 0.10, 11.0, 0.0, 0.0));
+        let second = engine.update(snapshot(1, 0.25, 27.0, 0.0, 0.0));
+
+        assert_eq!(first.mini_sector_delta_seconds, None);
+        assert_eq!(second.mini_sector_delta_seconds, Some(2.0));
     }
 
     #[test]
