@@ -910,7 +910,7 @@ mod windows_overlay {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use lmu_telemetry::Gear;
+        use telemetry_engine::{GamePhase, Gear, SessionKind};
 
         #[test]
         fn formats_direct_timing_hints() {
@@ -922,20 +922,20 @@ mod windows_overlay {
 
         #[test]
         fn picks_input_coaching_message_from_reference_gap() {
-            let mut snapshot = snapshot();
-            snapshot.brake = 0.4;
-            snapshot.reference_brake = Some(0.1);
-            assert_eq!(input_coaching_message(snapshot), Some("release brake"));
+            let mut braking = snapshot();
+            braking.brake = 0.4;
+            braking.reference_brake = Some(0.1);
+            assert_eq!(input_coaching_message(braking), Some("release brake"));
 
-            let mut snapshot = snapshot();
-            snapshot.throttle = 0.4;
-            snapshot.reference_throttle = Some(0.8);
-            assert_eq!(input_coaching_message(snapshot), Some("more throttle"));
+            let mut throttle = snapshot();
+            throttle.throttle = 0.4;
+            throttle.reference_throttle = Some(0.8);
+            assert_eq!(input_coaching_message(throttle), Some("more throttle"));
 
-            let mut snapshot = snapshot();
-            snapshot.speed_kph = 180.0;
-            snapshot.reference_speed_kph = Some(200.0);
-            assert_eq!(input_coaching_message(snapshot), Some("carry speed"));
+            let mut speed = snapshot();
+            speed.speed_kph = 180.0;
+            speed.reference_speed_kph = Some(200.0);
+            assert_eq!(input_coaching_message(speed), Some("carry speed"));
         }
 
         fn snapshot() -> TelemetrySnapshot {
@@ -953,8 +953,8 @@ mod windows_overlay {
                 lap_progress: Some(0.2),
                 lap_number: 1,
                 sector: 1,
-                session_kind: lmu_telemetry::SessionKind::Practice,
-                game_phase: lmu_telemetry::GamePhase::GreenFlag,
+                session_kind: SessionKind::Practice,
+                game_phase: GamePhase::GreenFlag,
                 in_pits: false,
                 in_garage: false,
                 delta_seconds: None,
