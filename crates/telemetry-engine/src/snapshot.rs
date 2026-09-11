@@ -1,5 +1,4 @@
-use lmu_telemetry::Gear;
-use lmu_telemetry::TelemetrySample;
+use lmu_telemetry::{GamePhase, Gear, SessionKind, TelemetrySample};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TelemetrySnapshot {
@@ -16,6 +15,10 @@ pub struct TelemetrySnapshot {
     pub lap_progress: Option<f64>,
     pub lap_number: i32,
     pub sector: i32,
+    pub session_kind: SessionKind,
+    pub game_phase: GamePhase,
+    pub in_pits: bool,
+    pub in_garage: bool,
     pub delta_seconds: Option<f64>,
     pub predicted_lap_seconds: Option<f64>,
     pub session_best_seconds: Option<f64>,
@@ -48,6 +51,10 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             lap_progress: sample.lap_progress(),
             lap_number: sample.lap_number,
             sector: sample.sector,
+            session_kind: sample.metadata.session_kind,
+            game_phase: sample.metadata.game_phase,
+            in_pits: sample.metadata.in_pits,
+            in_garage: sample.metadata.in_garage,
             delta_seconds: None,
             predicted_lap_seconds: None,
             session_best_seconds: None,
@@ -84,6 +91,7 @@ mod tests {
             lap_number: 4,
             lap_start_seconds: 0.0,
             sector: 1,
+            metadata: lmu_telemetry::TelemetryMetadata::default(),
         });
 
         assert_eq!(snapshot.speed_kph, 36.0);
@@ -95,5 +103,6 @@ mod tests {
         assert_eq!(snapshot.lap_time_seconds, Some(0.0));
         assert_eq!(snapshot.lap_progress, Some(0.1));
         assert_eq!(snapshot.delta_seconds, None);
+        assert_eq!(snapshot.session_kind, SessionKind::Unknown(-1));
     }
 }

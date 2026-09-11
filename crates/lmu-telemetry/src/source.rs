@@ -1,6 +1,6 @@
 use std::{error::Error, fmt, mem::size_of};
 
-use crate::{Gear, TelemetrySample};
+use crate::{GamePhase, Gear, SessionKind, TelemetryMetadata, TelemetrySample};
 
 #[cfg(windows)]
 use std::slice;
@@ -54,15 +54,21 @@ const OFFSET_GAME_VERSION: usize = 64;
 const OFFSET_SCORING_CURRENT_ET: usize = OFFSET_SCORING_DATA + 68;
 const OFFSET_TRACK_LENGTH: usize = OFFSET_SCORING_DATA + 88;
 const OFFSET_SCORING_NUM_VEHICLES: usize = OFFSET_SCORING_DATA + 104;
+const OFFSET_SCORING_GAME_PHASE: usize = OFFSET_SCORING_DATA + 108;
 const OFFSET_TELEMETRY_ACTIVE_VEHICLES: usize = OFFSET_TELEMETRY_DATA;
 const OFFSET_TELEMETRY_PLAYER_INDEX: usize = OFFSET_TELEMETRY_DATA + 1;
 const OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE: usize = OFFSET_TELEMETRY_DATA + 2;
 const OFFSET_SCORING_VEHICLES: usize = OFFSET_SCORING_DATA + SCORING_INFO_SIZE + 12;
 const OFFSET_TELEMETRY_VEHICLES: usize = OFFSET_TELEMETRY_DATA + 4;
 
+const OFFSET_SCORING_TRACK_NAME: usize = OFFSET_SCORING_DATA;
+const OFFSET_SCORING_SESSION: usize = OFFSET_SCORING_DATA + 64;
 const OFFSET_ELAPSED_TIME: usize = 12;
+const OFFSET_TELEMETRY_SLOT_ID: usize = 0;
 const OFFSET_LAP_NUMBER: usize = 20;
 const OFFSET_LAP_START_ET: usize = 24;
+const OFFSET_TELEMETRY_VEHICLE_NAME: usize = 32;
+const OFFSET_TELEMETRY_TRACK_NAME: usize = 96;
 const OFFSET_LOCAL_VEL: usize = 184;
 const OFFSET_GEAR: usize = 352;
 const OFFSET_RPM: usize = 356;
@@ -72,7 +78,18 @@ const OFFSET_STEERING: usize = 404;
 const OFFSET_CLUTCH: usize = 412;
 const OFFSET_SECTOR: usize = 600;
 
+const OFFSET_SCORING_SLOT_ID: usize = 0;
+const OFFSET_SCORING_VEHICLE_NAME: usize = 36;
 const OFFSET_SCORING_LAP_DISTANCE: usize = 104;
+const OFFSET_SCORING_IS_PLAYER: usize = 196;
+const OFFSET_SCORING_CONTROL: usize = 197;
+const OFFSET_SCORING_IN_PITS: usize = 198;
+const OFFSET_SCORING_VEHICLE_CLASS: usize = 200;
+const OFFSET_SCORING_IN_GARAGE_STALL: usize = 507;
+
+const MAX_TORN_FRAME_RETRIES: usize = 3;
+const EXPECTED_GAME_VERSION_MIN: i32 = 1;
+const EXPECTED_GAME_VERSION_MAX: i32 = 99_999;
 
 pub struct SharedMemoryTelemetrySource {
     inner: PlatformTelemetrySource,
@@ -151,7 +168,7 @@ impl PlatformTelemetrySource {
         }
 
         let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
-        read_sample_from_bytes(bytes).map(|sample| sample.map(TelemetrySample::sanitized))
+        read_consistent_sample_from_bytes(bytes).map(|sample| sample.map(TelemetrySample::sanitized))
     }
 }
 
@@ -189,28 +206,49 @@ impl PlatformTelemetrySource {
     }
 }
 
+fn read_consistent_sample_from_bytes(
+    bytes: &[u8],
+) -> Result<Option<TelemetrySample>, TelemetryError> {
+    let mut last_error = None;
+    for _ in 0..MAX_TORN_FRAME_RETRIES {
+        match read_sample_once(bytes) {
+            Ok(sample) => return Ok(sample),
+            Err(TelemetryError::TornFrame) => last_error = Some(TelemetryError::TornFrame),
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or(TelemetryError::TornFrame))
+}
+
+#[cfg(test)]
 fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryError> {
+    read_consistent_sample_from_bytes(bytes)
+}
+
+fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryError> {
     if bytes.len() < BUFFER_SIZE {
         return Err(TelemetryError::BufferTooSmall);
     }
 
-    if read_i32(bytes, OFFSET_GAME_VERSION)? == 0 {
+    let marker_before = read_frame_marker(bytes)?;
+    if !is_supported_game_version(marker_before.game_version) {
         return Ok(None);
     }
 
-    let active_vehicles = read_u8(bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES)? as usize;
+    let active_vehicles = marker_before.active_vehicles as usize;
     let scoring_vehicles =
         read_i32(bytes, OFFSET_SCORING_NUM_VEHICLES)?.clamp(0, MAX_VEHICLES as i32) as usize;
-    let player_index = read_u8(bytes, OFFSET_TELEMETRY_PLAYER_INDEX)? as usize;
-    let player_has_vehicle = read_bool(bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE)?;
+    let player_index = marker_before.player_index as usize;
+    let player_has_vehicle = marker_before.player_has_vehicle;
 
     if !player_has_vehicle || player_index >= active_vehicles || player_index >= MAX_VEHICLES {
         return Ok(None);
     }
 
     let vehicle_offset = OFFSET_TELEMETRY_VEHICLES + player_index * VEHICLE_TELEMETRY_SIZE;
-    let scoring_offset = (player_index < scoring_vehicles)
-        .then_some(OFFSET_SCORING_VEHICLES + player_index * VEHICLE_SCORING_SIZE);
+    let player_slot_id = read_i32(bytes, vehicle_offset + OFFSET_TELEMETRY_SLOT_ID)?;
+    let scoring_offset = find_player_scoring_offset(bytes, scoring_vehicles, player_slot_id)?;
 
     let sample = TelemetrySample {
         timestamp_seconds: read_f64(bytes, OFFSET_SCORING_CURRENT_ET)
@@ -229,9 +267,108 @@ fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, Telem
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_i32(bytes, vehicle_offset + OFFSET_SECTOR)?,
+        metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
     };
 
+    ensure_same_frame(marker_before, read_frame_marker(bytes)?)?;
+
     Ok(Some(sample.sanitized()))
+}
+
+fn ensure_same_frame(before: FrameMarker, after: FrameMarker) -> Result<(), TelemetryError> {
+    if before != after {
+        return Err(TelemetryError::TornFrame);
+    }
+
+    Ok(())
+}
+
+fn find_player_scoring_offset(
+    bytes: &[u8],
+    scoring_vehicles: usize,
+    player_slot_id: i32,
+) -> Result<Option<usize>, TelemetryError> {
+    let mut player_flag_match = None;
+
+    for index in 0..scoring_vehicles.min(MAX_VEHICLES) {
+        let offset = OFFSET_SCORING_VEHICLES + index * VEHICLE_SCORING_SIZE;
+        let slot_id = read_i32(bytes, offset + OFFSET_SCORING_SLOT_ID)?;
+        if slot_id == player_slot_id {
+            return Ok(Some(offset));
+        }
+        if read_bool(bytes, offset + OFFSET_SCORING_IS_PLAYER)?
+            || read_i8(bytes, offset + OFFSET_SCORING_CONTROL)? == 0
+        {
+            player_flag_match = Some(offset);
+        }
+    }
+
+    Ok(player_flag_match)
+}
+
+fn read_metadata(
+    bytes: &[u8],
+    scoring_offset: Option<usize>,
+    vehicle_offset: usize,
+    player_slot_id: i32,
+) -> Result<TelemetryMetadata, TelemetryError> {
+    let telemetry_track = read_string(bytes, vehicle_offset + OFFSET_TELEMETRY_TRACK_NAME, 64)?;
+    let scoring_track = read_string(bytes, OFFSET_SCORING_TRACK_NAME, 64)?;
+    let track_name = scoring_track.or(telemetry_track);
+    let vehicle_name = scoring_offset
+        .map(|offset| read_string(bytes, offset + OFFSET_SCORING_VEHICLE_NAME, 64))
+        .transpose()?
+        .flatten()
+        .or(read_string(bytes, vehicle_offset + OFFSET_TELEMETRY_VEHICLE_NAME, 64)?);
+    let vehicle_class = scoring_offset
+        .map(|offset| read_string(bytes, offset + OFFSET_SCORING_VEHICLE_CLASS, 32))
+        .transpose()?
+        .flatten();
+
+    Ok(TelemetryMetadata {
+        track_name,
+        vehicle_name,
+        vehicle_class,
+        session_kind: SessionKind::from(read_i32(bytes, OFFSET_SCORING_SESSION)?),
+        game_phase: GamePhase::from(read_u8(bytes, OFFSET_SCORING_GAME_PHASE)?),
+        in_pits: scoring_offset
+            .map(|offset| read_bool(bytes, offset + OFFSET_SCORING_IN_PITS))
+            .transpose()?
+            .unwrap_or(false),
+        in_garage: scoring_offset
+            .map(|offset| read_bool(bytes, offset + OFFSET_SCORING_IN_GARAGE_STALL))
+            .transpose()?
+            .unwrap_or(false),
+        player_slot_id: scoring_offset
+            .map(|offset| read_i32(bytes, offset + OFFSET_SCORING_SLOT_ID))
+            .transpose()?
+            .unwrap_or(player_slot_id),
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FrameMarker {
+    game_version: i32,
+    session_time_bits: u64,
+    active_vehicles: u8,
+    scoring_vehicles: i32,
+    player_index: u8,
+    player_has_vehicle: bool,
+}
+
+fn read_frame_marker(bytes: &[u8]) -> Result<FrameMarker, TelemetryError> {
+    Ok(FrameMarker {
+        game_version: read_i32(bytes, OFFSET_GAME_VERSION)?,
+        session_time_bits: read_u64(bytes, OFFSET_SCORING_CURRENT_ET)?,
+        active_vehicles: read_u8(bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES)?,
+        scoring_vehicles: read_i32(bytes, OFFSET_SCORING_NUM_VEHICLES)?,
+        player_index: read_u8(bytes, OFFSET_TELEMETRY_PLAYER_INDEX)?,
+        player_has_vehicle: read_bool(bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE)?,
+    })
+}
+
+fn is_supported_game_version(version: i32) -> bool {
+    (EXPECTED_GAME_VERSION_MIN..=EXPECTED_GAME_VERSION_MAX).contains(&version)
 }
 
 fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
@@ -240,6 +377,14 @@ fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
 
 fn read_u8(bytes: &[u8], offset: usize) -> Result<u8, TelemetryError> {
     read_array::<1>(bytes, offset).map(|bytes| bytes[0])
+}
+
+fn read_i8(bytes: &[u8], offset: usize) -> Result<i8, TelemetryError> {
+    read_array::<1>(bytes, offset).map(|bytes| bytes[0] as i8)
+}
+
+fn read_u64(bytes: &[u8], offset: usize) -> Result<u64, TelemetryError> {
+    read_array::<8>(bytes, offset).map(u64::from_le_bytes)
 }
 
 fn read_bool(bytes: &[u8], offset: usize) -> Result<bool, TelemetryError> {
@@ -260,6 +405,16 @@ fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], Te
     let mut out = [0; N];
     out.copy_from_slice(slice);
     Ok(out)
+}
+
+fn read_string(bytes: &[u8], offset: usize, len: usize) -> Result<Option<String>, TelemetryError> {
+    let end = offset.checked_add(len).ok_or(TelemetryError::BufferTooSmall)?;
+    let slice = bytes
+        .get(offset..end)
+        .ok_or(TelemetryError::BufferTooSmall)?;
+    let end = slice.iter().position(|byte| *byte == 0).unwrap_or(slice.len());
+    let value = String::from_utf8_lossy(&slice[..end]).trim().to_string();
+    Ok((!value.is_empty()).then_some(value))
 }
 
 #[cfg(test)]
@@ -287,14 +442,24 @@ mod tests {
     fn reads_player_vehicle_sample() {
         let mut bytes = vec![0; BUFFER_SIZE];
         write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
+        write_string(&mut bytes, OFFSET_SCORING_TRACK_NAME, 64, "Sebring");
+        write_i32(&mut bytes, OFFSET_SCORING_SESSION, 5);
         write_f64(&mut bytes, OFFSET_SCORING_CURRENT_ET, 12.5);
         write_f64(&mut bytes, OFFSET_TRACK_LENGTH, 5_000.0);
+        write_u8(&mut bytes, OFFSET_SCORING_GAME_PHASE, 5);
         write_i32(&mut bytes, OFFSET_SCORING_NUM_VEHICLES, 2);
         write_u8(&mut bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES, 2);
         write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_INDEX, 1);
         write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE, 1);
 
         let telemetry_offset = OFFSET_TELEMETRY_VEHICLES + VEHICLE_TELEMETRY_SIZE;
+        write_i32(&mut bytes, telemetry_offset + OFFSET_TELEMETRY_SLOT_ID, 42);
+        write_string(
+            &mut bytes,
+            telemetry_offset + OFFSET_TELEMETRY_VEHICLE_NAME,
+            64,
+            "Porsche 963",
+        );
         write_i32(&mut bytes, telemetry_offset + OFFSET_LAP_NUMBER, 3);
         write_f64(&mut bytes, telemetry_offset + OFFSET_LAP_START_ET, 8.0);
         write_f64(&mut bytes, telemetry_offset + OFFSET_LOCAL_VEL + 8, 72.0);
@@ -306,7 +471,22 @@ mod tests {
         write_f64(&mut bytes, telemetry_offset + OFFSET_CLUTCH, 0.0);
         write_i32(&mut bytes, telemetry_offset + OFFSET_SECTOR, 1);
 
-        let scoring_offset = OFFSET_SCORING_VEHICLES + VEHICLE_SCORING_SIZE;
+        let scoring_offset = OFFSET_SCORING_VEHICLES;
+        write_i32(&mut bytes, scoring_offset + OFFSET_SCORING_SLOT_ID, 42);
+        write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_IS_PLAYER, 1);
+        write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_IN_PITS, 1);
+        write_string(
+            &mut bytes,
+            scoring_offset + OFFSET_SCORING_VEHICLE_NAME,
+            64,
+            "Porsche 963 Scoring",
+        );
+        write_string(
+            &mut bytes,
+            scoring_offset + OFFSET_SCORING_VEHICLE_CLASS,
+            32,
+            "Hypercar",
+        );
         write_f64(
             &mut bytes,
             scoring_offset + OFFSET_SCORING_LAP_DISTANCE,
@@ -322,6 +502,46 @@ mod tests {
         assert_eq!(sample.track_length_m, Some(5_000.0));
         assert_eq!(sample.lap_progress(), Some(0.25));
         assert_eq!(sample.sector, 1);
+        assert_eq!(sample.metadata.track_name.as_deref(), Some("Sebring"));
+        assert_eq!(
+            sample.metadata.vehicle_name.as_deref(),
+            Some("Porsche 963 Scoring")
+        );
+        assert_eq!(sample.metadata.vehicle_class.as_deref(), Some("Hypercar"));
+        assert_eq!(sample.metadata.session_kind, SessionKind::Qualifying);
+        assert_eq!(sample.metadata.game_phase, GamePhase::GreenFlag);
+        assert!(sample.metadata.in_pits);
+        assert!(!sample.metadata.in_garage);
+        assert_eq!(sample.metadata.player_slot_id, 42);
+    }
+
+    #[test]
+    fn ignores_unsupported_game_version() {
+        let mut bytes = vec![0; BUFFER_SIZE];
+        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1_000_000);
+
+        assert_eq!(read_sample_from_bytes(&bytes).unwrap(), None);
+    }
+
+    #[test]
+    fn detects_torn_frame_markers() {
+        let before = FrameMarker {
+            game_version: 1,
+            session_time_bits: 10.0f64.to_bits(),
+            active_vehicles: 1,
+            scoring_vehicles: 1,
+            player_index: 0,
+            player_has_vehicle: true,
+        };
+        let after = FrameMarker {
+            session_time_bits: 10.1f64.to_bits(),
+            ..before
+        };
+
+        assert!(matches!(
+            ensure_same_frame(before, after),
+            Err(TelemetryError::TornFrame)
+        ));
     }
 
     fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
@@ -334,5 +554,13 @@ mod tests {
 
     fn write_f64(bytes: &mut [u8], offset: usize, value: f64) {
         bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_string(bytes: &mut [u8], offset: usize, len: usize, value: &str) {
+        let target = &mut bytes[offset..offset + len];
+        target.fill(0);
+        let value = value.as_bytes();
+        let len = value.len().min(target.len().saturating_sub(1));
+        target[..len].copy_from_slice(&value[..len]);
     }
 }
