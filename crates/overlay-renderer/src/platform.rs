@@ -53,8 +53,8 @@ mod windows_overlay {
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
-            InvalidateRect, LineTo, MoveToEx, Rectangle, SelectObject, SetBkMode, SetTextColor,
-            TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+            InvalidateRect, LineTo, MoveToEx, Rectangle, ScreenToClient, SelectObject, SetBkMode,
+            SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -62,11 +62,11 @@ mod windows_overlay {
             Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
-                RegisterClassW, ScreenToClient, SetLayeredWindowAttributes, ShowWindow,
-                TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM,
-                HTBOTTOMRIGHT, HTCAPTION, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_NCHITTEST, WM_PAINT,
-                WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+                RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
+                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
+                HTCAPTION, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG, SWP_NOACTIVATE,
+                SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_NCHITTEST, WM_PAINT, WNDCLASSW,
+                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
                 WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
