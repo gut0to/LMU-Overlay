@@ -50,11 +50,11 @@ mod windows_overlay {
 
     use telemetry_engine::{RingBuffer, TelemetrySnapshot};
     use windows_sys::Win32::{
-        Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
+        Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
-            InvalidateRect, LineTo, MoveToEx, Rectangle, SelectObject, SetBkMode, SetTextColor,
-            TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+            InvalidateRect, LineTo, MoveToEx, Rectangle, ScreenToClient, SelectObject, SetBkMode,
+            SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -63,10 +63,11 @@ mod windows_overlay {
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
                 RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
-                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HWND_TOPMOST, LWA_ALPHA,
-                LWA_COLORKEY, MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY,
-                WM_PAINT, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
+                HTCAPTION, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG, SWP_NOACTIVATE,
+                SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_NCHITTEST, WM_PAINT, WNDCLASSW,
+                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+                WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -80,6 +81,7 @@ mod windows_overlay {
     const COLOR_KEY: u32 = 0x000000;
     const HOTKEY_TOGGLE_OVERLAY: i32 = 1;
     const HOTKEY_EDIT_MODE: i32 = 2;
+    const EDIT_HIT_MARGIN: i32 = 16;
 
     #[derive(Clone, Copy)]
     struct Area {
@@ -316,6 +318,8 @@ mod windows_overlay {
                 handle_hotkey(hwnd, wparam as i32);
                 0
             }
+            WM_NCHITTEST => edit_mode_hit_test(hwnd, lparam)
+                .unwrap_or_else(|| DefWindowProcW(hwnd, message, wparam, lparam)),
             WM_DESTROY => {
                 UnregisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY);
                 UnregisterHotKey(hwnd, HOTKEY_EDIT_MODE);
@@ -423,6 +427,10 @@ mod windows_overlay {
 
         if state.config.widgets.performance_monitor {
             draw_performance_monitor(hdc, state);
+        }
+
+        if state.edit_mode.load(Ordering::Relaxed) {
+            draw_edit_handles(hdc, state.config.as_ref());
         }
 
         EndPaint(hwnd, &paint);
@@ -780,6 +788,67 @@ mod windows_overlay {
                 ),
             );
         }
+    }
+
+    unsafe fn edit_mode_hit_test(hwnd: HWND, lparam: LPARAM) -> Option<LRESULT> {
+        let state = shared_state(hwnd)?;
+        if !state.edit_mode.load(Ordering::Relaxed) {
+            return None;
+        }
+
+        let mut point = POINT {
+            x: loword_signed(lparam),
+            y: hiword_signed(lparam),
+        };
+        ScreenToClient(hwnd, &mut point);
+
+        let mut rect: RECT = zeroed();
+        GetClientRect(hwnd, &mut rect);
+        let near_right = point.x >= rect.right.saturating_sub(EDIT_HIT_MARGIN);
+        let near_bottom = point.y >= rect.bottom.saturating_sub(EDIT_HIT_MARGIN);
+
+        if near_right && near_bottom {
+            Some(HTBOTTOMRIGHT as LRESULT)
+        } else if near_right {
+            Some(HTRIGHT as LRESULT)
+        } else if near_bottom {
+            Some(HTBOTTOM as LRESULT)
+        } else {
+            Some(HTCAPTION as LRESULT)
+        }
+    }
+
+    fn loword_signed(value: LPARAM) -> i32 {
+        (value as u32 & 0xffff) as i16 as i32
+    }
+
+    fn hiword_signed(value: LPARAM) -> i32 {
+        ((value as u32 >> 16) & 0xffff) as i16 as i32
+    }
+
+    unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig) {
+        let colors = colors(config);
+        let pen = CreatePen(
+            PS_SOLID,
+            config.style.line_thickness.max(2),
+            colors.reference,
+        );
+        let old_pen = SelectObject(hdc, pen);
+        let right = config.window.width.saturating_sub(scale_size(config, 8));
+        let bottom = config.window.height.saturating_sub(scale_size(config, 8));
+        let step = scale_size(config, 5);
+        for index in 0..3 {
+            let inset = step * index;
+            MoveToEx(
+                hdc,
+                right - scale_size(config, 22) + inset,
+                bottom,
+                ptr::null_mut(),
+            );
+            LineTo(hdc, right, bottom - scale_size(config, 22) + inset);
+        }
+        SelectObject(hdc, old_pen);
+        DeleteObject(pen);
     }
 
     unsafe fn draw_series(

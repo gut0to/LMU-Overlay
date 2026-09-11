@@ -152,7 +152,8 @@ The current overlay includes:
 - brake/throttle timing hints against the reference lap;
 - coaching cues for releasing brake, adding throttle and carrying more speed.
 - F9 show/hide by default;
-- F10 edit mode by default.
+- F10 edit mode by default;
+- drag-to-move and edge/corner resize while edit mode is enabled.
 
 ## 9. Reference Laps And PB Storage
 
@@ -179,4 +180,3 @@ If the app says the telemetry buffer is not available:
 ## 11. Current Limitations
 
 - Configuration changes are loaded when the overlay starts.
-- Edit mode currently makes the overlay clickable; persistent drag/resize handles are the next native renderer refinement.
