@@ -96,11 +96,33 @@ h1 {
   border-color: #f35b4c;
 }
 
+.primaryButton.wide {
+  justify-content: center;
+  width: 100%;
+}
+
 .presetBar {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 18px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+}
+
+.tabs button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid #3a4149;
+  border-radius: 6px;
+  background: #1c2025;
+  color: #d8dde2;
 }
 
 .presetBar button,
@@ -109,6 +131,7 @@ h1 {
 }
 
 .presetBar .selected,
+.tabs .selected,
 .segmented .selected {
   border-color: #f2bc57;
   background: #3b2d18;
@@ -273,6 +296,39 @@ h1 {
   height: 30px;
   padding: 0;
   border-radius: 6px;
+}
+
+.presetList {
+  display: grid;
+  gap: 8px;
+}
+
+.presetItem {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto 38px 38px;
+  gap: 8px;
+}
+
+.presetItem input,
+.presetItem button {
+  min-height: 34px;
+  border: 1px solid #3a4149;
+  border-radius: 6px;
+  background: #101214;
+  color: #f7f2e8;
+}
+
+.presetItem input {
+  min-width: 0;
+  padding: 6px 8px;
+}
+
+.hotkeyButton {
+  min-height: 34px;
+  border: 1px solid #3a4149;
+  border-radius: 6px;
+  background: #101214;
+  color: #f7f2e8;
 }
 
 .status {

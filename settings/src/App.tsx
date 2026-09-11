@@ -6,10 +6,12 @@ import {
   Lock,
   Magnet,
   Paintbrush,
+  Plus,
   RotateCcw,
   Save,
   SlidersHorizontal,
   Timer,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -100,6 +102,12 @@ type PresetConfig = {
   practice: PresetProfileConfig;
   qualifying: PresetProfileConfig;
   race: PresetProfileConfig;
+  custom: CustomPresetConfig[];
+};
+
+type CustomPresetConfig = {
+  name: string;
+  profile: PresetProfileConfig;
 };
 
 type OverlayConfig = {
@@ -126,6 +134,9 @@ type SectionProps = {
 };
 
 const presetNames = ["practice", "qualifying", "race"] as const;
+type StandardPresetKey = (typeof presetNames)[number];
+const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
+type Page = (typeof pages)[number];
 const performanceModes = [
   ["eco", "Eco"],
   ["normal", "Normal"],
@@ -180,6 +191,7 @@ function App() {
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [selectedLayout, setSelectedLayout] = useState<LayoutWidgetKey>("telemetry");
+  const [activePage, setActivePage] = useState<Page>("Dashboard");
 
   useEffect(() => {
     void loadConfig();
@@ -213,7 +225,7 @@ function App() {
     }
   }
 
-  function applyPreset(name: keyof PresetConfig) {
+  function applyPreset(name: StandardPresetKey) {
     setConfig((current) => {
       if (!current) {
         return current;
@@ -286,21 +298,34 @@ function App() {
         ))}
       </section>
 
-      <div className="grid">
-        <Section icon={<Activity />} title="Live Preview">
-          <OverlayPreview config={config} selected={selectedLayout} onSelect={setSelectedLayout} />
-        </Section>
+      <nav className="tabs">
+        {pages.map((page) => (
+          <button key={page} className={activePage === page ? "selected" : ""} onClick={() => setActivePage(page)}>
+            {page}
+          </button>
+        ))}
+      </nav>
 
-        <Section icon={<LayoutGrid />} title="Layout">
+      <div className="grid">
+        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Activity />} title="Live Preview">
+          <OverlayPreview
+            config={config}
+            selected={selectedLayout}
+            onSelect={setSelectedLayout}
+            onLayoutChange={(widget, layout) => setConfig({ ...config, layout: { ...config.layout, [widget]: layout } })}
+          />
+        </Section>}
+
+        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<LayoutGrid />} title="Window">
           <NumberField label="X" value={config.window.x} onChange={(value) => setWindow(config, setConfig, "x", value)} />
           <NumberField label="Y" value={config.window.y} onChange={(value) => setWindow(config, setConfig, "y", value)} />
           <NumberField label="Width" value={config.window.width} onChange={(value) => setWindow(config, setConfig, "width", value)} />
           <NumberField label="Height" value={config.window.height} onChange={(value) => setWindow(config, setConfig, "height", value)} />
           <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
           <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
-        </Section>
+        </Section>}
 
-        <Section icon={<Magnet />} title="Widget Layout">
+        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Magnet />} title="Widget Layout">
           <div className="segmented">
             {layoutLabels.map(([key, label]) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
@@ -329,24 +354,24 @@ function App() {
             layout={config.layout[selectedLayout]}
             onChange={(key, value) => setWidgetLayout(config, setConfig, selectedLayout, key, value)}
           />
-        </Section>
+        </Section>}
 
-        <Section icon={<Gauge />} title="Performance">
+        {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
           <NumberField label="Render FPS" value={config.window.refresh_hz} onChange={(value) => setWindow(config, setConfig, "refresh_hz", value)} />
           <NumberField label="Sample ms" value={config.window.sample_ms} onChange={(value) => setWindow(config, setConfig, "sample_ms", value)} />
           <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setWindow(config, setConfig, "history_samples", value)} />
           <RangeField label="Line thickness" min={1} max={8} step={1} value={config.style.line_thickness} onChange={(value) => setStyle(config, setConfig, "line_thickness", value)} />
-        </Section>
+        </Section>}
 
-        <Section icon={<Timer />} title="Timing">
+        {showPanel(activePage, "Dashboard", "Timing") && <Section icon={<Timer />} title="Timing">
           <Segmented value={config.timing.reference_mode} options={referenceModes} onChange={(value) => setTiming(config, setConfig, "reference_mode", value)} />
           <NumberField label="Mini sectors" value={config.timing.mini_sectors} onChange={(value) => setTiming(config, setConfig, "mini_sectors", value)} />
           <RangeField label="Brake threshold" min={0.01} max={1} step={0.01} value={config.timing.brake_threshold} onChange={(value) => setTiming(config, setConfig, "brake_threshold", value)} />
           <RangeField label="Throttle threshold" min={0.01} max={1} step={0.01} value={config.timing.throttle_threshold} onChange={(value) => setTiming(config, setConfig, "throttle_threshold", value)} />
-        </Section>
+        </Section>}
 
-        <Section icon={<SlidersHorizontal />} title="Widgets">
+        {showPanel(activePage, "Dashboard", "Widgets") && <Section icon={<SlidersHorizontal />} title="Widgets">
           <div className="toggles">
             {widgetLabels.map(([key, label]) => (
               <label className="toggle" key={key}>
@@ -359,9 +384,9 @@ function App() {
               </label>
             ))}
           </div>
-        </Section>
+        </Section>}
 
-        <Section icon={<Paintbrush />} title="Colors">
+        {showPanel(activePage, "Dashboard", "Appearance") && <Section icon={<Paintbrush />} title="Colors">
           <div className="swatches">
             {colorLabels.map(([key, label]) => (
               <label className="swatch" key={key}>
@@ -374,12 +399,38 @@ function App() {
               </label>
             ))}
           </div>
-        </Section>
+        </Section>}
 
-        <Section icon={<Activity />} title="Hotkeys">
-          <TextField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
-          <TextField label="Edit mode" value={config.hotkeys.edit_mode} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
-        </Section>
+        {showPanel(activePage, "Dashboard", "Hotkeys") && <Section icon={<Activity />} title="Hotkeys">
+          <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
+          <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
+        </Section>}
+
+        {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
+          <button className="primaryButton wide" onClick={() => setConfig(addCustomPreset(config))}>
+            <Plus size={18} />
+            New from current
+          </button>
+          <div className="presetList">
+            {config.presets.custom.map((preset, index) => (
+              <div className="presetItem" key={`${preset.name}-${index}`}>
+                <input
+                  value={preset.name}
+                  onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
+                />
+                <button title="Apply preset" onClick={() => setConfig(applyCustomPreset(config, index))}>
+                  Apply
+                </button>
+                <button title="Save current into preset" onClick={() => setConfig(saveCurrentIntoCustomPreset(config, index))}>
+                  <Save size={16} />
+                </button>
+                <button title="Delete preset" onClick={() => setConfig(deleteCustomPreset(config, index))}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </Section>}
       </div>
 
       <footer className="status">{status}</footer>
@@ -387,18 +438,53 @@ function App() {
   );
 }
 
+function showPanel(active: Page, primary: Page, secondary: Page) {
+  return active === "Dashboard" || active === primary || active === secondary;
+}
+
 function OverlayPreview(props: {
   config: OverlayConfig;
   selected: LayoutWidgetKey;
   onSelect: (value: LayoutWidgetKey) => void;
+  onLayoutChange: (widget: LayoutWidgetKey, layout: WidgetLayout) => void;
 }) {
+  const [drag, setDrag] = useState<{
+    widget: LayoutWidgetKey;
+    startX: number;
+    startY: number;
+    layout: WidgetLayout;
+    resize: boolean;
+  } | null>(null);
   const scale = Math.min(1, 320 / props.config.window.width);
   const previewWidth = props.config.window.width * scale;
   const previewHeight = props.config.window.height * scale;
+
+  function moveWidget(clientX: number, clientY: number) {
+    if (!drag) {
+      return;
+    }
+    const deltaX = (clientX - drag.startX) / scale;
+    const deltaY = (clientY - drag.startY) / scale;
+    const next = drag.resize
+      ? {
+          ...drag.layout,
+          width: clamp(Math.round(drag.layout.width + deltaX), 48, props.config.window.width),
+          height: clamp(Math.round(drag.layout.height + deltaY), 20, props.config.window.height),
+        }
+      : {
+          ...drag.layout,
+          x: Math.round(drag.layout.x + deltaX),
+          y: Math.round(drag.layout.y + deltaY),
+        };
+    props.onLayoutChange(drag.widget, next);
+  }
+
   return (
     <div className="previewWrap">
       <div
         className="preview"
+        onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
+        onPointerUp={() => setDrag(null)}
         style={{
           width: previewWidth,
           height: previewHeight,
@@ -421,6 +507,23 @@ function OverlayPreview(props: {
                 borderColor: props.config.style.border,
               }}
               onClick={() => props.onSelect(key)}
+              onPointerDown={(event) => {
+                props.onSelect(key);
+                if (props.config.layout.lock_all || layout.locked) {
+                  return;
+                }
+                const resize =
+                  event.nativeEvent.offsetX >= layout.width * scale - 14 &&
+                  event.nativeEvent.offsetY >= layout.height * scale - 14;
+                setDrag({
+                  widget: key,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  layout,
+                  resize,
+                });
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
               title={label}
             >
               <span>{label}</span>
@@ -430,6 +533,10 @@ function OverlayPreview(props: {
       </div>
     </div>
   );
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function Section({ icon, title, children }: SectionProps) {
@@ -482,15 +589,6 @@ function RangeField(props: { label: string; min: number; max: number; step: numb
   );
 }
 
-function TextField(props: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <label className="field">
-      <span>{props.label}</span>
-      <input value={props.value} onChange={(event) => props.onChange(event.target.value.toUpperCase())} />
-    </label>
-  );
-}
-
 function Segmented(props: { value: string; options: string[][]; onChange: (value: string) => void }) {
   return (
     <div className="segmented">
@@ -517,6 +615,37 @@ function setTiming<K extends keyof TimingConfig>(config: OverlayConfig, setConfi
 
 function setWidget(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof WidgetConfig, value: boolean) {
   setConfig({ ...config, widgets: { ...config.widgets, [key]: value } });
+}
+
+function HotkeyField(props: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="field">
+      <span>{props.label}</span>
+      <button
+        className="hotkeyButton"
+        onKeyDown={(event) => {
+          event.preventDefault();
+          const parts = [];
+          if (event.ctrlKey) {
+            parts.push("Ctrl");
+          }
+          if (event.shiftKey) {
+            parts.push("Shift");
+          }
+          if (event.altKey) {
+            parts.push("Alt");
+          }
+          const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+          if (!["Control", "Shift", "Alt"].includes(key)) {
+            parts.push(key.toUpperCase());
+            props.onChange(parts.join("+"));
+          }
+        }}
+      >
+        {props.value || "Press a key"}
+      </button>
+    </label>
+  );
 }
 
 function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs" | "timing" | "coaching" | "performance">>(
@@ -553,8 +682,84 @@ function setPerformance(config: OverlayConfig, setConfig: React.Dispatch<React.S
   setConfig({ ...config, performance: { mode } });
 }
 
+function addCustomPreset(config: OverlayConfig): OverlayConfig {
+  const nextPreset: CustomPresetConfig = {
+    name: `Custom ${config.presets.custom.length + 1}`,
+    profile: currentProfile(config),
+  };
+  return {
+    ...config,
+    presets: {
+      ...config.presets,
+      custom: [...config.presets.custom, nextPreset].slice(0, 32),
+    },
+  };
+}
+
+function renameCustomPreset(config: OverlayConfig, index: number, name: string): OverlayConfig {
+  return updateCustomPreset(config, index, (preset) => ({ ...preset, name }));
+}
+
+function saveCurrentIntoCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
+  return updateCustomPreset(config, index, (preset) => ({ ...preset, profile: currentProfile(config) }));
+}
+
+function deleteCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
+  return {
+    ...config,
+    presets: {
+      ...config.presets,
+      custom: config.presets.custom.filter((_, presetIndex) => presetIndex !== index),
+    },
+  };
+}
+
+function applyCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
+  const preset = config.presets.custom[index];
+  if (!preset) {
+    return config;
+  }
+  return applyProfile(config, preset.profile);
+}
+
+function updateCustomPreset(
+  config: OverlayConfig,
+  index: number,
+  update: (preset: CustomPresetConfig) => CustomPresetConfig,
+): OverlayConfig {
+  return {
+    ...config,
+    presets: {
+      ...config.presets,
+      custom: config.presets.custom.map((preset, presetIndex) => (presetIndex === index ? update(preset) : preset)),
+    },
+  };
+}
+
 function pickWidgets(profile: PresetProfileConfig): WidgetConfig {
   return Object.fromEntries(widgetLabels.map(([key]) => [key, profile[key]])) as WidgetConfig;
+}
+
+function currentProfile(config: OverlayConfig): PresetProfileConfig {
+  return {
+    performance_mode: config.performance.mode,
+    reference_mode: config.timing.reference_mode,
+    mini_sectors: config.timing.mini_sectors,
+    ...config.widgets,
+  };
+}
+
+function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): OverlayConfig {
+  return {
+    ...config,
+    performance: { mode: profile.performance_mode },
+    timing: {
+      ...config.timing,
+      reference_mode: profile.reference_mode,
+      mini_sectors: profile.mini_sectors,
+    },
+    widgets: pickWidgets(profile),
+  };
 }
 
 function titleCase(value: string) {

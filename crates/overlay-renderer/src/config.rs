@@ -394,6 +394,7 @@ pub struct PresetConfig {
     pub practice: PresetProfileConfig,
     pub qualifying: PresetProfileConfig,
     pub race: PresetProfileConfig,
+    pub custom: Vec<CustomPresetConfig>,
 }
 
 impl PresetConfig {
@@ -401,6 +402,10 @@ impl PresetConfig {
         self.practice.normalize();
         self.qualifying.normalize();
         self.race.normalize();
+        self.custom.truncate(32);
+        for preset in &mut self.custom {
+            preset.profile.normalize();
+        }
     }
 }
 
@@ -410,6 +415,23 @@ impl Default for PresetConfig {
             practice: PresetProfileConfig::practice(),
             qualifying: PresetProfileConfig::qualifying(),
             race: PresetProfileConfig::race(),
+            custom: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CustomPresetConfig {
+    pub name: String,
+    pub profile: PresetProfileConfig,
+}
+
+impl Default for CustomPresetConfig {
+    fn default() -> Self {
+        Self {
+            name: "Custom preset".to_string(),
+            profile: PresetProfileConfig::default(),
         }
     }
 }
@@ -646,6 +668,9 @@ edit_mode = "F10"
 # custom = keep refresh_hz and sample_ms from [window]
 mode = "normal"
 
+[presets]
+custom = []
+
 [presets.practice]
 performance_mode = "normal"
 reference_mode = "last_lap"
@@ -727,6 +752,7 @@ mod tests {
         assert_eq!(config.style.line_thickness, 2);
         assert!(config.layout.snap_to_edges);
         assert_eq!(config.layout.inputs.width, 240);
+        assert!(config.presets.custom.is_empty());
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
     }
 

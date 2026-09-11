@@ -61,7 +61,9 @@ mod windows_overlay {
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::SetProcessDpiAwarenessContext,
-            Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey},
+            Input::KeyboardAndMouse::{
+                RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
+            },
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
                 RegisterClassW, ReleaseCapture, SetCapture, SetLayeredWindowAttributes, ShowWindow,
@@ -426,8 +428,8 @@ mod windows_overlay {
             let width = config.window.width;
             let height = config.window.height;
             let opacity = config.style.opacity;
-            let toggle_hotkey = virtual_key(&config.hotkeys.toggle_overlay);
-            let edit_hotkey = virtual_key(&config.hotkeys.edit_mode);
+            let toggle_hotkey = hotkey(&config.hotkeys.toggle_overlay);
+            let edit_hotkey = hotkey(&config.hotkeys.edit_mode);
             let state_ptr = Box::into_raw(Box::new(state));
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED
@@ -464,11 +466,15 @@ mod windows_overlay {
                 SWP_NOACTIVATE,
             );
             ShowWindow(hwnd, SW_SHOW);
-            if let Some(key) = toggle_hotkey {
-                RegisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY, 0, key);
+            if let Some((modifiers, key)) = toggle_hotkey {
+                if RegisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY, modifiers, key) == 0 {
+                    log::warn!("Hotkey already in use: {}", config.hotkeys.toggle_overlay);
+                }
             }
-            if let Some(key) = edit_hotkey {
-                RegisterHotKey(hwnd, HOTKEY_EDIT_MODE, 0, key);
+            if let Some((modifiers, key)) = edit_hotkey {
+                if RegisterHotKey(hwnd, HOTKEY_EDIT_MODE, modifiers, key) == 0 {
+                    log::warn!("Hotkey already in use: {}", config.hotkeys.edit_mode);
+                }
             }
 
             Ok(hwnd)
@@ -1490,6 +1496,20 @@ mod windows_overlay {
         scale_px(config, value).max(1)
     }
 
+    fn hotkey(value: &str) -> Option<(u32, u32)> {
+        let mut modifiers = 0;
+        let mut key = None;
+        for part in value.split('+').map(|part| part.trim().to_ascii_uppercase()) {
+            match part.as_str() {
+                "CTRL" | "CONTROL" => modifiers |= MOD_CONTROL,
+                "SHIFT" => modifiers |= MOD_SHIFT,
+                "ALT" => modifiers |= MOD_ALT,
+                _ => key = virtual_key(&part),
+            }
+        }
+        key.map(|key| (modifiers, key))
+    }
+
     fn virtual_key(value: &str) -> Option<u32> {
         let key = value.trim().to_ascii_uppercase();
         match key.as_str() {
@@ -1520,6 +1540,13 @@ mod windows_overlay {
             assert_eq!(brake_timing_hint(-12.0), "earlier -12m");
             assert_eq!(throttle_timing_hint(15.0), "later +15m");
             assert_eq!(throttle_timing_hint(-8.0), "earlier -8m");
+        }
+
+        #[test]
+        fn parses_hotkey_modifiers() {
+            assert_eq!(hotkey("Ctrl+Shift+F9"), Some((MOD_CONTROL | MOD_SHIFT, 0x78)));
+            assert_eq!(hotkey("Alt+F10"), Some((MOD_ALT, 0x79)));
+            assert_eq!(hotkey("Nope"), None);
         }
 
         #[test]
