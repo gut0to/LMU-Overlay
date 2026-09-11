@@ -147,6 +147,7 @@ The current overlay includes:
 - throttle and brake history graphs.
 - live delta once a reference lap exists;
 - predicted lap, personal best, session best and mini-sector indicator;
+- mini-sector delta based on the last completed mini-sector crossing;
 - ghost input markers for throttle/brake when a reference lap exists;
 - brake/throttle timing hints against the reference lap.
 - F9 show/hide by default;

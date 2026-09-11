@@ -80,6 +80,7 @@ const OFFSET_SECTOR: usize = 600;
 
 const OFFSET_SCORING_SLOT_ID: usize = 0;
 const OFFSET_SCORING_VEHICLE_NAME: usize = 36;
+const OFFSET_SCORING_SECTOR: usize = 102;
 const OFFSET_SCORING_LAP_DISTANCE: usize = 104;
 const OFFSET_SCORING_IS_PLAYER: usize = 196;
 const OFFSET_SCORING_CONTROL: usize = 197;
@@ -267,7 +268,7 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         track_length_m: Some(read_f64(bytes, OFFSET_TRACK_LENGTH)?),
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
-        sector: read_i32(bytes, vehicle_offset + OFFSET_SECTOR)?,
+        sector: read_sector(bytes, scoring_offset, vehicle_offset)?,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
     };
 
@@ -349,6 +350,18 @@ fn read_metadata(
             .transpose()?
             .unwrap_or(player_slot_id),
     })
+}
+
+fn read_sector(
+    bytes: &[u8],
+    scoring_offset: Option<usize>,
+    vehicle_offset: usize,
+) -> Result<i32, TelemetryError> {
+    if let Some(offset) = scoring_offset {
+        return Ok(i32::from(read_i8(bytes, offset + OFFSET_SCORING_SECTOR)?));
+    }
+
+    read_i32(bytes, vehicle_offset + OFFSET_SECTOR)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -483,6 +496,7 @@ mod tests {
 
         let scoring_offset = OFFSET_SCORING_VEHICLES;
         write_i32(&mut bytes, scoring_offset + OFFSET_SCORING_SLOT_ID, 42);
+        write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_SECTOR, 2);
         write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_IS_PLAYER, 1);
         write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_IN_PITS, 1);
         write_string(
@@ -511,7 +525,7 @@ mod tests {
         assert_eq!(sample.lap_distance_m, Some(1_250.0));
         assert_eq!(sample.track_length_m, Some(5_000.0));
         assert_eq!(sample.lap_progress(), Some(0.25));
-        assert_eq!(sample.sector, 1);
+        assert_eq!(sample.sector, 2);
         assert_eq!(sample.metadata.track_name.as_deref(), Some("Sebring"));
         assert_eq!(
             sample.metadata.vehicle_name.as_deref(),
