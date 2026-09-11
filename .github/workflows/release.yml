@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows Release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: settings/package-lock.json
+
+      - name: Build overlay CLI
+        run: cargo build --workspace --release
+
+      - name: Install settings dependencies
+        run: npm ci
+        working-directory: settings
+
+      - name: Build settings app
+        run: npm run tauri build
+        working-directory: settings
+
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist\HashOverlay | Out-Null
+          Copy-Item target\release\hashoverlay.exe dist\HashOverlay\
+          Copy-Item README.md dist\HashOverlay\
+          Copy-Item LICENSE dist\HashOverlay\
+          Copy-Item docs\usage.md dist\HashOverlay\USAGE.md
+          Copy-Item settings\src-tauri\target\release\bundle -Destination dist\HashOverlay\settings-bundle -Recurse
+          Compress-Archive -Path dist\HashOverlay\* -DestinationPath dist\HashOverlay-windows.zip -Force
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: HashOverlay-windows
+          path: dist/HashOverlay-windows.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/HashOverlay-windows.zip

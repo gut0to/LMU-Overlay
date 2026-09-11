@@ -50,7 +50,22 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-## 5. Run One Telemetry Read
+## 5. Build A Release Package
+
+Maintainers can publish a Windows release by pushing a semantic version tag:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+GitHub Actions builds the release ZIP with:
+
+- `hashoverlay.exe`;
+- README, license and usage guide;
+- the Settings app bundle.
+
+## 6. Run One Telemetry Read
 
 Start Le Mans Ultimate and enable plugins in the game settings:
 
@@ -71,7 +86,7 @@ Expected behavior:
 - If telemetry is available, the app prints speed, gear, throttle, brake, RPM, lap and sector.
 - If telemetry is not available, the app exits cleanly with a warning.
 
-## 6. Run Continuous Logging
+## 7. Run Continuous Logging
 
 ```powershell
 cargo run -p hashoverlay
@@ -91,7 +106,7 @@ To change the CLI logging interval:
 cargo run -p hashoverlay -- --interval-ms 50
 ```
 
-## 7. Configure The Overlay
+## 8. Configure The Overlay
 
 For the full settings app:
 
@@ -125,7 +140,7 @@ This creates and opens:
 
 You can edit the same settings in TOML. Save the file, then start the overlay.
 
-## 8. Run The Overlay
+## 9. Run The Overlay
 
 Start LMU, enter a session, and run:
 
@@ -155,7 +170,7 @@ The current overlay includes:
 - F10 edit mode by default;
 - drag-to-move and edge/corner resize while edit mode is enabled.
 
-## 9. Reference Laps And PB Storage
+## 10. Reference Laps And PB Storage
 
 HashOverlay stores personal-best reference laps under:
 
@@ -167,7 +182,7 @@ Reference laps are keyed by LMU telemetry metadata, using track, vehicle and cla
 
 Only clean green-flag samples outside the pits and garage are eligible for session-best and personal-best references. Pit/garage/out-of-session samples can still be shown by the overlay, but they do not overwrite your reference laps.
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 If PowerShell says `cargo` is not recognized, Rust is not installed or the terminal was opened before Rust updated the PATH.
 
@@ -177,6 +192,6 @@ If the app says the telemetry buffer is not available:
 - confirm `Enable Plugins` is turned on in LMU's gameplay settings;
 - run the terminal as the same Windows user that is running the game.
 
-## 11. Current Limitations
+## 12. Current Limitations
 
 - Configuration changes are loaded when the overlay starts.
