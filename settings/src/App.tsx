@@ -39,7 +39,16 @@ type StyleConfig = {
   steering: string;
   delta_gain: string;
   delta_loss: string;
+  delta_neutral: string;
   reference: string;
+  rpm: string;
+  coaching_warning: string;
+  coaching_positive: string;
+  font_family: string;
+  font_size: number;
+  font_weight: number;
+  large_number_size: number;
+  theme: string;
 };
 
 type WidgetConfig = {
@@ -75,6 +84,10 @@ type LayoutConfig = {
 };
 
 type LayoutWidgetKey = "telemetry" | "inputs" | "timing" | "coaching" | "performance";
+
+type UnitsConfig = {
+  speed: string;
+};
 
 type TimingConfig = {
   reference_mode: string;
@@ -116,6 +129,7 @@ type OverlayConfig = {
   style: StyleConfig;
   widgets: WidgetConfig;
   layout: LayoutConfig;
+  units: UnitsConfig;
   timing: TimingConfig;
   hotkeys: HotkeyConfig;
   performance: PerformanceConfig;
@@ -147,7 +161,18 @@ const referenceModes = [
   ["personal_best", "Personal Best"],
   ["session_best", "Session Best"],
   ["best_valid_lap", "Best Valid Lap"],
-  ["last_lap", "Last Lap"],
+  ["last_lap", "Last Complete Lap"],
+];
+const speedUnits = [
+  ["kmh", "km/h"],
+  ["mph", "mph"],
+];
+const themes = [
+  ["hashoverlay_default", "HashOverlay Default"],
+  ["minimal_dark", "Minimal Dark"],
+  ["transparent", "Transparent"],
+  ["high_contrast", "High Contrast"],
+  ["custom", "Custom"],
 ];
 
 const widgetLabels: Array<[keyof WidgetConfig, string]> = [
@@ -180,9 +205,13 @@ const colorLabels: Array<[keyof StyleConfig, string]> = [
   ["brake", "Brake"],
   ["clutch", "Clutch"],
   ["steering", "Steering"],
+  ["rpm", "RPM"],
   ["delta_gain", "Delta gain"],
   ["delta_loss", "Delta loss"],
+  ["delta_neutral", "Delta neutral"],
   ["reference", "Reference"],
+  ["coaching_warning", "Coaching warning"],
+  ["coaching_positive", "Coaching positive"],
 ];
 
 function App() {
@@ -386,7 +415,13 @@ function App() {
           </div>
         </Section>}
 
-        {showPanel(activePage, "Dashboard", "Appearance") && <Section icon={<Paintbrush />} title="Colors">
+        {showPanel(activePage, "Dashboard", "Appearance") && <Section icon={<Paintbrush />} title="Appearance">
+          <Segmented value={config.style.theme} options={themes} onChange={(value) => setStyle(config, setConfig, "theme", value)} />
+          <Segmented value={config.units.speed} options={speedUnits} onChange={(value) => setUnits(config, setConfig, "speed", value)} />
+          <TextInput label="Font family" value={config.style.font_family} onChange={(value) => setStyle(config, setConfig, "font_family", value)} />
+          <RangeField label="Font size" min={8} max={36} step={1} value={config.style.font_size} onChange={(value) => setStyle(config, setConfig, "font_size", value)} />
+          <RangeField label="Font weight" min={100} max={900} step={100} value={config.style.font_weight} onChange={(value) => setStyle(config, setConfig, "font_weight", value)} />
+          <RangeField label="Large number size" min={12} max={72} step={1} value={config.style.large_number_size} onChange={(value) => setStyle(config, setConfig, "large_number_size", value)} />
           <div className="swatches">
             {colorLabels.map(([key, label]) => (
               <label className="swatch" key={key}>
@@ -617,6 +652,10 @@ function setWidget(config: OverlayConfig, setConfig: React.Dispatch<React.SetSta
   setConfig({ ...config, widgets: { ...config.widgets, [key]: value } });
 }
 
+function setUnits<K extends keyof UnitsConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: UnitsConfig[K]) {
+  setConfig({ ...config, units: { ...config.units, [key]: value } });
+}
+
 function HotkeyField(props: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="field">
@@ -644,6 +683,15 @@ function HotkeyField(props: { label: string; value: string; onChange: (value: st
       >
         {props.value || "Press a key"}
       </button>
+    </label>
+  );
+}
+
+function TextInput(props: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="field">
+      <span>{props.label}</span>
+      <input value={props.value} onChange={(event) => props.onChange(event.target.value)} />
     </label>
   );
 }

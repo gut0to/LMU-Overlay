@@ -122,8 +122,9 @@ The settings app can change:
 - visible widgets;
 - position, size, scale and opacity;
 - per-widget position, size, lock state and snap behavior;
-- live layout preview with mock widget boxes;
+- live layout preview with draggable/resizable mock widget boxes;
 - colors and line thickness;
+- font family, font size, large-number size and km/h or mph units;
 - telemetry history, render FPS and sample interval;
 - delta reference, mini-sectors and coaching thresholds;
 - hotkeys and performance mode.
@@ -201,3 +202,4 @@ If the app says the telemetry buffer is not available:
 ## 12. Current Limitations
 
 - The renderer still uses the current Win32/GDI backend while the Direct2D/DirectWrite backend is prepared.
+- LMU lap invalidation by track-cut is not mapped until an official field is identified in `LMU_Data`; the current validity gate is conservative around green flag, pits and garage.

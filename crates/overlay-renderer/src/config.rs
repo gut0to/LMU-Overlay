@@ -23,6 +23,7 @@ pub struct OverlayConfig {
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
     pub layout: LayoutConfig,
+    pub units: UnitsConfig,
     pub timing: TimingConfig,
     pub hotkeys: HotkeyConfig,
     pub performance: PerformanceConfig,
@@ -94,7 +95,11 @@ impl OverlayConfig {
         self.style.opacity = self.style.opacity.clamp(32, 255);
         self.style.scale = self.style.scale.clamp(0.65, 1.75);
         self.style.line_thickness = self.style.line_thickness.clamp(1, 8);
+        self.style.font_size = self.style.font_size.clamp(8, 36);
+        self.style.font_weight = self.style.font_weight.clamp(100, 900);
+        self.style.large_number_size = self.style.large_number_size.clamp(12, 72);
         self.layout.normalize();
+        self.units.normalize();
         self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
         self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
@@ -193,7 +198,16 @@ pub struct StyleConfig {
     pub steering: String,
     pub delta_gain: String,
     pub delta_loss: String,
+    pub delta_neutral: String,
     pub reference: String,
+    pub rpm: String,
+    pub coaching_warning: String,
+    pub coaching_positive: String,
+    pub font_family: String,
+    pub font_size: i32,
+    pub font_weight: i32,
+    pub large_number_size: i32,
+    pub theme: String,
 }
 
 impl Default for StyleConfig {
@@ -212,7 +226,38 @@ impl Default for StyleConfig {
             steering: "#eeeeee".to_string(),
             delta_gain: "#44dd22".to_string(),
             delta_loss: "#ee4422".to_string(),
+            delta_neutral: "#f2bc57".to_string(),
             reference: "#aaaaaa".to_string(),
+            rpm: "#f2bc57".to_string(),
+            coaching_warning: "#f2bc57".to_string(),
+            coaching_positive: "#44dd22".to_string(),
+            font_family: "Segoe UI".to_string(),
+            font_size: 14,
+            font_weight: 500,
+            large_number_size: 24,
+            theme: "hashoverlay_default".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UnitsConfig {
+    pub speed: String,
+}
+
+impl UnitsConfig {
+    fn normalize(&mut self) {
+        if !matches!(self.speed.as_str(), "kmh" | "mph") {
+            self.speed = "kmh".to_string();
+        }
+    }
+}
+
+impl Default for UnitsConfig {
+    fn default() -> Self {
+        Self {
+            speed: "kmh".to_string(),
         }
     }
 }
@@ -597,7 +642,16 @@ clutch = "#22dddd"
 steering = "#eeeeee"
 delta_gain = "#44dd22"
 delta_loss = "#ee4422"
+delta_neutral = "#f2bc57"
 reference = "#aaaaaa"
+rpm = "#f2bc57"
+coaching_warning = "#f2bc57"
+coaching_positive = "#44dd22"
+font_family = "Segoe UI"
+font_size = 14
+font_weight = 500
+large_number_size = 24
+theme = "hashoverlay_default"
 
 [widgets]
 title = true
@@ -650,6 +704,9 @@ y = 170
 width = 392
 height = 20
 locked = false
+
+[units]
+speed = "kmh"
 
 [timing]
 reference_mode = "personal_best"
@@ -750,6 +807,8 @@ mod tests {
         assert_eq!(config.performance.mode, "normal");
         assert_eq!(config.style.scale, 1.0);
         assert_eq!(config.style.line_thickness, 2);
+        assert_eq!(config.style.font_size, 14);
+        assert_eq!(config.units.speed, "kmh");
         assert!(config.layout.snap_to_edges);
         assert_eq!(config.layout.inputs.width, 240);
         assert!(config.presets.custom.is_empty());
@@ -778,9 +837,13 @@ mod tests {
                 opacity: 1,
                 scale: 10.0,
                 line_thickness: 99,
+                font_size: 99,
                 ..StyleConfig::default()
             },
             widgets: WidgetConfig::default(),
+            units: UnitsConfig {
+                speed: "knots".to_string(),
+            },
             layout: LayoutConfig {
                 snap_distance: 99,
                 telemetry: WidgetLayout {
@@ -809,6 +872,8 @@ mod tests {
         assert_eq!(config.style.opacity, 32);
         assert_eq!(config.style.scale, 1.75);
         assert_eq!(config.style.line_thickness, 8);
+        assert_eq!(config.style.font_size, 36);
+        assert_eq!(config.units.speed, "kmh");
         assert_eq!(config.layout.snap_distance, 64);
         assert_eq!(config.layout.telemetry.width, 48);
         assert_eq!(config.layout.telemetry.height, 20);

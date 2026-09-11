@@ -826,8 +826,11 @@ mod windows_overlay {
                 area.y + scale_px(config, 26),
                 colors.primary_text,
                 &format!(
-                    "{:.0} km/h   gear {}   {:.0} rpm",
-                    snapshot.speed_kph, snapshot.gear, snapshot.rpm
+                    "{:.0} {}   gear {}   {:.0} rpm",
+                    display_speed(snapshot.speed_kph, config),
+                    speed_unit_label(config),
+                    snapshot.gear,
+                    snapshot.rpm
                 ),
             );
         }
@@ -1053,8 +1056,10 @@ mod windows_overlay {
         if let Some(delta) = snapshot.delta_seconds {
             let color = if delta <= 0.0 {
                 colors.delta_gain
-            } else {
+            } else if delta >= 0.01 {
                 colors.delta_loss
+            } else {
+                colors.delta_neutral
             };
             draw_text(hdc, x, y, color, &format!("Delta {}", signed_time(delta)));
         } else {
@@ -1141,9 +1146,9 @@ mod windows_overlay {
                 x,
                 y,
                 if speed_gap > 0.0 {
-                    colors.delta_gain
+                    colors.coaching_positive
                 } else {
-                    colors.delta_loss
+                    colors.coaching_warning
                 },
                 &format!("{speed_gap:+.0} km/h vs ref"),
             );
@@ -1400,7 +1405,10 @@ mod windows_overlay {
         steering: u32,
         delta_gain: u32,
         delta_loss: u32,
+        delta_neutral: u32,
         reference: u32,
+        coaching_warning: u32,
+        coaching_positive: u32,
     }
 
     fn colors(config: &OverlayConfig) -> Colors {
@@ -1415,7 +1423,10 @@ mod windows_overlay {
             steering: parse_color(&config.style.steering, 0x00EEEEEE),
             delta_gain: parse_color(&config.style.delta_gain, 0x0022DD44),
             delta_loss: parse_color(&config.style.delta_loss, 0x002244EE),
+            delta_neutral: parse_color(&config.style.delta_neutral, 0x0057BCF2),
             reference: parse_color(&config.style.reference, 0x00AAAAAA),
+            coaching_warning: parse_color(&config.style.coaching_warning, 0x0057BCF2),
+            coaching_positive: parse_color(&config.style.coaching_positive, 0x0022DD44),
         }
     }
 
@@ -1427,6 +1438,22 @@ mod windows_overlay {
         let minutes = (seconds / 60.0).floor() as u32;
         let seconds = seconds - f64::from(minutes) * 60.0;
         format!("{minutes}:{seconds:06.3}")
+    }
+
+    fn display_speed(speed_kph: f64, config: &OverlayConfig) -> f64 {
+        if config.units.speed == "mph" {
+            speed_kph * 0.621_371
+        } else {
+            speed_kph
+        }
+    }
+
+    fn speed_unit_label(config: &OverlayConfig) -> &'static str {
+        if config.units.speed == "mph" {
+            "mph"
+        } else {
+            "km/h"
+        }
     }
 
     fn brake_timing_hint(meters: f64) -> String {

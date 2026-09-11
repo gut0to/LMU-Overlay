@@ -13,10 +13,10 @@ This repository is in the first milestone. It currently contains:
 - a small CLI that prints speed, gear, throttle, brake, RPM, lap and sector;
 - a transparent always-on-top telemetry overlay window;
 - independent telemetry, input, timing, coaching and performance widgets;
-- a user config opened from the app for position, size, opacity, colors, visible widgets and per-widget layout;
+- a user config opened from the app for position, size, opacity, colors, fonts, units, visible widgets and per-widget layout;
 - lap/reference logic for session best, personal best, live delta, predicted lap and mini-sectors;
 - local binary PB storage under `%APPDATA%\HashOverlay\laps`;
-- a Tauri + React + TypeScript settings app with presets, live layout preview and visual controls;
+- a Tauri + React + TypeScript settings app with tabs, presets, custom presets, live layout preview and visual controls;
 - a pure telemetry engine crate with a tested ring buffer;
 - hotkeys for show/hide and edit mode;
 - native drag/resize edit mode with persistent widget layout;

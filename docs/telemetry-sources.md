@@ -37,6 +37,8 @@ To avoid reading a half-updated frame, the reader captures a small frame marker 
 
 The source layout is based on the `SharedMemoryInterface` header shipped with LMU under the game's `Support\SharedMemoryInterface` folder. TinyPedal's open source `pyLMUSharedMemory` project follows the same source and is useful as a reference implementation.
 
+Lap validity is intentionally conservative. The current mapped `LMU_Data` fields identify green-flag state, pits and garage, but do not yet expose a confirmed official track-cut/lap-invalidated flag in this reader. Until that field is mapped from the official header, HashOverlay will not invent an offset or treat hidden process memory as a source of truth.
+
 ## LMU Rest API
 
 LMU also exposes a local Rest API, usually on:
