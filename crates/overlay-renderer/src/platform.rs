@@ -740,8 +740,8 @@ mod windows_overlay {
                 hdc,
                 scale_px(config, 300),
                 y,
-                colors.secondary_text,
-                &format!("BRK {}", meters_hint(hint)),
+                timing_color(hint, colors),
+                &format!("BRK {}", brake_timing_hint(hint)),
             );
             y += scale_size(config, 18);
         }
@@ -750,9 +750,13 @@ mod windows_overlay {
                 hdc,
                 scale_px(config, 300),
                 y,
-                colors.secondary_text,
-                &format!("THR {}", meters_hint(hint)),
+                timing_color(hint, colors),
+                &format!("THR {}", throttle_timing_hint(hint)),
             );
+            y += scale_size(config, 18);
+        }
+        if let Some(message) = input_coaching_message(snapshot) {
+            draw_text(hdc, scale_px(config, 300), y, colors.reference, message);
         }
     }
 
@@ -812,6 +816,7 @@ mod windows_overlay {
         TextOutW(hdc, x, y, wide.as_ptr(), wide.len() as i32);
     }
 
+    #[derive(Clone, Copy)]
     struct Colors {
         background: u32,
         border: u32,
@@ -852,11 +857,53 @@ mod windows_overlay {
         format!("{minutes}:{seconds:06.3}")
     }
 
-    fn meters_hint(meters: f64) -> String {
+    fn brake_timing_hint(meters: f64) -> String {
         if meters >= 0.0 {
-            format!("+{meters:.0}m EARLY")
+            format!("later +{meters:.0}m")
         } else {
-            format!("{meters:.0}m LATE")
+            format!("earlier {meters:.0}m")
+        }
+    }
+
+    fn throttle_timing_hint(meters: f64) -> String {
+        if meters >= 0.0 {
+            format!("later +{meters:.0}m")
+        } else {
+            format!("earlier {meters:.0}m")
+        }
+    }
+
+    fn input_coaching_message(snapshot: TelemetrySnapshot) -> Option<&'static str> {
+        if snapshot
+            .reference_brake
+            .is_some_and(|reference| snapshot.brake > reference + 0.12)
+        {
+            return Some("release brake");
+        }
+
+        if snapshot
+            .reference_throttle
+            .is_some_and(|reference| snapshot.throttle + 0.12 < reference)
+            && snapshot.brake < 0.08
+        {
+            return Some("more throttle");
+        }
+
+        if snapshot
+            .reference_speed_kph
+            .is_some_and(|reference| snapshot.speed_kph + 8.0 < reference)
+        {
+            return Some("carry speed");
+        }
+
+        None
+    }
+
+    fn timing_color(delta_meters: f64, colors: Colors) -> u32 {
+        if delta_meters <= 0.0 {
+            colors.delta_gain
+        } else {
+            colors.delta_loss
         }
     }
 
@@ -884,6 +931,72 @@ mod windows_overlay {
             "F11" => Some(0x7A),
             "F12" => Some(0x7B),
             _ => None,
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use telemetry_engine::{GamePhase, Gear, SessionKind};
+
+        #[test]
+        fn formats_direct_timing_hints() {
+            assert_eq!(brake_timing_hint(25.0), "later +25m");
+            assert_eq!(brake_timing_hint(-12.0), "earlier -12m");
+            assert_eq!(throttle_timing_hint(15.0), "later +15m");
+            assert_eq!(throttle_timing_hint(-8.0), "earlier -8m");
+        }
+
+        #[test]
+        fn picks_input_coaching_message_from_reference_gap() {
+            let mut braking = snapshot();
+            braking.brake = 0.4;
+            braking.reference_brake = Some(0.1);
+            assert_eq!(input_coaching_message(braking), Some("release brake"));
+
+            let mut throttle = snapshot();
+            throttle.throttle = 0.4;
+            throttle.reference_throttle = Some(0.8);
+            assert_eq!(input_coaching_message(throttle), Some("more throttle"));
+
+            let mut speed = snapshot();
+            speed.speed_kph = 180.0;
+            speed.reference_speed_kph = Some(200.0);
+            assert_eq!(input_coaching_message(speed), Some("carry speed"));
+        }
+
+        fn snapshot() -> TelemetrySnapshot {
+            TelemetrySnapshot {
+                throttle: 1.0,
+                brake: 0.0,
+                clutch: 0.0,
+                steering: 0.0,
+                rpm: 7_000.0,
+                gear: Gear::Forward(4),
+                speed_kph: 200.0,
+                lap_distance_m: Some(1_000.0),
+                track_length_m: Some(5_000.0),
+                lap_time_seconds: Some(10.0),
+                lap_progress: Some(0.2),
+                lap_number: 1,
+                sector: 1,
+                session_kind: SessionKind::Practice,
+                game_phase: GamePhase::GreenFlag,
+                in_pits: false,
+                in_garage: false,
+                delta_seconds: None,
+                predicted_lap_seconds: None,
+                session_best_seconds: None,
+                personal_best_seconds: None,
+                reference_lap_seconds: None,
+                mini_sector_index: None,
+                mini_sector_delta_seconds: None,
+                brake_hint_meters: None,
+                throttle_hint_meters: None,
+                reference_throttle: None,
+                reference_brake: None,
+                reference_speed_kph: None,
+            }
         }
     }
 }

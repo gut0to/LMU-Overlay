@@ -149,7 +149,8 @@ The current overlay includes:
 - predicted lap, personal best, session best and mini-sector indicator;
 - mini-sector delta based on the last completed mini-sector crossing;
 - ghost input markers for throttle/brake when a reference lap exists;
-- brake/throttle timing hints against the reference lap.
+- brake/throttle timing hints against the reference lap;
+- coaching cues for releasing brake, adding throttle and carrying more speed.
 - F9 show/hide by default;
 - F10 edit mode by default.
 
