@@ -792,18 +792,23 @@ mod windows_overlay {
     ) {
         let pen = CreatePen(PS_SOLID, line_width.max(1), color);
         let old_pen = SelectObject(hdc, pen);
-        let samples: Vec<_> = history.iter().copied().collect();
-        for (index, pair) in samples.windows(2).enumerate() {
-            let x1 =
-                area.x + ((index as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
-            let x2 = area.x
-                + (((index + 1) as f64 / samples.len().max(1) as f64) * area.width as f64) as i32;
+        let segment_count = history.len().saturating_sub(1).max(1) as f64;
+        let mut previous = None;
+        for (index, sample) in history.iter().copied().enumerate() {
+            let Some(before) = previous else {
+                previous = Some(sample);
+                continue;
+            };
+
+            let x1 = area.x + (((index - 1) as f64 / segment_count) * area.width as f64) as i32;
+            let x2 = area.x + ((index as f64 / segment_count) * area.width as f64) as i32;
             let y1 =
-                area.y + area.height - (value(pair[0]).clamp(0.0, 1.0) * area.height as f64) as i32;
+                area.y + area.height - (value(before).clamp(0.0, 1.0) * area.height as f64) as i32;
             let y2 =
-                area.y + area.height - (value(pair[1]).clamp(0.0, 1.0) * area.height as f64) as i32;
+                area.y + area.height - (value(sample).clamp(0.0, 1.0) * area.height as f64) as i32;
             MoveToEx(hdc, x1, y1, ptr::null_mut());
             LineTo(hdc, x2, y2);
+            previous = Some(sample);
         }
         SelectObject(hdc, old_pen);
         DeleteObject(pen);
