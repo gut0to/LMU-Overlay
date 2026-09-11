@@ -460,7 +460,11 @@ fn interpolate_points(points: &[ReferencePoint], progress: f64) -> ReferencePoin
         throttle: lerp(before.throttle, after.throttle, amount),
         brake: lerp(before.brake, after.brake, amount),
         speed_kph: lerp(before.speed_kph, after.speed_kph, amount),
-        gear: if amount < 0.5 { before.gear } else { after.gear },
+        gear: if amount < 0.5 {
+            before.gear
+        } else {
+            after.gear
+        },
         steering: lerp(before.steering, after.steering, amount),
     }
 }
@@ -469,8 +473,12 @@ fn is_lap_sample_valid(snapshot: TelemetrySnapshot) -> bool {
     snapshot.game_phase == lmu_telemetry::GamePhase::GreenFlag
         && !snapshot.in_pits
         && !snapshot.in_garage
-        && snapshot.lap_time_seconds.is_some_and(|time| time.is_finite() && time >= 0.0)
-        && snapshot.lap_progress.is_some_and(|progress| progress.is_finite())
+        && snapshot
+            .lap_time_seconds
+            .is_some_and(|time| time.is_finite() && time >= 0.0)
+        && snapshot
+            .lap_progress
+            .is_some_and(|progress| progress.is_finite())
 }
 
 fn is_better(current: &Option<ReferenceLap>, candidate: &ReferenceLap) -> bool {
