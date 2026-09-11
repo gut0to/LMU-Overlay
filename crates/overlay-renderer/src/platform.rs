@@ -818,7 +818,7 @@ mod windows_overlay {
             draw_mini_sectors_widget(hdc, snapshot, config, mini_sectors_area);
         }
 
-        if config.widgets.coaching {
+        if config.widgets.coaching && config.coaching.mode != "off" {
             draw_widget_panel(hdc, coaching_area, config);
             draw_coaching_widget(hdc, snapshot, config, coaching_area);
         }
@@ -1190,54 +1190,85 @@ mod windows_overlay {
         let colors = colors(config);
         let mut y = area.y + scale_px(config, 8);
         let x = area.x + scale_px(config, 10);
-        if let Some(hint) = snapshot.brake_hint_meters {
-            draw_text(
-                hdc,
-                x,
-                y,
-                timing_color(hint, colors),
-                &format!("BRK {}", brake_timing_hint(hint)),
-            );
-            y += scale_size(config, 18);
+        let mut hints = 0_u8;
+        let max_hints = config.coaching.max_hints.max(1);
+        if config.coaching.brake_timing {
+            if let Some(hint) = snapshot
+                .brake_hint_meters
+                .filter(|hint| hint.abs() >= config.coaching.timing_deadband_m)
+            {
+                if hints < max_hints {
+                    draw_text(
+                        hdc,
+                        x,
+                        y,
+                        timing_color(hint, colors),
+                        &format!("BRK {}", brake_timing_hint(hint)),
+                    );
+                    hints += 1;
+                    y += scale_size(config, 18);
+                }
+            }
         }
-        if let Some(hint) = snapshot.throttle_hint_meters {
-            draw_text(
-                hdc,
-                x,
-                y,
-                timing_color(hint, colors),
-                &format!("THR {}", throttle_timing_hint(hint)),
-            );
-            y += scale_size(config, 18);
+        if config.coaching.throttle_timing {
+            if let Some(hint) = snapshot
+                .throttle_hint_meters
+                .filter(|hint| hint.abs() >= config.coaching.timing_deadband_m)
+            {
+                if hints < max_hints {
+                    draw_text(
+                        hdc,
+                        x,
+                        y,
+                        timing_color(hint, colors),
+                        &format!("THR {}", throttle_timing_hint(hint)),
+                    );
+                    hints += 1;
+                    y += scale_size(config, 18);
+                }
+            }
         }
-        if let Some(message) = input_coaching_message(snapshot) {
-            draw_text(hdc, x, y, colors.reference, message);
-            y += scale_size(config, 18);
+        if config.coaching.input_match && hints < max_hints {
+            if let Some(message) = input_coaching_message(snapshot) {
+                draw_text(hdc, x, y, colors.reference, message);
+                hints += 1;
+                y += scale_size(config, 18);
+            }
         }
-        if let Some(speed_gap) = snapshot.speed_hint_kph.filter(|gap| gap.abs() >= 5.0) {
-            draw_text(
-                hdc,
-                x,
-                y,
-                if speed_gap > 0.0 {
-                    colors.coaching_positive
-                } else {
-                    colors.coaching_warning
-                },
-                &format!("{speed_gap:+.0} km/h vs ref"),
-            );
-            y += scale_size(config, 18);
+        if config.coaching.speed {
+            if let Some(speed_gap) = snapshot
+                .speed_hint_kph
+                .filter(|gap| gap.abs() >= config.coaching.speed_threshold_kph)
+            {
+                if hints < max_hints {
+                    draw_text(
+                        hdc,
+                        x,
+                        y,
+                        if speed_gap > 0.0 {
+                            colors.coaching_positive
+                        } else {
+                            colors.coaching_warning
+                        },
+                        &format!("{speed_gap:+.0} km/h vs ref"),
+                    );
+                    hints += 1;
+                    y += scale_size(config, 18);
+                }
+            }
         }
-        if let Some(reference_gear) = snapshot.reference_gear {
-            let gear = gear_number(snapshot.gear);
-            if reference_gear != gear {
-                draw_text(
-                    hdc,
-                    x,
-                    y,
-                    colors.secondary_text,
-                    &format!("GEAR {gear} / REF {reference_gear}"),
-                );
+        if config.coaching.gear && hints < max_hints {
+            if let Some(reference_gear) = snapshot.reference_gear {
+                let gear = gear_number(snapshot.gear);
+                if reference_gear != gear {
+                    draw_text(
+                        hdc,
+                        x,
+                        y,
+                        colors.secondary_text,
+                        &format!("GEAR {gear} / REF {reference_gear}"),
+                    );
+                }
             }
         }
     }

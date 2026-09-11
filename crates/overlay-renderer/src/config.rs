@@ -24,6 +24,7 @@ pub struct OverlayConfig {
     pub widgets: WidgetConfig,
     pub layout: LayoutConfig,
     pub units: UnitsConfig,
+    pub coaching: CoachingConfig,
     pub timing: TimingConfig,
     pub hotkeys: HotkeyConfig,
     pub performance: PerformanceConfig,
@@ -100,6 +101,7 @@ impl OverlayConfig {
         self.style.large_number_size = self.style.large_number_size.clamp(12, 72);
         self.layout.normalize();
         self.units.normalize();
+        self.coaching.normalize();
         self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
         self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
@@ -258,6 +260,54 @@ impl Default for UnitsConfig {
     fn default() -> Self {
         Self {
             speed: "kmh".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CoachingConfig {
+    pub mode: String,
+    pub brake_timing: bool,
+    pub throttle_timing: bool,
+    pub input_match: bool,
+    pub speed: bool,
+    pub gear: bool,
+    pub speed_threshold_kph: f64,
+    pub timing_deadband_m: f64,
+    pub max_hints: u8,
+}
+
+impl CoachingConfig {
+    fn normalize(&mut self) {
+        if !matches!(self.mode.as_str(), "off" | "race" | "practice" | "attack") {
+            self.mode = "practice".to_string();
+        }
+        self.speed_threshold_kph = self.speed_threshold_kph.clamp(1.0, 40.0);
+        self.timing_deadband_m = self.timing_deadband_m.clamp(0.0, 50.0);
+        self.max_hints = self.max_hints.clamp(1, 6);
+        if self.mode == "off" {
+            self.brake_timing = false;
+            self.throttle_timing = false;
+            self.input_match = false;
+            self.speed = false;
+            self.gear = false;
+        }
+    }
+}
+
+impl Default for CoachingConfig {
+    fn default() -> Self {
+        Self {
+            mode: "practice".to_string(),
+            brake_timing: true,
+            throttle_timing: true,
+            input_match: true,
+            speed: true,
+            gear: true,
+            speed_threshold_kph: 5.0,
+            timing_deadband_m: 3.0,
+            max_hints: 4,
         }
     }
 }
@@ -777,6 +827,17 @@ locked = false
 [units]
 speed = "kmh"
 
+[coaching]
+mode = "practice"
+brake_timing = true
+throttle_timing = true
+input_match = true
+speed = true
+gear = true
+speed_threshold_kph = 5.0
+timing_deadband_m = 3.0
+max_hints = 4
+
 [timing]
 reference_mode = "personal_best"
 mini_sectors = 40
@@ -887,6 +948,8 @@ mod tests {
         assert_eq!(config.style.line_thickness, 2);
         assert_eq!(config.style.font_size, 14);
         assert_eq!(config.units.speed, "kmh");
+        assert_eq!(config.coaching.mode, "practice");
+        assert!(config.coaching.brake_timing);
         assert!(config.layout.snap_to_edges);
         assert_eq!(config.layout.inputs.width, 240);
         assert!(config.presets.custom.is_empty());
@@ -922,6 +985,13 @@ mod tests {
             units: UnitsConfig {
                 speed: "knots".to_string(),
             },
+            coaching: CoachingConfig {
+                mode: "wild".to_string(),
+                speed_threshold_kph: 999.0,
+                timing_deadband_m: 999.0,
+                max_hints: 99,
+                ..CoachingConfig::default()
+            },
             layout: LayoutConfig {
                 snap_distance: 99,
                 telemetry: WidgetLayout {
@@ -952,6 +1022,10 @@ mod tests {
         assert_eq!(config.style.line_thickness, 8);
         assert_eq!(config.style.font_size, 36);
         assert_eq!(config.units.speed, "kmh");
+        assert_eq!(config.coaching.mode, "practice");
+        assert_eq!(config.coaching.speed_threshold_kph, 40.0);
+        assert_eq!(config.coaching.timing_deadband_m, 50.0);
+        assert_eq!(config.coaching.max_hints, 6);
         assert_eq!(config.layout.snap_distance, 64);
         assert_eq!(config.layout.telemetry.width, 48);
         assert_eq!(config.layout.telemetry.height, 20);

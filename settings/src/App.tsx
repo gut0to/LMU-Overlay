@@ -95,6 +95,18 @@ type UnitsConfig = {
   speed: string;
 };
 
+type CoachingConfig = {
+  mode: string;
+  brake_timing: boolean;
+  throttle_timing: boolean;
+  input_match: boolean;
+  speed: boolean;
+  gear: boolean;
+  speed_threshold_kph: number;
+  timing_deadband_m: number;
+  max_hints: number;
+};
+
 type TimingConfig = {
   reference_mode: string;
   mini_sectors: number;
@@ -136,6 +148,7 @@ type OverlayConfig = {
   widgets: WidgetConfig;
   layout: LayoutConfig;
   units: UnitsConfig;
+  coaching: CoachingConfig;
   timing: TimingConfig;
   hotkeys: HotkeyConfig;
   performance: PerformanceConfig;
@@ -155,7 +168,7 @@ type SectionProps = {
 
 const presetNames = ["practice", "qualifying", "race"] as const;
 type StandardPresetKey = (typeof presetNames)[number];
-const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
+const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
 const performanceModes = [
   ["eco", "Eco"],
@@ -179,6 +192,19 @@ const themes = [
   ["transparent", "Transparent"],
   ["high_contrast", "High Contrast"],
   ["custom", "Custom"],
+];
+const coachingModes = [
+  ["off", "Off"],
+  ["race", "Race"],
+  ["practice", "Practice"],
+  ["attack", "Attack"],
+];
+const coachingLabels: Array<[keyof Pick<CoachingConfig, "brake_timing" | "throttle_timing" | "input_match" | "speed" | "gear">, string]> = [
+  ["brake_timing", "Brake timing"],
+  ["throttle_timing", "Throttle timing"],
+  ["input_match", "Pedal match"],
+  ["speed", "Speed delta"],
+  ["gear", "Gear hint"],
 ];
 
 const widgetLabels: Array<[keyof WidgetConfig, string]> = [
@@ -410,6 +436,25 @@ function App() {
           <NumberField label="Mini sectors" value={config.timing.mini_sectors} onChange={(value) => setTiming(config, setConfig, "mini_sectors", value)} />
           <RangeField label="Brake threshold" min={0.01} max={1} step={0.01} value={config.timing.brake_threshold} onChange={(value) => setTiming(config, setConfig, "brake_threshold", value)} />
           <RangeField label="Throttle threshold" min={0.01} max={1} step={0.01} value={config.timing.throttle_threshold} onChange={(value) => setTiming(config, setConfig, "throttle_threshold", value)} />
+        </Section>}
+
+        {showPanel(activePage, "Dashboard", "Coaching") && <Section icon={<Activity />} title="Coaching">
+          <Segmented value={config.coaching.mode} options={coachingModes} onChange={(value) => setCoaching(config, setConfig, "mode", value)} />
+          <RangeField label="Speed threshold" min={1} max={40} step={1} value={config.coaching.speed_threshold_kph} onChange={(value) => setCoaching(config, setConfig, "speed_threshold_kph", value)} />
+          <RangeField label="Timing deadband" min={0} max={50} step={1} value={config.coaching.timing_deadband_m} onChange={(value) => setCoaching(config, setConfig, "timing_deadband_m", value)} />
+          <NumberField label="Max hints" value={config.coaching.max_hints} onChange={(value) => setCoaching(config, setConfig, "max_hints", value)} />
+          <div className="toggles">
+            {coachingLabels.map(([key, label]) => (
+              <label className="toggle" key={key}>
+                <input
+                  type="checkbox"
+                  checked={config.coaching[key]}
+                  onChange={(event) => setCoaching(config, setConfig, key, event.target.checked)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Widgets") && <Section icon={<SlidersHorizontal />} title="Widgets">
@@ -666,6 +711,15 @@ function setWidget(config: OverlayConfig, setConfig: React.Dispatch<React.SetSta
 
 function setUnits<K extends keyof UnitsConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: UnitsConfig[K]) {
   setConfig({ ...config, units: { ...config.units, [key]: value } });
+}
+
+function setCoaching<K extends keyof CoachingConfig>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  key: K,
+  value: CoachingConfig[K],
+) {
+  setConfig({ ...config, coaching: { ...config.coaching, [key]: value } });
 }
 
 function HotkeyField(props: { label: string; value: string; onChange: (value: string) => void }) {
