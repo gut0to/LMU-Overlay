@@ -172,11 +172,11 @@ impl TelemetrySample {
         self
     }
 
-    pub fn speed_kph(self) -> f64 {
+    pub fn speed_kph(&self) -> f64 {
         self.speed_mps * 3.6
     }
 
-    pub fn lap_time_seconds(self) -> Option<f64> {
+    pub fn lap_time_seconds(&self) -> Option<f64> {
         let lap_time = self.timestamp_seconds - self.lap_start_seconds;
         lap_time
             .is_finite()
@@ -184,7 +184,7 @@ impl TelemetrySample {
             .filter(|time| *time >= 0.0)
     }
 
-    pub fn lap_progress(self) -> Option<f64> {
+    pub fn lap_progress(&self) -> Option<f64> {
         let distance = self.lap_distance_m?;
         let length = self.track_length_m?;
 

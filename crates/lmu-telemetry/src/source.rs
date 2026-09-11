@@ -168,7 +168,8 @@ impl PlatformTelemetrySource {
         }
 
         let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
-        read_consistent_sample_from_bytes(bytes).map(|sample| sample.map(TelemetrySample::sanitized))
+        read_consistent_sample_from_bytes(bytes)
+            .map(|sample| sample.map(TelemetrySample::sanitized))
     }
 }
 
@@ -319,7 +320,11 @@ fn read_metadata(
         .map(|offset| read_string(bytes, offset + OFFSET_SCORING_VEHICLE_NAME, 64))
         .transpose()?
         .flatten()
-        .or(read_string(bytes, vehicle_offset + OFFSET_TELEMETRY_VEHICLE_NAME, 64)?);
+        .or(read_string(
+            bytes,
+            vehicle_offset + OFFSET_TELEMETRY_VEHICLE_NAME,
+            64,
+        )?);
     let vehicle_class = scoring_offset
         .map(|offset| read_string(bytes, offset + OFFSET_SCORING_VEHICLE_CLASS, 32))
         .transpose()?
@@ -408,11 +413,16 @@ fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], Te
 }
 
 fn read_string(bytes: &[u8], offset: usize, len: usize) -> Result<Option<String>, TelemetryError> {
-    let end = offset.checked_add(len).ok_or(TelemetryError::BufferTooSmall)?;
+    let end = offset
+        .checked_add(len)
+        .ok_or(TelemetryError::BufferTooSmall)?;
     let slice = bytes
         .get(offset..end)
         .ok_or(TelemetryError::BufferTooSmall)?;
-    let end = slice.iter().position(|byte| *byte == 0).unwrap_or(slice.len());
+    let end = slice
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(slice.len());
     let value = String::from_utf8_lossy(&slice[..end]).trim().to_string();
     Ok((!value.is_empty()).then_some(value))
 }
