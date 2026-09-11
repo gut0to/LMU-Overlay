@@ -19,9 +19,9 @@ This repository is in the first milestone. It currently contains:
 - a Tauri + React + TypeScript settings app with presets and visual controls;
 - a pure telemetry engine crate with a tested ring buffer;
 - hotkeys for show/hide and edit mode;
-- a debug performance monitor.
-
-Packaging and deeper renderer profiling are still being refined.
+- native drag/resize edit mode;
+- a debug performance monitor;
+- Windows release packaging through GitHub Actions.
 
 ## Principles
 
