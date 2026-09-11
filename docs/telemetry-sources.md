@@ -24,6 +24,17 @@ This is the primary source for hot-path overlay telemetry:
 - lap distance;
 - track length.
 
+The reader also extracts session metadata from the same official buffer:
+
+- track name;
+- vehicle name and class;
+- LMU session kind;
+- game phase;
+- player slot ID;
+- pit and garage state.
+
+To avoid reading a half-updated frame, the reader captures a small frame marker before and after the sample. If the marker changes during the read, the sample is retried and then rejected as a torn frame. This keeps the overlay conservative without touching process memory.
+
 The source layout is based on the `SharedMemoryInterface` header shipped with LMU under the game's `Support\SharedMemoryInterface` folder. TinyPedal's open source `pyLMUSharedMemory` project follows the same source and is useful as a reference implementation.
 
 ## LMU Rest API

@@ -30,7 +30,118 @@ impl fmt::Display for Gear {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionKind {
+    TestDay,
+    Practice,
+    Qualifying,
+    Warmup,
+    Race,
+    Unknown(i32),
+}
+
+impl From<i32> for SessionKind {
+    fn from(value: i32) -> Self {
+        match value {
+            0 => Self::TestDay,
+            1..=4 => Self::Practice,
+            5..=8 => Self::Qualifying,
+            9 => Self::Warmup,
+            10..=13 => Self::Race,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl fmt::Display for SessionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TestDay => f.write_str("test day"),
+            Self::Practice => f.write_str("practice"),
+            Self::Qualifying => f.write_str("qualifying"),
+            Self::Warmup => f.write_str("warmup"),
+            Self::Race => f.write_str("race"),
+            Self::Unknown(value) => write!(f, "unknown({value})"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GamePhase {
+    BeforeSession,
+    Reconnaissance,
+    GridWalk,
+    FormationLap,
+    StartingLights,
+    GreenFlag,
+    FullCourseYellow,
+    SessionStopped,
+    SessionOver,
+    Unknown(u8),
+}
+
+impl From<u8> for GamePhase {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::BeforeSession,
+            1 => Self::Reconnaissance,
+            2 => Self::GridWalk,
+            3 => Self::FormationLap,
+            4 => Self::StartingLights,
+            5 => Self::GreenFlag,
+            6 => Self::FullCourseYellow,
+            7 => Self::SessionStopped,
+            8 => Self::SessionOver,
+            other => Self::Unknown(other),
+        }
+    }
+}
+
+impl fmt::Display for GamePhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::BeforeSession => f.write_str("before session"),
+            Self::Reconnaissance => f.write_str("reconnaissance"),
+            Self::GridWalk => f.write_str("grid walk"),
+            Self::FormationLap => f.write_str("formation lap"),
+            Self::StartingLights => f.write_str("starting lights"),
+            Self::GreenFlag => f.write_str("green flag"),
+            Self::FullCourseYellow => f.write_str("full course yellow"),
+            Self::SessionStopped => f.write_str("session stopped"),
+            Self::SessionOver => f.write_str("session over"),
+            Self::Unknown(value) => write!(f, "unknown({value})"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelemetryMetadata {
+    pub track_name: Option<String>,
+    pub vehicle_name: Option<String>,
+    pub vehicle_class: Option<String>,
+    pub session_kind: SessionKind,
+    pub game_phase: GamePhase,
+    pub in_pits: bool,
+    pub in_garage: bool,
+    pub player_slot_id: i32,
+}
+
+impl Default for TelemetryMetadata {
+    fn default() -> Self {
+        Self {
+            track_name: None,
+            vehicle_name: None,
+            vehicle_class: None,
+            session_kind: SessionKind::Unknown(-1),
+            game_phase: GamePhase::Unknown(u8::MAX),
+            in_pits: false,
+            in_garage: false,
+            player_slot_id: -1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TelemetrySample {
     pub timestamp_seconds: f64,
     pub speed_mps: f64,
@@ -45,6 +156,7 @@ pub struct TelemetrySample {
     pub lap_number: i32,
     pub lap_start_seconds: f64,
     pub sector: i32,
+    pub metadata: TelemetryMetadata,
 }
 
 impl TelemetrySample {
@@ -60,11 +172,11 @@ impl TelemetrySample {
         self
     }
 
-    pub fn speed_kph(self) -> f64 {
+    pub fn speed_kph(&self) -> f64 {
         self.speed_mps * 3.6
     }
 
-    pub fn lap_time_seconds(self) -> Option<f64> {
+    pub fn lap_time_seconds(&self) -> Option<f64> {
         let lap_time = self.timestamp_seconds - self.lap_start_seconds;
         lap_time
             .is_finite()
@@ -72,7 +184,7 @@ impl TelemetrySample {
             .filter(|time| *time >= 0.0)
     }
 
-    pub fn lap_progress(self) -> Option<f64> {
+    pub fn lap_progress(&self) -> Option<f64> {
         let distance = self.lap_distance_m?;
         let length = self.track_length_m?;
 
@@ -137,6 +249,7 @@ mod tests {
             lap_number: 3,
             lap_start_seconds: 30.0,
             sector: 2,
+            metadata: TelemetryMetadata::default(),
         };
 
         assert_eq!(
@@ -161,6 +274,7 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 10.0,
             sector: 0,
+            metadata: TelemetryMetadata::default(),
         }
         .sanitized();
 
@@ -191,8 +305,18 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 0.0,
             sector: 0,
+            metadata: TelemetryMetadata::default(),
         };
 
         assert_eq!(sample.lap_progress(), Some(0.5));
+    }
+
+    #[test]
+    fn maps_session_and_game_phase_values() {
+        assert_eq!(SessionKind::from(2), SessionKind::Practice);
+        assert_eq!(SessionKind::from(7), SessionKind::Qualifying);
+        assert_eq!(SessionKind::from(12), SessionKind::Race);
+        assert_eq!(GamePhase::from(5), GamePhase::GreenFlag);
+        assert_eq!(GamePhase::from(8), GamePhase::SessionOver);
     }
 }
