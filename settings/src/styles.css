@@ -385,6 +385,47 @@ h1 {
   font-size: 13px;
 }
 
+.widgetBrowser {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.widgetBrowser > input {
+  min-height: 34px;
+  border: 1px solid #3a4149;
+  border-radius: 6px;
+  background: #101214;
+  color: #f7f2e8;
+  padding: 6px 8px;
+}
+
+.widgetCatalogRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: #15191d;
+}
+
+.widgetCatalogRow span {
+  display: grid;
+  gap: 3px;
+}
+
+.widgetCatalogRow strong {
+  color: #f7f2e8;
+  font-size: 13px;
+}
+
+.widgetCatalogRow small {
+  color: #9aa5af;
+  font-size: 12px;
+}
+
 button:focus-visible,
 input:focus-visible {
   outline: 2px solid #f2bc57;

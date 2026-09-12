@@ -30,7 +30,9 @@ fn save_config(mut config: OverlayConfig) -> Result<ConfigResponse, String> {
 
 #[tauri::command]
 fn default_config() -> Result<OverlayConfig, String> {
-    toml::from_str(default_config_text()).map_err(|error| error.to_string())
+    let mut config: OverlayConfig = toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
+    config.normalize();
+    Ok(config)
 }
 
 #[tauri::command]

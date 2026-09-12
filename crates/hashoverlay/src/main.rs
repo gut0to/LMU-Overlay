@@ -299,7 +299,27 @@ fn lap_engine_config(config: &OverlayConfig) -> LapEngineConfig {
 fn open_overlay_config(config_path: Option<PathBuf>) -> Result<()> {
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
-    println!("Opening {}", config_path.display());
+    let settings_candidates = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
+        .into_iter()
+        .flat_map(|parent| {
+            [
+                parent.join("hashoverlay-settings.exe"),
+                parent.join("HashOverlay Settings.exe"),
+            ]
+        })
+        .collect::<Vec<_>>();
+
+    if let Some(settings) = settings_candidates.into_iter().find(|path| path.exists()) {
+        Command::new(settings).spawn()?;
+        return Ok(());
+    }
+
+    println!(
+        "Settings app was not found. Opening {}",
+        config_path.display()
+    );
     Command::new("notepad").arg(&config_path).spawn()?;
     Ok(())
 }
@@ -373,6 +393,9 @@ mod tests {
             lap_start_seconds: 0.0,
             sector: 0,
             sector_times: Default::default(),
+            vehicle: Default::default(),
+            wheels: Default::default(),
+            session: Default::default(),
             metadata: lmu_telemetry::TelemetryMetadata {
                 track_name: Some("Sebring".to_string()),
                 track_layout: Some("International".to_string()),

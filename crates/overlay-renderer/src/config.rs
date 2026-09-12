@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -22,6 +23,7 @@ pub struct OverlayConfig {
     pub window: WindowConfig,
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
+    pub extra_widgets: BTreeMap<String, WidgetInstanceConfig>,
     pub layout: LayoutConfig,
     pub units: UnitsConfig,
     pub coaching: CoachingConfig,
@@ -101,6 +103,19 @@ impl OverlayConfig {
         self.style.font_weight = self.style.font_weight.clamp(100, 900);
         self.style.large_number_size = self.style.large_number_size.clamp(12, 72);
         self.layout.normalize();
+        self.extra_widgets.retain(|id, _| {
+            crate::widgets::WIDGET_CATALOG
+                .iter()
+                .any(|definition| definition.id == id)
+        });
+        for (index, definition) in crate::widgets::WIDGET_CATALOG.iter().enumerate() {
+            self.extra_widgets
+                .entry(definition.id.to_string())
+                .or_insert_with(|| WidgetInstanceConfig::disabled(index));
+        }
+        for widget in self.extra_widgets.values_mut() {
+            widget.layout.normalize();
+        }
         self.units.normalize();
         self.coaching.normalize();
         self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
@@ -560,6 +575,39 @@ pub struct WidgetLayout {
     pub z_index: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WidgetInstanceConfig {
+    pub enabled: bool,
+    pub layout: WidgetLayout,
+}
+
+impl WidgetInstanceConfig {
+    fn disabled(index: usize) -> Self {
+        let column = (index % 3) as i32;
+        let row = (index / 3) as i32;
+        Self {
+            enabled: false,
+            layout: WidgetLayout {
+                x: 16 + column * 142,
+                y: 16 + row * 62,
+                width: 132,
+                height: 52,
+                locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 100 + index as i32,
+            },
+        }
+    }
+}
+
+impl Default for WidgetInstanceConfig {
+    fn default() -> Self {
+        Self::disabled(0)
+    }
+}
+
 impl WidgetLayout {
     fn normalize(&mut self) {
         self.x = self.x.clamp(-2000, 8000);
@@ -636,6 +684,8 @@ pub struct PresetConfig {
     pub practice: PresetProfileConfig,
     pub qualifying: PresetProfileConfig,
     pub race: PresetProfileConfig,
+    pub endurance: PresetProfileConfig,
+    pub minimal: PresetProfileConfig,
     pub custom: Vec<CustomPresetConfig>,
 }
 
@@ -644,6 +694,8 @@ impl PresetConfig {
         self.practice.normalize();
         self.qualifying.normalize();
         self.race.normalize();
+        self.endurance.normalize();
+        self.minimal.normalize();
         self.custom.truncate(32);
         for preset in &mut self.custom {
             preset.profile.normalize();
@@ -657,6 +709,8 @@ impl Default for PresetConfig {
             practice: PresetProfileConfig::practice(),
             qualifying: PresetProfileConfig::qualifying(),
             race: PresetProfileConfig::race(),
+            endurance: PresetProfileConfig::endurance(),
+            minimal: PresetProfileConfig::minimal(),
             custom: Vec::new(),
         }
     }
@@ -755,6 +809,48 @@ impl PresetProfileConfig {
             lap_timing: true,
             sectors: true,
             mini_sector_widget: true,
+            input_history: false,
+            delta_timing: true,
+            ghost_inputs: false,
+            coaching: false,
+            performance_monitor: false,
+        }
+    }
+
+    fn endurance() -> Self {
+        Self {
+            performance_mode: "eco".to_string(),
+            reference_mode: "session_best".to_string(),
+            mini_sectors: 20,
+            title: false,
+            speed_gear_rpm: true,
+            pedals: false,
+            steering: false,
+            lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: false,
+            input_history: false,
+            delta_timing: true,
+            ghost_inputs: false,
+            coaching: false,
+            performance_monitor: false,
+        }
+    }
+
+    fn minimal() -> Self {
+        Self {
+            performance_mode: "normal".to_string(),
+            reference_mode: "personal_best".to_string(),
+            mini_sectors: 20,
+            title: false,
+            speed_gear_rpm: true,
+            pedals: true,
+            steering: false,
+            lap_info: false,
+            lap_timing: false,
+            sectors: false,
+            mini_sector_widget: false,
             input_history: false,
             delta_timing: true,
             ghost_inputs: false,

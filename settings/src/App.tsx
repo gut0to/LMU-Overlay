@@ -69,6 +69,14 @@ type WidgetConfig = {
   performance_monitor: boolean;
 };
 
+type WidgetDefinition = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  data_requirement: string;
+};
+
 type WidgetLayout = {
   x: number;
   y: number;
@@ -147,6 +155,8 @@ type PresetConfig = {
   practice: PresetProfileConfig;
   qualifying: PresetProfileConfig;
   race: PresetProfileConfig;
+  endurance: PresetProfileConfig;
+  minimal: PresetProfileConfig;
   custom: CustomPresetConfig[];
 };
 
@@ -160,6 +170,7 @@ type OverlayConfig = {
   window: WindowConfig;
   style: StyleConfig;
   widgets: WidgetConfig;
+  extra_widgets: Record<string, { enabled: boolean; layout: WidgetLayout }>;
   layout: LayoutConfig;
   units: UnitsConfig;
   coaching: CoachingConfig;
@@ -180,7 +191,7 @@ type SectionProps = {
   children: React.ReactNode;
 };
 
-const presetNames = ["practice", "qualifying", "race"] as const;
+const presetNames = ["practice", "qualifying", "race", "endurance", "minimal"] as const;
 type StandardPresetKey = (typeof presetNames)[number];
 const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
@@ -254,6 +265,19 @@ const widgetLabels: Array<[keyof WidgetConfig, string]> = [
   ["performance_monitor", "Performance monitor"],
 ];
 
+const legacyWidgetById: Partial<Record<string, keyof WidgetConfig>> = {
+  telemetry: "speed_gear_rpm",
+  inputs: "pedals",
+  steering: "steering",
+  lap_timing: "lap_timing",
+  timing: "delta_timing",
+  sectors: "sectors",
+  mini_sectors: "mini_sector_widget",
+  input_history: "input_history",
+  coaching: "coaching",
+  performance: "performance_monitor",
+};
+
 const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["telemetry", "Telemetry"],
   ["inputs", "Inputs"],
@@ -292,10 +316,14 @@ function App() {
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
+  const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
+  const [widgetSearch, setWidgetSearch] = useState("");
+  const [widgetCategory, setWidgetCategory] = useState("All");
 
   useEffect(() => {
     void loadConfig();
     void loadDefaultConfig();
+    void loadWidgetCatalog();
   }, []);
 
   async function loadConfig() {
@@ -379,6 +407,14 @@ function App() {
     }
   }
 
+  async function loadWidgetCatalog() {
+    try {
+      setWidgetCatalog(await invoke<WidgetDefinition[]>("widget_catalog"));
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
   async function openConfigFolder() {
     try {
       await invoke("open_config_folder");
@@ -414,6 +450,35 @@ function App() {
       };
     });
   }
+
+  function setCatalogWidget(id: string, enabled: boolean) {
+    const legacy = legacyWidgetById[id];
+    setConfig((current) => {
+      if (!current) {
+        return current;
+      }
+      if (legacy) {
+        return { ...current, widgets: { ...current.widgets, [legacy]: enabled } };
+      }
+      const widget = current.extra_widgets[id];
+      return widget
+        ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...widget, enabled } } }
+        : current;
+    });
+  }
+
+  const widgetCategories = useMemo(
+    () => ["All", ...new Set(widgetCatalog.map((widget) => widget.category))],
+    [widgetCatalog],
+  );
+  const filteredWidgetCatalog = useMemo(
+    () => widgetCatalog.filter((widget) => {
+      const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
+      const query = widgetSearch.trim().toLocaleLowerCase();
+      return matchesCategory && (!query || `${widget.name} ${widget.description}`.toLocaleLowerCase().includes(query));
+    }),
+    [widgetCatalog, widgetCategory, widgetSearch],
+  );
 
   const activePreset = useMemo(() => {
     if (!config) {
@@ -598,6 +663,24 @@ function App() {
                 <span>{label}</span>
               </label>
             ))}
+          </div>
+          <div className="widgetBrowser">
+            <input value={widgetSearch} placeholder="Search widgets" onChange={(event) => setWidgetSearch(event.target.value)} />
+            <div className="segmented">
+              {widgetCategories.map((category) => (
+                <button key={category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
+              ))}
+            </div>
+            {filteredWidgetCatalog.map((widget) => {
+              const legacy = legacyWidgetById[widget.id];
+              const enabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
+              return (
+                <label className="widgetCatalogRow" key={widget.id}>
+                  <input type="checkbox" checked={enabled} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
+                  <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement}</small></span>
+                </label>
+              );
+            })}
           </div>
         </Section>}
 
@@ -801,6 +884,7 @@ function snapLayout(config: OverlayConfig, widget: LayoutWidgetKey, layout: Widg
       height: snapNumber(next.height, config.layout.grid_size),
     };
   }
+
   if (config.layout.snap_to_edges) {
     next = snapToEdges(config, next);
   }

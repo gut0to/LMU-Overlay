@@ -123,7 +123,26 @@ mod windows_overlay {
         MiniSectors,
         Coaching,
         Performance,
+        Extra(&'static str),
     }
+
+    const EXTRA_WIDGET_IDS: &[&str] = &[
+        "speed",
+        "rpm",
+        "lap_history",
+        "position",
+        "relative",
+        "standings",
+        "flags",
+        "fuel",
+        "tyres",
+        "brakes",
+        "electronics",
+        "energy",
+        "engine",
+        "damage",
+        "weather",
+    ];
 
     #[derive(Clone, Copy)]
     struct DragState {
@@ -267,7 +286,8 @@ mod windows_overlay {
                         }
                         if let Ok(mut stats) = telemetry_state.stats.lock() {
                             stats.telemetry_samples += 1;
-                            stats.acquisition_micros += acquisition_started.elapsed().as_micros() as u64;
+                            stats.acquisition_micros +=
+                                acquisition_started.elapsed().as_micros() as u64;
                         }
                     }
                     next_sample += sample_interval;
@@ -449,7 +469,12 @@ mod windows_overlay {
             "toggle overlay",
             &config.hotkeys.toggle_overlay,
         );
-        register_hotkey(hwnd, HOTKEY_EDIT_MODE, "edit mode", &config.hotkeys.edit_mode);
+        register_hotkey(
+            hwnd,
+            HOTKEY_EDIT_MODE,
+            "edit mode",
+            &config.hotkeys.edit_mode,
+        );
         register_hotkey(
             hwnd,
             HOTKEY_TOGGLE_COACHING,
@@ -762,10 +787,14 @@ mod windows_overlay {
     }
 
     fn cycle_runtime_preset(config: &mut OverlayConfig) {
-        let next = match config.performance.mode.as_str() {
-            "normal" => config.presets.qualifying.clone(),
-            "high_refresh" => config.presets.race.clone(),
-            "eco" => config.presets.practice.clone(),
+        let next = match (
+            config.performance.mode.as_str(),
+            config.timing.reference_mode.as_str(),
+        ) {
+            ("normal", "last_lap") => config.presets.qualifying.clone(),
+            ("high_refresh", "personal_best") => config.presets.race.clone(),
+            ("eco", "session_best") => config.presets.endurance.clone(),
+            ("eco", _) => config.presets.minimal.clone(),
             _ => config.presets.practice.clone(),
         };
         config.performance.mode = next.performance_mode;
@@ -938,6 +967,10 @@ mod windows_overlay {
                     draw_widget_panel(hdc, area, config);
                     draw_coaching_widget(hdc, snapshot, config, area);
                 }
+                WidgetId::Extra(id) => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_extra_widget(hdc, snapshot, config, area, id);
+                }
                 _ => {}
             }
         }
@@ -974,6 +1007,131 @@ mod windows_overlay {
                 ),
             );
         }
+    }
+
+    unsafe fn draw_extra_widget(
+        hdc: HDC,
+        snapshot: TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        id: &str,
+    ) {
+        let colors = colors(config);
+        let value = match id {
+            "speed" => format!(
+                "{:.0} {}",
+                display_speed(snapshot.speed_kph, config),
+                speed_unit_label(config)
+            ),
+            "rpm" => snapshot.vehicle.max_rpm.map_or_else(
+                || format!("{:.0} RPM", snapshot.rpm),
+                |limit| {
+                    format!(
+                        "{:.0} RPM  {:.0}%",
+                        snapshot.rpm,
+                        snapshot.rpm / limit * 100.0
+                    )
+                },
+            ),
+            "position" => match (snapshot.session.position, snapshot.session.total_vehicles) {
+                (Some(position), Some(total)) => format!("P{position}/{total}"),
+                (Some(position), None) => format!("P{position}"),
+                _ => "POSITION --".to_string(),
+            },
+            "flags" => snapshot
+                .session
+                .flag
+                .map_or_else(|| "FLAG --".to_string(), |flag| format!("FLAG {flag}")),
+            "fuel" => match (
+                snapshot.vehicle.fuel_liters,
+                snapshot.vehicle.fuel_capacity_liters,
+            ) {
+                (Some(fuel), Some(capacity)) if capacity > 0.0 => {
+                    format!("FUEL {fuel:.1} L  {:.0}%", fuel / capacity * 100.0)
+                }
+                (Some(fuel), _) => format!("FUEL {fuel:.1} L"),
+                _ => "FUEL --".to_string(),
+            },
+            "tyres" => wheel_summary(
+                "TYRES",
+                [
+                    snapshot.wheels.front_left.pressure_kpa,
+                    snapshot.wheels.front_right.pressure_kpa,
+                    snapshot.wheels.rear_left.pressure_kpa,
+                    snapshot.wheels.rear_right.pressure_kpa,
+                ],
+                "kPa",
+            ),
+            "brakes" => wheel_summary(
+                "BRAKES",
+                [
+                    snapshot.wheels.front_left.brake_temp_c,
+                    snapshot.wheels.front_right.brake_temp_c,
+                    snapshot.wheels.rear_left.brake_temp_c,
+                    snapshot.wheels.rear_right.brake_temp_c,
+                ],
+                "C",
+            ),
+            "electronics" => match (snapshot.vehicle.tc_setting, snapshot.vehicle.abs_setting) {
+                (Some(tc), Some(abs)) => format!("TC {tc}  ABS {abs}"),
+                _ => "TC / ABS --".to_string(),
+            },
+            "energy" => snapshot.vehicle.battery_charge_percent.map_or_else(
+                || "ENERGY --".to_string(),
+                |charge| format!("ENERGY {charge:.0}%"),
+            ),
+            "engine" => match (
+                snapshot.vehicle.engine_water_temp_c,
+                snapshot.vehicle.engine_oil_temp_c,
+            ) {
+                (Some(water), Some(oil)) => format!("W {water:.0}C  O {oil:.0}C"),
+                _ => "ENGINE --".to_string(),
+            },
+            "weather" => match (
+                snapshot.session.ambient_temp_c,
+                snapshot.session.track_temp_c,
+            ) {
+                (Some(ambient), Some(track)) => format!("AIR {ambient:.0}C  TRACK {track:.0}C"),
+                _ => "WEATHER --".to_string(),
+            },
+            "damage" => {
+                if [
+                    snapshot.wheels.front_left,
+                    snapshot.wheels.front_right,
+                    snapshot.wheels.rear_left,
+                    snapshot.wheels.rear_right,
+                ]
+                .into_iter()
+                .any(|wheel| wheel.flat == Some(true) || wheel.detached == Some(true))
+                {
+                    "DAMAGE WARNING".to_string()
+                } else {
+                    "DAMAGE --".to_string()
+                }
+            }
+            "relative" | "standings" | "lap_history" => "WAITING FOR OFFICIAL SCORING".to_string(),
+            _ => "--".to_string(),
+        };
+        draw_text(
+            hdc,
+            area.x + scale_px(config, 8),
+            area.y + scale_px(config, 10),
+            colors.primary_text,
+            &value,
+        );
+    }
+
+    fn wheel_summary(label: &str, values: [Option<f64>; 4], unit: &str) -> String {
+        if values.iter().any(Option::is_none) {
+            return format!("{label} --");
+        }
+        format!(
+            "{label} {:.0} {:.0} / {:.0} {:.0} {unit}",
+            values[0].unwrap_or_default(),
+            values[1].unwrap_or_default(),
+            values[2].unwrap_or_default(),
+            values[3].unwrap_or_default(),
+        )
     }
 
     unsafe fn draw_lap_timing_widget(
@@ -1263,15 +1421,23 @@ mod windows_overlay {
         let sectors = [
             (
                 "S1",
-                snapshot.current_sector1_seconds.or(snapshot.last_sector1_seconds),
+                snapshot
+                    .current_sector1_seconds
+                    .or(snapshot.last_sector1_seconds),
                 snapshot.best_sector1_seconds,
             ),
             (
                 "S2",
-                snapshot.current_sector2_seconds.or(snapshot.last_sector2_seconds),
+                snapshot
+                    .current_sector2_seconds
+                    .or(snapshot.last_sector2_seconds),
                 snapshot.best_sector2_seconds,
             ),
-            ("S3", snapshot.last_sector3_seconds, snapshot.best_sector3_seconds),
+            (
+                "S3",
+                snapshot.last_sector3_seconds,
+                snapshot.best_sector3_seconds,
+            ),
         ];
         let mut x = area.x + scale_px(config, 10);
         for (label, current, best) in sectors {
@@ -1519,6 +1685,15 @@ mod windows_overlay {
         .into_iter()
         .map(|(id, layout)| (id, area_from_layout(layout)))
         .collect();
+        for id in EXTRA_WIDGET_IDS {
+            if let Some(widget) = config
+                .extra_widgets
+                .get(*id)
+                .filter(|widget| widget.enabled)
+            {
+                areas.push((WidgetId::Extra(*id), area_from_layout(&widget.layout)));
+            }
+        }
         areas.sort_by_key(|(id, _)| widget_layout(config, *id).z_index);
         areas
     }
@@ -1542,6 +1717,13 @@ mod windows_overlay {
             WidgetId::MiniSectors => &config.layout.mini_sectors,
             WidgetId::Coaching => &config.layout.coaching,
             WidgetId::Performance => &config.layout.performance,
+            WidgetId::Extra(id) => {
+                &config
+                    .extra_widgets
+                    .get(id)
+                    .expect("widget area only contains configured extra widgets")
+                    .layout
+            }
         }
     }
 
@@ -1555,6 +1737,13 @@ mod windows_overlay {
             WidgetId::MiniSectors => &mut config.layout.mini_sectors,
             WidgetId::Coaching => &mut config.layout.coaching,
             WidgetId::Performance => &mut config.layout.performance,
+            WidgetId::Extra(id) => {
+                &mut config
+                    .extra_widgets
+                    .get_mut(id)
+                    .expect("widget area only contains configured extra widgets")
+                    .layout
+            }
         }
     }
 
