@@ -165,14 +165,32 @@ mod windows_overlay {
         render_frames: u64,
         telemetry_hz: u64,
         render_fps: u64,
+        acquisition_micros: u64,
+        render_micros: u64,
+        acquisition_ms: f64,
+        render_ms: f64,
+        skipped_samples: u64,
+        dropped_frames: u64,
     }
 
     impl PerfStats {
         fn refresh(&mut self) {
             self.telemetry_hz = self.telemetry_samples;
             self.render_fps = self.render_frames;
+            self.acquisition_ms = if self.telemetry_samples == 0 {
+                0.0
+            } else {
+                self.acquisition_micros as f64 / self.telemetry_samples as f64 / 1_000.0
+            };
+            self.render_ms = if self.render_frames == 0 {
+                0.0
+            } else {
+                self.render_micros as f64 / self.render_frames as f64 / 1_000.0
+            };
             self.telemetry_samples = 0;
             self.render_frames = 0;
+            self.acquisition_micros = 0;
+            self.render_micros = 0;
         }
     }
 
@@ -223,7 +241,7 @@ mod windows_overlay {
         {
             let hwnd = create_window(self.state.clone())?;
             let telemetry_state = self.state.clone();
-            thread::spawn(move || {
+            let telemetry_worker = thread::spawn(move || {
                 let mut next_sample = Instant::now();
                 while telemetry_state.running.load(Ordering::Relaxed) {
                     let sample_interval = telemetry_state
@@ -239,6 +257,7 @@ mod windows_overlay {
                         continue;
                     }
 
+                    let acquisition_started = Instant::now();
                     if let Some(snapshot) = next_snapshot() {
                         if let Ok(mut latest) = telemetry_state.latest.lock() {
                             *latest = Some(snapshot);
@@ -248,10 +267,14 @@ mod windows_overlay {
                         }
                         if let Ok(mut stats) = telemetry_state.stats.lock() {
                             stats.telemetry_samples += 1;
+                            stats.acquisition_micros += acquisition_started.elapsed().as_micros() as u64;
                         }
                     }
                     next_sample += sample_interval;
                     if next_sample < Instant::now() {
+                        if let Ok(mut stats) = telemetry_state.stats.lock() {
+                            stats.skipped_samples += 1;
+                        }
                         next_sample = Instant::now() + sample_interval;
                     }
                 }
@@ -263,7 +286,8 @@ mod windows_overlay {
             let repaint_edit_mode = self.state.edit_mode.clone();
             let repaint_hwnd = hwnd as isize;
 
-            thread::spawn(move || {
+            let repaint_stats = self.state.stats.clone();
+            let repaint_worker = thread::spawn(move || {
                 let hwnd = repaint_hwnd as HWND;
                 let mut next_frame = Instant::now();
                 while repaint_running.load(Ordering::Relaxed) {
@@ -289,6 +313,9 @@ mod windows_overlay {
                     if now < next_frame {
                         thread::sleep(next_frame - now);
                     } else {
+                        if let Ok(mut stats) = repaint_stats.lock() {
+                            stats.dropped_frames += 1;
+                        }
                         next_frame = now + frame_duration;
                     }
                 }
@@ -303,7 +330,7 @@ mod windows_overlay {
                 .and_then(|path| modified_time(path.as_ref()));
             let mut message: MSG = unsafe { zeroed() };
 
-            loop {
+            'message_loop: loop {
                 unsafe {
                     while windows_sys::Win32::UI::WindowsAndMessaging::PeekMessageW(
                         &mut message,
@@ -315,7 +342,7 @@ mod windows_overlay {
                     {
                         if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT {
                             self.state.running.store(false, Ordering::Relaxed);
-                            return Ok(());
+                            break 'message_loop;
                         }
                         TranslateMessage(&message);
                         DispatchMessageW(&message);
@@ -336,6 +363,11 @@ mod windows_overlay {
 
                 thread::sleep(Duration::from_millis(1));
             }
+
+            self.state.running.store(false, Ordering::Relaxed);
+            let _ = telemetry_worker.join();
+            let _ = repaint_worker.join();
+            Ok(())
         }
     }
 
@@ -776,6 +808,7 @@ mod windows_overlay {
     }
 
     unsafe fn paint(hwnd: HWND) {
+        let render_started = Instant::now();
         let mut paint: PAINTSTRUCT = zeroed();
         let hdc = BeginPaint(hwnd, &mut paint);
         let mut rect: RECT = zeroed();
@@ -833,6 +866,10 @@ mod windows_overlay {
         if state.edit_mode.load(Ordering::Relaxed) {
             let selected = state.selected_widget.lock().ok().and_then(|value| *value);
             draw_edit_handles(hdc, &config, selected);
+        }
+
+        if let Ok(mut stats) = state.stats.lock() {
+            stats.render_micros += render_started.elapsed().as_micros() as u64;
         }
 
         EndPaint(hwnd, &paint);
@@ -1398,8 +1435,14 @@ mod windows_overlay {
                 area.y + scale_px(config, 2),
                 colors.secondary_text,
                 &format!(
-                    "telemetry {} Hz  render {} FPS  ring {}",
-                    stats.telemetry_hz, stats.render_fps, ring_usage
+                    "tel {} Hz  draw {} FPS  read {:.2} ms  draw {:.2} ms  skip {}  drop {}  ring {}",
+                    stats.telemetry_hz,
+                    stats.render_fps,
+                    stats.acquisition_ms,
+                    stats.render_ms,
+                    stats.skipped_samples,
+                    stats.dropped_frames,
+                    ring_usage
                 ),
             );
         }
@@ -1907,6 +1950,9 @@ mod windows_overlay {
                 best_sector1_seconds: None,
                 best_sector2_seconds: None,
                 best_sector3_seconds: None,
+                vehicle: lmu_telemetry::VehicleSystems::default(),
+                wheels: lmu_telemetry::Wheels::default(),
+                session: lmu_telemetry::SessionData::default(),
                 session_elapsed_seconds: 10.0,
                 session_kind: SessionKind::Practice,
                 game_phase: GamePhase::GreenFlag,

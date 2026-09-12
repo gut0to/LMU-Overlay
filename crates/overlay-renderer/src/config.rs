@@ -13,7 +13,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use serde::{Deserialize, Serialize};
 
-const CURRENT_CONFIG_VERSION: u32 = 3;
+const CURRENT_CONFIG_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -39,7 +39,7 @@ impl OverlayConfig {
         let original_version = config.config_version;
         let needs_migration = original_version < CURRENT_CONFIG_VERSION;
         if needs_migration {
-            write_migration_backup(path, &text)?;
+            write_migration_backup(path, original_version, &text)?;
             migrate_config(&mut config, original_version);
         }
         config.normalize();
@@ -115,8 +115,13 @@ fn migrate_config(config: &mut OverlayConfig, from_version: u32) {
         0 | 1 => {
             migrate_v1_to_v2(config);
             migrate_v2_to_v3(config);
+            migrate_v3_to_v4(config);
         }
-        2 => migrate_v2_to_v3(config),
+        2 => {
+            migrate_v2_to_v3(config);
+            migrate_v3_to_v4(config);
+        }
+        3 => migrate_v3_to_v4(config),
         _ => config.config_version = CURRENT_CONFIG_VERSION,
     }
 }
@@ -138,11 +143,24 @@ fn migrate_v2_to_v3(config: &mut OverlayConfig) {
     if config.hotkeys.cycle_preset.trim().is_empty() {
         config.hotkeys.cycle_preset = "Ctrl+Shift+F9".to_string();
     }
+    config.config_version = 3;
+}
+
+fn migrate_v3_to_v4(config: &mut OverlayConfig) {
+    if config.units.temperature.trim().is_empty() {
+        config.units.temperature = "celsius".to_string();
+    }
+    if config.units.pressure.trim().is_empty() {
+        config.units.pressure = "kpa".to_string();
+    }
+    if config.units.fuel.trim().is_empty() {
+        config.units.fuel = "liters".to_string();
+    }
     config.config_version = CURRENT_CONFIG_VERSION;
 }
 
-fn write_migration_backup(path: &Path, text: &str) -> io::Result<()> {
-    let backup_path = path.with_extension("toml.v2.bak");
+fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<()> {
+    let backup_path = path.with_extension(format!("toml.v{version}.bak"));
     fs::write(backup_path, text)
 }
 
@@ -278,12 +296,24 @@ impl Default for StyleConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct UnitsConfig {
     pub speed: String,
+    pub temperature: String,
+    pub pressure: String,
+    pub fuel: String,
 }
 
 impl UnitsConfig {
     fn normalize(&mut self) {
         if !matches!(self.speed.as_str(), "kmh" | "mph") {
             self.speed = "kmh".to_string();
+        }
+        if !matches!(self.temperature.as_str(), "celsius" | "fahrenheit") {
+            self.temperature = "celsius".to_string();
+        }
+        if !matches!(self.pressure.as_str(), "kpa" | "psi") {
+            self.pressure = "kpa".to_string();
+        }
+        if !matches!(self.fuel.as_str(), "liters" | "gallons") {
+            self.fuel = "liters".to_string();
         }
     }
 }
@@ -292,6 +322,9 @@ impl Default for UnitsConfig {
     fn default() -> Self {
         Self {
             speed: "kmh".to_string(),
+            temperature: "celsius".to_string(),
+            pressure: "kpa".to_string(),
+            fuel: "liters".to_string(),
         }
     }
 }
@@ -793,7 +826,7 @@ pub fn default_config_text() -> &'static str {
     r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
-config_version = 3
+config_version = 4
 
 [window]
 x = 40
@@ -934,6 +967,9 @@ z_index = 80
 
 [units]
 speed = "kmh"
+temperature = "celsius"
+pressure = "kpa"
+fuel = "liters"
 
 [coaching]
 mode = "practice"
@@ -1049,7 +1085,7 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
-        assert_eq!(config.config_version, 3);
+        assert_eq!(config.config_version, 4);
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
@@ -1060,6 +1096,9 @@ mod tests {
         assert_eq!(config.style.line_thickness, 2);
         assert_eq!(config.style.font_size, 14);
         assert_eq!(config.units.speed, "kmh");
+        assert_eq!(config.units.temperature, "celsius");
+        assert_eq!(config.units.pressure, "kpa");
+        assert_eq!(config.units.fuel, "liters");
         assert_eq!(config.coaching.mode, "practice");
         assert!(config.coaching.brake_timing);
         assert!(config.layout.snap_to_edges);
@@ -1099,6 +1138,9 @@ mod tests {
             widgets: WidgetConfig::default(),
             units: UnitsConfig {
                 speed: "knots".to_string(),
+                temperature: "rankine".to_string(),
+                pressure: "bar".to_string(),
+                fuel: "cups".to_string(),
             },
             coaching: CoachingConfig {
                 mode: "wild".to_string(),
@@ -1130,7 +1172,7 @@ mod tests {
 
         config.normalize();
 
-        assert_eq!(config.config_version, 3);
+        assert_eq!(config.config_version, 4);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
@@ -1141,6 +1183,9 @@ mod tests {
         assert_eq!(config.style.line_thickness, 8);
         assert_eq!(config.style.font_size, 36);
         assert_eq!(config.units.speed, "kmh");
+        assert_eq!(config.units.temperature, "celsius");
+        assert_eq!(config.units.pressure, "kpa");
+        assert_eq!(config.units.fuel, "liters");
         assert_eq!(config.coaching.mode, "practice");
         assert_eq!(config.coaching.speed_threshold_kph, 40.0);
         assert_eq!(config.coaching.timing_deadband_m, 50.0);
@@ -1154,5 +1199,28 @@ mod tests {
         assert_eq!(config.layout.telemetry.opacity, 0.1);
         assert_eq!(config.layout.telemetry.z_index, 1000);
         assert_eq!(config.timing.mini_sectors, 40);
+    }
+
+    #[test]
+    fn migrates_v3_configs_to_explicit_display_units() {
+        let mut config = OverlayConfig {
+            config_version: 3,
+            units: UnitsConfig {
+                speed: "mph".to_string(),
+                temperature: String::new(),
+                pressure: String::new(),
+                fuel: String::new(),
+            },
+            ..OverlayConfig::default()
+        };
+
+        migrate_config(&mut config, 3);
+        config.normalize();
+
+        assert_eq!(config.config_version, CURRENT_CONFIG_VERSION);
+        assert_eq!(config.units.speed, "mph");
+        assert_eq!(config.units.temperature, "celsius");
+        assert_eq!(config.units.pressure, "kpa");
+        assert_eq!(config.units.fuel, "liters");
     }
 }

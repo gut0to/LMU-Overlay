@@ -1,4 +1,6 @@
-use lmu_telemetry::{GamePhase, Gear, SessionKind, TelemetrySample};
+use lmu_telemetry::{
+    GamePhase, Gear, SessionData, SessionKind, TelemetrySample, VehicleSystems, Wheels,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TelemetrySnapshot {
@@ -23,6 +25,9 @@ pub struct TelemetrySnapshot {
     pub best_sector1_seconds: Option<f64>,
     pub best_sector2_seconds: Option<f64>,
     pub best_sector3_seconds: Option<f64>,
+    pub vehicle: VehicleSystems,
+    pub wheels: Wheels,
+    pub session: SessionData,
     pub session_elapsed_seconds: f64,
     pub session_kind: SessionKind,
     pub game_phase: GamePhase,
@@ -73,6 +78,9 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             best_sector1_seconds: sample.sector_times.best_sector1_seconds,
             best_sector2_seconds: sample.sector_times.best_sector2_seconds,
             best_sector3_seconds: sample.sector_times.best_sector3_seconds,
+            vehicle: sample.vehicle,
+            wheels: sample.wheels,
+            session: sample.session,
             session_elapsed_seconds: sample.timestamp_seconds,
             session_kind: sample.metadata.session_kind,
             game_phase: sample.metadata.game_phase,
@@ -129,6 +137,9 @@ mod tests {
                 best_sector2_seconds: Some(61.0),
                 best_sector3_seconds: Some(28.0),
             },
+            vehicle: lmu_telemetry::VehicleSystems::default(),
+            wheels: lmu_telemetry::Wheels::default(),
+            session: lmu_telemetry::SessionData::default(),
             metadata: lmu_telemetry::TelemetryMetadata::default(),
         });
 

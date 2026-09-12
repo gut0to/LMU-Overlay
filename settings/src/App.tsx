@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
+  FolderOpen,
   Gauge,
   LayoutGrid,
   Lock,
   Magnet,
   Paintbrush,
+  Play,
   Plus,
   RotateCcw,
   Save,
@@ -99,6 +101,9 @@ type LayoutWidgetKey = "telemetry" | "inputs" | "lap_timing" | "timing" | "secto
 
 type UnitsConfig = {
   speed: string;
+  temperature: string;
+  pressure: string;
+  fuel: string;
 };
 
 type CoachingConfig = {
@@ -207,6 +212,18 @@ const coachingModes = [
   ["race", "Race"],
   ["practice", "Practice"],
   ["attack", "Attack"],
+];
+const temperatureUnits = [
+  ["celsius", "Celsius"],
+  ["fahrenheit", "Fahrenheit"],
+];
+const pressureUnits = [
+  ["kpa", "kPa"],
+  ["psi", "psi"],
+];
+const fuelUnits = [
+  ["liters", "Liters"],
+  ["gallons", "Gallons"],
 ];
 const gridSizes = [
   ["5", "5 px"],
@@ -353,6 +370,24 @@ function App() {
     }
   }
 
+  async function startOverlay() {
+    try {
+      await invoke("start_overlay");
+      setStatus("Overlay started");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function openConfigFolder() {
+    try {
+      await invoke("open_config_folder");
+      setStatus("Config folder opened");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
   function resetLayout() {
     if (!defaultConfigState) {
       return;
@@ -412,8 +447,15 @@ function App() {
           <p>{path}</p>
         </div>
         <div className="actions">
+          <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
+            <FolderOpen size={18} />
+          </button>
           <button className="iconButton" title="Reload config" onClick={loadConfig}>
             <RotateCcw size={18} />
+          </button>
+          <button className="primaryButton" onClick={startOverlay}>
+            <Play size={18} />
+            Start overlay
           </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
@@ -562,6 +604,9 @@ function App() {
         {showPanel(activePage, "Dashboard", "Appearance") && <Section icon={<Paintbrush />} title="Appearance">
           <Segmented value={config.style.theme} options={themes} onChange={(value) => setStyle(config, setConfig, "theme", value)} />
           <Segmented value={config.units.speed} options={speedUnits} onChange={(value) => setUnits(config, setConfig, "speed", value)} />
+          <Segmented value={config.units.temperature} options={temperatureUnits} onChange={(value) => setUnits(config, setConfig, "temperature", value)} />
+          <Segmented value={config.units.pressure} options={pressureUnits} onChange={(value) => setUnits(config, setConfig, "pressure", value)} />
+          <Segmented value={config.units.fuel} options={fuelUnits} onChange={(value) => setUnits(config, setConfig, "fuel", value)} />
           <TextInput label="Font family" value={config.style.font_family} onChange={(value) => setStyle(config, setConfig, "font_family", value)} />
           <RangeField label="Font size" min={8} max={36} step={1} value={config.style.font_size} onChange={(value) => setStyle(config, setConfig, "font_size", value)} />
           <RangeField label="Font weight" min={100} max={900} step={100} value={config.style.font_weight} onChange={(value) => setStyle(config, setConfig, "font_weight", value)} />

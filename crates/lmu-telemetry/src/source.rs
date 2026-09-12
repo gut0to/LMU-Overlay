@@ -1,6 +1,14 @@
-use std::{error::Error, fmt, mem::size_of};
+use std::{
+    error::Error,
+    fmt,
+    mem::size_of,
+    time::{Duration, Instant},
+};
 
-use crate::{GamePhase, Gear, SessionKind, TelemetryMetadata, TelemetrySample};
+use crate::{
+    GamePhase, Gear, SessionData, SessionKind, TelemetryMetadata, TelemetrySample,
+    VehicleSystems, Wheels,
+};
 
 #[cfg(windows)]
 use std::slice;
@@ -94,12 +102,14 @@ const EXPECTED_GAME_VERSION_MAX: i32 = 99_999;
 
 pub struct SharedMemoryTelemetrySource {
     inner: PlatformTelemetrySource,
+    next_reconnect_attempt: Instant,
 }
 
 impl SharedMemoryTelemetrySource {
     pub fn open() -> Result<Self, TelemetryError> {
         Ok(Self {
             inner: PlatformTelemetrySource::open()?,
+            next_reconnect_attempt: Instant::now(),
         })
     }
 }
@@ -111,7 +121,11 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
         if !self.inner.is_available() {
+            if Instant::now() < self.next_reconnect_attempt {
+                return Ok(None);
+            }
             self.inner = PlatformTelemetrySource::open()?;
+            self.next_reconnect_attempt = Instant::now() + Duration::from_millis(500);
         }
 
         self.inner.read_sample()
@@ -275,6 +289,9 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_sector(bytes, scoring_offset, vehicle_offset)?,
         sector_times: Default::default(),
+        vehicle: VehicleSystems::default(),
+        wheels: Wheels::default(),
+        session: SessionData::default(),
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
     };
 
