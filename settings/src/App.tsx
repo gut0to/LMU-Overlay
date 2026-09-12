@@ -88,6 +88,28 @@ type WidgetLayout = {
   z_index: number;
 };
 
+type WidgetStyleConfig = {
+  inherit_theme: boolean;
+  show_background: boolean;
+  background_color: string;
+  show_border: boolean;
+  border_color: string;
+  border_width: number;
+  padding: number;
+  font_scale: number;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  show_title: boolean;
+  title_text: string;
+};
+
+type WidgetInstanceConfig = {
+  enabled: boolean;
+  layout: WidgetLayout;
+  style: WidgetStyleConfig;
+};
+
 type LayoutConfig = {
   lock_all: boolean;
   snap_to_edges: boolean;
@@ -154,7 +176,7 @@ type PresetProfileConfig = {
   units: UnitsConfig;
   coaching_config: CoachingConfig;
   layout: LayoutConfig;
-  extra_widgets: Record<string, { enabled: boolean; layout: WidgetLayout }>;
+  extra_widgets: Record<string, WidgetInstanceConfig>;
 } & WidgetConfig;
 
 type PresetConfig = {
@@ -176,7 +198,7 @@ type OverlayConfig = {
   window: WindowConfig;
   style: StyleConfig;
   widgets: WidgetConfig;
-  extra_widgets: Record<string, { enabled: boolean; layout: WidgetLayout }>;
+  extra_widgets: Record<string, WidgetInstanceConfig>;
   layout: LayoutConfig;
   units: UnitsConfig;
   coaching: CoachingConfig;
@@ -612,6 +634,12 @@ function App() {
             layout={layoutForSelection(config, selectedLayout)}
             onChange={(key, value) => setLayoutSelection(config, setConfig, selectedLayout, key, value)}
           />
+          {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
+            <WidgetStyleFields
+              style={config.extra_widgets[selectedLayout.slice("extra:".length)].style}
+              onChange={(key, value) => setExtraWidgetStyle(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
+            />
+          )}
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
@@ -822,6 +850,8 @@ function OverlayPreview(props: {
         }}
       >
         {layoutEntries(props.config).map(({ key, label, layout }) => {
+          const widgetStyle = key.startsWith("extra:") ? props.config.extra_widgets[key.slice("extra:".length)]?.style : undefined;
+          const useCustomStyle = widgetStyle && !widgetStyle.inherit_theme;
           return (
             <button
               key={key}
@@ -835,7 +865,9 @@ function OverlayPreview(props: {
                 transform: `scale(${layout.scale})`,
                 transformOrigin: "top left",
                 zIndex: layout.z_index,
-                borderColor: props.config.style.border,
+                backgroundColor: useCustomStyle && widgetStyle.show_background ? widgetStyle.background_color : undefined,
+                borderColor: useCustomStyle && widgetStyle.show_border ? widgetStyle.border_color : props.config.style.border,
+                color: useCustomStyle ? widgetStyle.primary_color : undefined,
               }}
               onClick={() => props.onSelect(key)}
               onPointerDown={(event) => {
@@ -1097,6 +1129,53 @@ function HotkeyField(props: { label: string; value: string; conflict: boolean; o
   );
 }
 
+function WidgetStyleFields(props: {
+  style: WidgetStyleConfig;
+  onChange: <K extends keyof WidgetStyleConfig>(key: K, value: WidgetStyleConfig[K]) => void;
+}) {
+  const colorFields: Array<[keyof Pick<WidgetStyleConfig, "background_color" | "border_color" | "primary_color" | "secondary_color" | "accent_color">, string]> = [
+    ["background_color", "Widget background"],
+    ["border_color", "Widget border"],
+    ["primary_color", "Value color"],
+    ["secondary_color", "Title color"],
+    ["accent_color", "Accent color"],
+  ];
+  return (
+    <>
+      <label className="toggle full">
+        <input type="checkbox" checked={props.style.inherit_theme} onChange={(event) => props.onChange("inherit_theme", event.target.checked)} />
+        <Paintbrush size={16} />
+        <span>Use global appearance</span>
+      </label>
+      {!props.style.inherit_theme && <>
+        <label className="toggle full">
+          <input type="checkbox" checked={props.style.show_background} onChange={(event) => props.onChange("show_background", event.target.checked)} />
+          <span>Show widget background</span>
+        </label>
+        <label className="toggle full">
+          <input type="checkbox" checked={props.style.show_border} onChange={(event) => props.onChange("show_border", event.target.checked)} />
+          <span>Show widget border</span>
+        </label>
+        <NumberField label="Border width" value={props.style.border_width} onChange={(value) => props.onChange("border_width", value)} />
+        <NumberField label="Inner padding" value={props.style.padding} onChange={(value) => props.onChange("padding", value)} />
+        <div className="swatches">
+          {colorFields.map(([key, label]) => (
+            <label className="swatch" key={key}>
+              <span>{label}</span>
+              <input type="color" value={props.style[key]} onChange={(event) => props.onChange(key, event.target.value)} />
+            </label>
+          ))}
+        </div>
+      </>}
+      <label className="toggle full">
+        <input type="checkbox" checked={props.style.show_title} onChange={(event) => props.onChange("show_title", event.target.checked)} />
+        <span>Show widget title</span>
+      </label>
+      {props.style.show_title && <TextInput label="Widget title" value={props.style.title_text} onChange={(value) => props.onChange("title_text", value)} />}
+    </>
+  );
+}
+
 function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
   const value = normalizeHotkey(hotkeys[key]);
   if (!value) {
@@ -1136,6 +1215,20 @@ function setLayoutSelection<K extends keyof WidgetLayout>(
 ) {
   const layout = layoutForSelection(config, selection);
   setConfig(updateLayoutSelection(config, selection, { ...layout, [key]: value }));
+}
+
+function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  id: string,
+  key: K,
+  value: WidgetStyleConfig[K],
+) {
+  const widget = config.extra_widgets[id];
+  if (!widget) {
+    return;
+  }
+  setConfig({ ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, style: { ...widget.style, [key]: value } } } });
 }
 
 function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof HotkeyConfig, value: string) {

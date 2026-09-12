@@ -76,7 +76,7 @@ mod windows_overlay {
         },
     };
 
-    use crate::config::WidgetLayout;
+    use crate::config::{WidgetLayout, WidgetStyleConfig};
 
     use super::{config::parse_color, OverlayConfig, OverlayError};
 
@@ -412,7 +412,9 @@ mod windows_overlay {
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
                 apply_window_config(hwnd, &config);
-                reload_hotkeys(hwnd, &config);
+                unsafe {
+                    reload_hotkeys(hwnd, &config);
+                }
                 resize_history_if_needed(state, config.window.history_samples);
                 if let Ok(mut current) = state.config.lock() {
                     *current = config;
@@ -973,7 +975,6 @@ mod windows_overlay {
                     draw_coaching_widget(hdc, snapshot, config, area);
                 }
                 WidgetId::Extra(id) => {
-                    draw_widget_panel(hdc, area, config);
                     draw_extra_widget(hdc, snapshot, config, area, id);
                 }
                 _ => {}
@@ -1021,7 +1022,9 @@ mod windows_overlay {
         area: Area,
         id: &str,
     ) {
-        let colors = colors(config);
+        let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
+        draw_extra_widget_panel(hdc, area, config, widget_style);
+        let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
         let value = match id {
             "speed" => format!(
                 "{:.0} {}",
@@ -1117,13 +1120,103 @@ mod windows_overlay {
             "relative" | "standings" | "lap_history" => "WAITING FOR OFFICIAL SCORING".to_string(),
             _ => "--".to_string(),
         };
+        let title_height = if widget_style.is_some_and(|style| style.show_title) {
+            let title = widget_style
+                .and_then(|style| {
+                    (!style.title_text.trim().is_empty()).then_some(style.title_text.as_str())
+                })
+                .unwrap_or(id);
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding,
+                widget_secondary_color(config, widget_style),
+                title,
+            );
+            scale_px(config, 18)
+        } else {
+            0
+        };
         draw_text(
             hdc,
-            area.x + scale_px(config, 8),
-            area.y + scale_px(config, 10),
-            colors.primary_text,
+            area.x + padding,
+            area.y + padding + title_height,
+            widget_primary_color(config, widget_style),
             &value,
         );
+    }
+
+    unsafe fn draw_extra_widget_panel(
+        hdc: HDC,
+        area: Area,
+        config: &OverlayConfig,
+        widget_style: Option<&WidgetStyleConfig>,
+    ) {
+        let theme_colors = colors(config);
+        let inherit_theme = widget_style.map_or(true, |style| style.inherit_theme);
+        let show_background = widget_style.map_or(true, |style| style.show_background);
+        let show_border = widget_style.map_or(true, |style| style.show_border);
+        let background = if inherit_theme {
+            theme_colors.background
+        } else {
+            parse_color(
+                &widget_style.expect("style checked").background_color,
+                theme_colors.background,
+            )
+        };
+        let border = if inherit_theme {
+            theme_colors.border
+        } else {
+            parse_color(
+                &widget_style.expect("style checked").border_color,
+                theme_colors.border,
+            )
+        };
+        let rect = RECT {
+            left: area.x,
+            top: area.y,
+            right: area.right(),
+            bottom: area.bottom(),
+        };
+        if show_background {
+            let brush = CreateSolidBrush(background);
+            FillRect(hdc, &rect, brush);
+            DeleteObject(brush);
+        }
+        if show_border {
+            let width = widget_style
+                .map_or(config.style.line_thickness, |style| style.border_width)
+                .max(1);
+            let pen = CreatePen(PS_SOLID, width, border);
+            let old_pen = SelectObject(hdc, pen);
+            Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
+            SelectObject(hdc, old_pen);
+            DeleteObject(pen);
+        }
+    }
+
+    fn widget_primary_color(
+        config: &OverlayConfig,
+        widget_style: Option<&WidgetStyleConfig>,
+    ) -> u32 {
+        let theme_colors = colors(config);
+        widget_style
+            .filter(|style| !style.inherit_theme)
+            .map_or(theme_colors.primary_text, |style| {
+                parse_color(&style.primary_color, theme_colors.primary_text)
+            })
+    }
+
+    fn widget_secondary_color(
+        config: &OverlayConfig,
+        widget_style: Option<&WidgetStyleConfig>,
+    ) -> u32 {
+        let theme_colors = colors(config);
+        widget_style
+            .filter(|style| !style.inherit_theme)
+            .map_or(theme_colors.secondary_text, |style| {
+                parse_color(&style.secondary_color, theme_colors.secondary_text)
+            })
     }
 
     fn wheel_summary(label: &str, values: [Option<f64>; 4], unit: &str) -> String {

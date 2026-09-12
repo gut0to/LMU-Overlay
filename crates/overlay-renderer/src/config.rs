@@ -14,7 +14,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use serde::{Deserialize, Serialize};
 
-const CURRENT_CONFIG_VERSION: u32 = 5;
+const CURRENT_CONFIG_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -115,6 +115,7 @@ impl OverlayConfig {
         }
         for widget in self.extra_widgets.values_mut() {
             widget.layout.normalize();
+            widget.style.normalize();
         }
         self.units.normalize();
         self.coaching.normalize();
@@ -132,17 +133,24 @@ fn migrate_config(config: &mut OverlayConfig, from_version: u32) {
             migrate_v2_to_v3(config);
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
+            migrate_v5_to_v6(config);
         }
         2 => {
             migrate_v2_to_v3(config);
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
+            migrate_v5_to_v6(config);
         }
         3 => {
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
+            migrate_v5_to_v6(config);
         }
-        4 => migrate_v4_to_v5(config),
+        4 => {
+            migrate_v4_to_v5(config);
+            migrate_v5_to_v6(config);
+        }
+        5 => migrate_v5_to_v6(config),
         _ => config.config_version = CURRENT_CONFIG_VERSION,
     }
 }
@@ -182,6 +190,25 @@ fn migrate_v3_to_v4(config: &mut OverlayConfig) {
 
 fn migrate_v4_to_v5(config: &mut OverlayConfig) {
     config.presets.normalize();
+    config.config_version = 5;
+}
+
+fn migrate_v5_to_v6(config: &mut OverlayConfig) {
+    for widget in config.extra_widgets.values_mut() {
+        widget.style.normalize();
+    }
+    for profile in [
+        &mut config.presets.practice,
+        &mut config.presets.qualifying,
+        &mut config.presets.race,
+        &mut config.presets.endurance,
+        &mut config.presets.minimal,
+    ] {
+        profile.normalize();
+    }
+    for preset in &mut config.presets.custom {
+        preset.profile.normalize();
+    }
     config.config_version = CURRENT_CONFIG_VERSION;
 }
 
@@ -444,7 +471,7 @@ impl Default for WidgetConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LayoutConfig {
     pub lock_all: bool,
@@ -573,7 +600,7 @@ impl Default for LayoutConfig {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct WidgetLayout {
     pub x: i32,
@@ -591,6 +618,7 @@ pub struct WidgetLayout {
 pub struct WidgetInstanceConfig {
     pub enabled: bool,
     pub layout: WidgetLayout,
+    pub style: WidgetStyleConfig,
 }
 
 impl WidgetInstanceConfig {
@@ -609,6 +637,54 @@ impl WidgetInstanceConfig {
                 opacity: 1.0,
                 z_index: 100 + index as i32,
             },
+            style: WidgetStyleConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WidgetStyleConfig {
+    pub inherit_theme: bool,
+    pub show_background: bool,
+    pub background_color: String,
+    pub show_border: bool,
+    pub border_color: String,
+    pub border_width: i32,
+    pub padding: i32,
+    pub font_scale: f64,
+    pub primary_color: String,
+    pub secondary_color: String,
+    pub accent_color: String,
+    pub show_title: bool,
+    pub title_text: String,
+}
+
+impl WidgetStyleConfig {
+    fn normalize(&mut self) {
+        self.border_width = self.border_width.clamp(0, 8);
+        self.padding = self.padding.clamp(0, 48);
+        self.font_scale = self.font_scale.clamp(0.5, 2.0);
+        self.title_text.truncate(80);
+    }
+}
+
+impl Default for WidgetStyleConfig {
+    fn default() -> Self {
+        Self {
+            inherit_theme: true,
+            show_background: true,
+            background_color: "#202020".to_string(),
+            show_border: true,
+            border_color: "#666666".to_string(),
+            border_width: 1,
+            padding: 8,
+            font_scale: 1.0,
+            primary_color: "#ffffff".to_string(),
+            secondary_color: "#d0d0d0".to_string(),
+            accent_color: "#f2bc57".to_string(),
+            show_title: false,
+            title_text: String::new(),
         }
     }
 }
@@ -924,6 +1000,7 @@ impl PresetProfileConfig {
         self.coaching_config.normalize();
         for widget in self.extra_widgets.values_mut() {
             widget.layout.normalize();
+            widget.style.normalize();
         }
     }
 }
@@ -986,7 +1063,7 @@ pub fn default_config_text() -> &'static str {
     r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
-config_version = 5
+config_version = 6
 
 [window]
 x = 40
@@ -1245,7 +1322,7 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
-        assert_eq!(config.config_version, 5);
+        assert_eq!(config.config_version, 6);
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
@@ -1332,7 +1409,7 @@ mod tests {
 
         config.normalize();
 
-        assert_eq!(config.config_version, 5);
+        assert_eq!(config.config_version, 6);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
