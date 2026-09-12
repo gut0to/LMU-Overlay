@@ -280,8 +280,9 @@ impl SessionMarker {
             || self
                 .lap_time_seconds
                 .zip(previous.lap_time_seconds)
-                .is_some_and(|(current, previous)| {
-                    self.lap_number == previous.lap_number && current + 1.0 < previous
+                .is_some_and(|(current_lap_time, previous_lap_time)| {
+                    self.lap_number == previous.lap_number
+                        && current_lap_time + 1.0 < previous_lap_time
                 })
             || (previous.game_phase == lmu_telemetry::GamePhase::SessionOver
                 && self.game_phase == lmu_telemetry::GamePhase::GreenFlag)
