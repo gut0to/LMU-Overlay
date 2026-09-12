@@ -190,7 +190,8 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
                     let personal_best = current_lap_key
                         .as_ref()
                         .and_then(|lap_key| lap_store.load_personal_best(lap_key).ok().flatten());
-                    lap_engine = LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
+                    lap_engine =
+                        LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
                 }
                 config_mtime = Some(mtime);
             }

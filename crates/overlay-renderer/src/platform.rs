@@ -1124,7 +1124,6 @@ mod windows_overlay {
                 &format!("SB {}", lap_time(best)),
             );
         }
-
     }
 
     unsafe fn draw_sectors_widget(
