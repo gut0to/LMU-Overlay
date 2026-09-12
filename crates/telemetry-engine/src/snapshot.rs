@@ -15,6 +15,14 @@ pub struct TelemetrySnapshot {
     pub lap_progress: Option<f64>,
     pub lap_number: i32,
     pub sector: i32,
+    pub current_sector1_seconds: Option<f64>,
+    pub current_sector2_seconds: Option<f64>,
+    pub last_sector1_seconds: Option<f64>,
+    pub last_sector2_seconds: Option<f64>,
+    pub last_sector3_seconds: Option<f64>,
+    pub best_sector1_seconds: Option<f64>,
+    pub best_sector2_seconds: Option<f64>,
+    pub best_sector3_seconds: Option<f64>,
     pub session_elapsed_seconds: f64,
     pub session_kind: SessionKind,
     pub game_phase: GamePhase,
@@ -57,6 +65,14 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             lap_progress: sample.lap_progress(),
             lap_number: sample.lap_number,
             sector: sample.sector,
+            current_sector1_seconds: sample.sector_times.current_sector1_seconds,
+            current_sector2_seconds: sample.sector_times.current_sector2_seconds,
+            last_sector1_seconds: sample.sector_times.last_sector1_seconds,
+            last_sector2_seconds: sample.sector_times.last_sector2_seconds,
+            last_sector3_seconds: sample.sector_times.last_sector3_seconds,
+            best_sector1_seconds: sample.sector_times.best_sector1_seconds,
+            best_sector2_seconds: sample.sector_times.best_sector2_seconds,
+            best_sector3_seconds: sample.sector_times.best_sector3_seconds,
             session_elapsed_seconds: sample.timestamp_seconds,
             session_kind: sample.metadata.session_kind,
             game_phase: sample.metadata.game_phase,
@@ -103,6 +119,16 @@ mod tests {
             lap_number: 4,
             lap_start_seconds: 0.0,
             sector: 1,
+            sector_times: lmu_telemetry::SectorTimes {
+                current_sector1_seconds: Some(30.0),
+                current_sector2_seconds: Some(62.0),
+                last_sector1_seconds: Some(31.0),
+                last_sector2_seconds: Some(64.0),
+                last_sector3_seconds: Some(29.5),
+                best_sector1_seconds: Some(29.0),
+                best_sector2_seconds: Some(61.0),
+                best_sector3_seconds: Some(28.0),
+            },
             metadata: lmu_telemetry::TelemetryMetadata::default(),
         });
 
@@ -115,6 +141,9 @@ mod tests {
         assert_eq!(snapshot.lap_time_seconds, Some(0.0));
         assert_eq!(snapshot.lap_progress, Some(0.1));
         assert_eq!(snapshot.delta_seconds, None);
+        assert_eq!(snapshot.current_sector1_seconds, Some(30.0));
+        assert_eq!(snapshot.last_sector1_seconds, Some(31.0));
+        assert_eq!(snapshot.best_sector3_seconds, Some(28.0));
         assert_eq!(snapshot.session_kind, SessionKind::Unknown(-1));
         assert_eq!(snapshot.session_elapsed_seconds, 0.0);
         assert_eq!(snapshot.lap_invalidated, None);

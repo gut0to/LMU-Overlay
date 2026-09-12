@@ -274,6 +274,7 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_sector(bytes, scoring_offset, vehicle_offset)?,
+        sector_times: Default::default(),
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
     };
 

@@ -160,7 +160,20 @@ pub struct TelemetrySample {
     pub lap_number: i32,
     pub lap_start_seconds: f64,
     pub sector: i32,
+    pub sector_times: SectorTimes,
     pub metadata: TelemetryMetadata,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SectorTimes {
+    pub current_sector1_seconds: Option<f64>,
+    pub current_sector2_seconds: Option<f64>,
+    pub last_sector1_seconds: Option<f64>,
+    pub last_sector2_seconds: Option<f64>,
+    pub last_sector3_seconds: Option<f64>,
+    pub best_sector1_seconds: Option<f64>,
+    pub best_sector2_seconds: Option<f64>,
+    pub best_sector3_seconds: Option<f64>,
 }
 
 impl TelemetrySample {
@@ -253,6 +266,7 @@ mod tests {
             lap_number: 3,
             lap_start_seconds: 30.0,
             sector: 2,
+            sector_times: SectorTimes::default(),
             metadata: TelemetryMetadata::default(),
         };
 
@@ -278,6 +292,7 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 10.0,
             sector: 0,
+            sector_times: SectorTimes::default(),
             metadata: TelemetryMetadata::default(),
         }
         .sanitized();
@@ -309,6 +324,7 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 0.0,
             sector: 0,
+            sector_times: SectorTimes::default(),
             metadata: TelemetryMetadata::default(),
         };
 

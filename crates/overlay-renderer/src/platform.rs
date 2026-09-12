@@ -1223,13 +1223,40 @@ mod windows_overlay {
             colors.secondary_text,
             &format!("Sector {}", snapshot.sector),
         );
-        draw_text(
-            hdc,
-            area.x + scale_px(config, 10),
-            area.y + scale_px(config, 26),
-            colors.secondary_text,
-            "S1 --  S2 --  S3 --",
-        );
+        let sectors = [
+            (
+                "S1",
+                snapshot.current_sector1_seconds.or(snapshot.last_sector1_seconds),
+                snapshot.best_sector1_seconds,
+            ),
+            (
+                "S2",
+                snapshot.current_sector2_seconds.or(snapshot.last_sector2_seconds),
+                snapshot.best_sector2_seconds,
+            ),
+            ("S3", snapshot.last_sector3_seconds, snapshot.best_sector3_seconds),
+        ];
+        let mut x = area.x + scale_px(config, 10);
+        for (label, current, best) in sectors {
+            let delta = current.zip(best).map(|(current, best)| current - best);
+            let color = delta.map_or(colors.secondary_text, |delta| {
+                if delta < -0.01 {
+                    colors.delta_gain
+                } else if delta > 0.01 {
+                    colors.delta_loss
+                } else {
+                    colors.delta_neutral
+                }
+            });
+            draw_text(
+                hdc,
+                x,
+                area.y + scale_px(config, 26),
+                color,
+                &format!("{label} {}", sector_time(current)),
+            );
+            x += (area.width / 3).max(scale_size(config, 52));
+        }
     }
 
     unsafe fn draw_mini_sectors_widget(
@@ -1682,6 +1709,12 @@ mod windows_overlay {
         format!("{seconds:+.3}")
     }
 
+    fn sector_time(seconds: Option<f64>) -> String {
+        seconds
+            .map(|seconds| format!("{seconds:.3}"))
+            .unwrap_or_else(|| "--".to_string())
+    }
+
     fn lap_time(seconds: f64) -> String {
         let minutes = (seconds / 60.0).floor() as u32;
         let seconds = seconds - f64::from(minutes) * 60.0;
@@ -1818,6 +1851,8 @@ mod windows_overlay {
             assert_eq!(brake_timing_hint(-12.0), "earlier -12m");
             assert_eq!(throttle_timing_hint(15.0), "later +15m");
             assert_eq!(throttle_timing_hint(-8.0), "earlier -8m");
+            assert_eq!(sector_time(Some(31.4567)), "31.457");
+            assert_eq!(sector_time(None), "--");
         }
 
         #[test]
@@ -1863,6 +1898,14 @@ mod windows_overlay {
                 lap_progress: Some(0.2),
                 lap_number: 1,
                 sector: 1,
+                current_sector1_seconds: None,
+                current_sector2_seconds: None,
+                last_sector1_seconds: None,
+                last_sector2_seconds: None,
+                last_sector3_seconds: None,
+                best_sector1_seconds: None,
+                best_sector2_seconds: None,
+                best_sector3_seconds: None,
                 session_elapsed_seconds: 10.0,
                 session_kind: SessionKind::Practice,
                 game_phase: GamePhase::GreenFlag,

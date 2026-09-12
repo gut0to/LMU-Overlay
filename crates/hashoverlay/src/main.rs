@@ -371,6 +371,7 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 0.0,
             sector: 0,
+            sector_times: Default::default(),
             metadata: lmu_telemetry::TelemetryMetadata {
                 track_name: Some("Sebring".to_string()),
                 track_layout: Some("International".to_string()),
