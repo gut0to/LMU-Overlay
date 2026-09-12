@@ -1,9 +1,10 @@
 use std::{
+    fs,
     path::PathBuf,
     process::{Command, ExitCode},
     sync::mpsc,
     thread,
-    time::Duration,
+    time::{Duration, Instant, SystemTime},
 };
 
 use anyhow::Result;
@@ -162,14 +163,17 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
-    let lap_config = lap_engine_config(&config);
-    let overlay = TelemetryOverlay::with_config(config)?;
+    let mut lap_config = lap_engine_config(&config);
+    let overlay = TelemetryOverlay::with_config_path(config, config_path.clone())?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
     let mut current_lap_key = None;
     let mut lap_engine = LapEngine::new(lap_config.clone());
+    let mut last_config_check = Instant::now();
+    let mut config_mtime = modified_time(&config_path);
     let (lap_writer, lap_receiver) = mpsc::channel();
-    thread::spawn(move || {
+    let runtime_lap_writer = lap_writer.clone();
+    let lap_writer_handle = thread::spawn(move || {
         while let Ok((lap_key, lap)) = lap_receiver.recv() {
             if let Err(error) = lap_writer_store.save_personal_best(&lap_key, &lap) {
                 warn!("Could not save personal best reference lap: {error}");
@@ -177,38 +181,82 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
         }
     });
 
-    overlay.run(move || match source.read_sample() {
-        Ok(Some(sample)) => {
-            let lap_key = reference_lap_key(&sample);
-            if current_lap_key.as_ref() != Some(&lap_key) {
-                let personal_best = match lap_store.load_personal_best(&lap_key) {
-                    Ok(personal_best) => personal_best,
-                    Err(error) => {
-                        warn!("Could not load personal best reference lap: {error}");
-                        None
-                    }
-                };
-                lap_engine = LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
-                current_lap_key = Some(lap_key.clone());
-            }
-
-            let mut snapshot = TelemetrySnapshot::from(sample);
-            lap_engine.update(snapshot).apply_to(&mut snapshot);
-            if let Some(lap) = lap_engine.take_new_personal_best() {
-                if let Some(lap_key) = &current_lap_key {
-                    let _ = lap_writer.send((lap_key.clone(), lap));
+    overlay.run(move || {
+        if last_config_check.elapsed() >= Duration::from_millis(500) {
+            if let Some((config, mtime)) = load_config_if_changed(&config_path, config_mtime) {
+                let next_lap_config = lap_engine_config(&config);
+                if next_lap_config != lap_config {
+                    lap_config = next_lap_config;
+                    let personal_best = current_lap_key
+                        .as_ref()
+                        .and_then(|lap_key| lap_store.load_personal_best(lap_key).ok().flatten());
+                    lap_engine =
+                        LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
                 }
+                config_mtime = Some(mtime);
             }
-            Some(snapshot)
+            last_config_check = Instant::now();
         }
-        Ok(None) => None,
-        Err(error) => {
-            warn!("Could not read telemetry sample: {error}");
-            None
+
+        match source.read_sample() {
+            Ok(Some(sample)) => {
+                let lap_key = reference_lap_key(&sample);
+                if current_lap_key.as_ref() != Some(&lap_key) {
+                    let personal_best = match lap_store.load_personal_best(&lap_key) {
+                        Ok(personal_best) => personal_best,
+                        Err(error) => {
+                            warn!("Could not load personal best reference lap: {error}");
+                            None
+                        }
+                    };
+                    lap_engine =
+                        LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
+                    current_lap_key = Some(lap_key.clone());
+                }
+
+                let mut snapshot = TelemetrySnapshot::from(sample);
+                lap_engine.update(snapshot).apply_to(&mut snapshot);
+                if let Some(lap) = lap_engine.take_new_personal_best() {
+                    if let Some(lap_key) = &current_lap_key {
+                        let _ = runtime_lap_writer.send((lap_key.clone(), lap));
+                    }
+                }
+                Some(snapshot)
+            }
+            Ok(None) => None,
+            Err(error) => {
+                warn!("Could not read telemetry sample: {error}");
+                None
+            }
         }
     })?;
+    drop(lap_writer);
+    if let Err(error) = lap_writer_handle.join() {
+        warn!("Could not join personal best storage worker: {error:?}");
+    }
 
     Ok(())
+}
+
+fn load_config_if_changed(
+    config_path: &PathBuf,
+    previous_mtime: Option<SystemTime>,
+) -> Option<(OverlayConfig, SystemTime)> {
+    let mtime = modified_time(config_path)?;
+    if previous_mtime.is_some_and(|previous| previous >= mtime) {
+        return None;
+    }
+    match OverlayConfig::load(config_path) {
+        Ok(config) => Some((config, mtime)),
+        Err(error) => {
+            warn!("Could not hot reload overlay timing config: {error}");
+            None
+        }
+    }
+}
+
+fn modified_time(path: &PathBuf) -> Option<SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
 }
 
 fn reference_lap_key(sample: &TelemetrySample) -> ReferenceLapKey {

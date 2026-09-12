@@ -124,6 +124,11 @@ struct PlatformTelemetrySource {
     view: windows_sys::Win32::System::Memory::MEMORY_MAPPED_VIEW_ADDRESS,
 }
 
+// The mapping is opened read-only and is owned by this wrapper. Moving the
+// wrapper to the acquisition thread does not create shared mutable access.
+#[cfg(windows)]
+unsafe impl Send for PlatformTelemetrySource {}
+
 #[cfg(windows)]
 impl PlatformTelemetrySource {
     fn open() -> Result<Self, TelemetryError> {
@@ -345,6 +350,7 @@ fn read_metadata(
             .map(|offset| read_bool(bytes, offset + OFFSET_SCORING_IN_GARAGE_STALL))
             .transpose()?
             .unwrap_or(false),
+        lap_invalidated: None,
         player_slot_id: scoring_offset
             .map(|offset| read_i32(bytes, offset + OFFSET_SCORING_SLOT_ID))
             .transpose()?

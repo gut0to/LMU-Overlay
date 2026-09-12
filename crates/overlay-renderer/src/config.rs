@@ -1,13 +1,30 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
+
+#[cfg(windows)]
+use std::os::windows::ffi::OsStrExt;
+
+#[cfg(windows)]
+use windows_sys::Win32::Storage::FileSystem::{
+    MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+};
 
 use serde::{Deserialize, Serialize};
+
+const CURRENT_CONFIG_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OverlayConfig {
+    pub config_version: u32,
     pub window: WindowConfig,
     pub style: StyleConfig,
     pub widgets: WidgetConfig,
+    pub layout: LayoutConfig,
+    pub units: UnitsConfig,
+    pub coaching: CoachingConfig,
     pub timing: TimingConfig,
     pub hotkeys: HotkeyConfig,
     pub performance: PerformanceConfig,
@@ -16,9 +33,18 @@ pub struct OverlayConfig {
 
 impl OverlayConfig {
     pub fn load(path: impl AsRef<Path>) -> Result<Self, ConfigError> {
+        let path = path.as_ref();
         let text = fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&text)?;
+        let needs_migration = config.config_version < CURRENT_CONFIG_VERSION;
+        if needs_migration {
+            write_migration_backup(path, &text)?;
+            config.config_version = CURRENT_CONFIG_VERSION;
+        }
         config.normalize();
+        if needs_migration {
+            atomic_write(path, toml::to_string_pretty(&config)?)?;
+        }
         Ok(config)
     }
 
@@ -39,11 +65,14 @@ impl OverlayConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, toml::to_string_pretty(self)?)?;
+        atomic_write(path, toml::to_string_pretty(self)?)?;
         Ok(())
     }
 
     pub fn normalize(&mut self) {
+        if self.config_version == 0 || self.config_version > CURRENT_CONFIG_VERSION {
+            self.config_version = CURRENT_CONFIG_VERSION;
+        }
         self.window.width = self.window.width.clamp(280, 1200);
         self.window.height = self.window.height.clamp(140, 800);
         match self.performance.mode.as_str() {
@@ -67,11 +96,66 @@ impl OverlayConfig {
         self.style.opacity = self.style.opacity.clamp(32, 255);
         self.style.scale = self.style.scale.clamp(0.65, 1.75);
         self.style.line_thickness = self.style.line_thickness.clamp(1, 8);
+        self.style.font_size = self.style.font_size.clamp(8, 36);
+        self.style.font_weight = self.style.font_weight.clamp(100, 900);
+        self.style.large_number_size = self.style.large_number_size.clamp(12, 72);
+        self.layout.normalize();
+        self.units.normalize();
+        self.coaching.normalize();
         self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
         self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
         self.presets.normalize();
     }
+}
+
+fn write_migration_backup(path: &Path, text: &str) -> io::Result<()> {
+    let backup_path = path.with_extension("toml.v2.bak");
+    fs::write(backup_path, text)
+}
+
+fn atomic_write(path: &Path, text: String) -> io::Result<()> {
+    let temp_path = temp_config_path(path);
+    fs::write(&temp_path, text)?;
+    replace_file(&temp_path, path)
+}
+
+fn temp_config_path(path: &Path) -> PathBuf {
+    let mut temp_path = path.to_path_buf();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!("{value}.tmp"))
+        .unwrap_or_else(|| "tmp".to_string());
+    temp_path.set_extension(extension);
+    temp_path
+}
+
+#[cfg(windows)]
+fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
+    let temp = wide_path(temp_path);
+    let target = wide_path(path);
+    let replaced = unsafe {
+        MoveFileExW(
+            temp.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn wide_path(path: &Path) -> Vec<u16> {
+    path.as_os_str().encode_wide().chain(Some(0)).collect()
+}
+
+#[cfg(not(windows))]
+fn replace_file(temp_path: &Path, path: &Path) -> io::Result<()> {
+    fs::rename(temp_path, path)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,7 +176,7 @@ impl Default for WindowConfig {
             x: 40,
             y: 40,
             width: 420,
-            height: 190,
+            height: 230,
             refresh_hz: 60,
             sample_ms: 10,
             history_samples: 180,
@@ -116,7 +200,16 @@ pub struct StyleConfig {
     pub steering: String,
     pub delta_gain: String,
     pub delta_loss: String,
+    pub delta_neutral: String,
     pub reference: String,
+    pub rpm: String,
+    pub coaching_warning: String,
+    pub coaching_positive: String,
+    pub font_family: String,
+    pub font_size: i32,
+    pub font_weight: i32,
+    pub large_number_size: i32,
+    pub theme: String,
 }
 
 impl Default for StyleConfig {
@@ -135,7 +228,86 @@ impl Default for StyleConfig {
             steering: "#eeeeee".to_string(),
             delta_gain: "#44dd22".to_string(),
             delta_loss: "#ee4422".to_string(),
+            delta_neutral: "#f2bc57".to_string(),
             reference: "#aaaaaa".to_string(),
+            rpm: "#f2bc57".to_string(),
+            coaching_warning: "#f2bc57".to_string(),
+            coaching_positive: "#44dd22".to_string(),
+            font_family: "Segoe UI".to_string(),
+            font_size: 14,
+            font_weight: 500,
+            large_number_size: 24,
+            theme: "hashoverlay_default".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct UnitsConfig {
+    pub speed: String,
+}
+
+impl UnitsConfig {
+    fn normalize(&mut self) {
+        if !matches!(self.speed.as_str(), "kmh" | "mph") {
+            self.speed = "kmh".to_string();
+        }
+    }
+}
+
+impl Default for UnitsConfig {
+    fn default() -> Self {
+        Self {
+            speed: "kmh".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CoachingConfig {
+    pub mode: String,
+    pub brake_timing: bool,
+    pub throttle_timing: bool,
+    pub input_match: bool,
+    pub speed: bool,
+    pub gear: bool,
+    pub speed_threshold_kph: f64,
+    pub timing_deadband_m: f64,
+    pub max_hints: u8,
+}
+
+impl CoachingConfig {
+    fn normalize(&mut self) {
+        if !matches!(self.mode.as_str(), "off" | "race" | "practice" | "attack") {
+            self.mode = "practice".to_string();
+        }
+        self.speed_threshold_kph = self.speed_threshold_kph.clamp(1.0, 40.0);
+        self.timing_deadband_m = self.timing_deadband_m.clamp(0.0, 50.0);
+        self.max_hints = self.max_hints.clamp(1, 6);
+        if self.mode == "off" {
+            self.brake_timing = false;
+            self.throttle_timing = false;
+            self.input_match = false;
+            self.speed = false;
+            self.gear = false;
+        }
+    }
+}
+
+impl Default for CoachingConfig {
+    fn default() -> Self {
+        Self {
+            mode: "practice".to_string(),
+            brake_timing: true,
+            throttle_timing: true,
+            input_match: true,
+            speed: true,
+            gear: true,
+            speed_threshold_kph: 5.0,
+            timing_deadband_m: 3.0,
+            max_hints: 4,
         }
     }
 }
@@ -148,6 +320,9 @@ pub struct WidgetConfig {
     pub pedals: bool,
     pub steering: bool,
     pub lap_info: bool,
+    pub lap_timing: bool,
+    pub sectors: bool,
+    pub mini_sector_widget: bool,
     pub input_history: bool,
     pub delta_timing: bool,
     pub ghost_inputs: bool,
@@ -163,11 +338,141 @@ impl Default for WidgetConfig {
             pedals: true,
             steering: true,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: true,
             delta_timing: true,
             ghost_inputs: true,
             coaching: true,
             performance_monitor: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LayoutConfig {
+    pub lock_all: bool,
+    pub snap_to_edges: bool,
+    pub snap_distance: i32,
+    pub telemetry: WidgetLayout,
+    pub inputs: WidgetLayout,
+    pub lap_timing: WidgetLayout,
+    pub timing: WidgetLayout,
+    pub sectors: WidgetLayout,
+    pub mini_sectors: WidgetLayout,
+    pub coaching: WidgetLayout,
+    pub performance: WidgetLayout,
+}
+
+impl LayoutConfig {
+    fn normalize(&mut self) {
+        self.snap_distance = self.snap_distance.clamp(0, 64);
+        self.telemetry.normalize();
+        self.inputs.normalize();
+        self.lap_timing.normalize();
+        self.timing.normalize();
+        self.sectors.normalize();
+        self.mini_sectors.normalize();
+        self.coaching.normalize();
+        self.performance.normalize();
+    }
+}
+
+impl Default for LayoutConfig {
+    fn default() -> Self {
+        Self {
+            lock_all: false,
+            snap_to_edges: true,
+            snap_distance: 12,
+            telemetry: WidgetLayout {
+                x: 14,
+                y: 10,
+                width: 392,
+                height: 52,
+                locked: false,
+            },
+            inputs: WidgetLayout {
+                x: 14,
+                y: 64,
+                width: 240,
+                height: 106,
+                locked: false,
+            },
+            lap_timing: WidgetLayout {
+                x: 170,
+                y: 64,
+                width: 236,
+                height: 42,
+                locked: false,
+            },
+            timing: WidgetLayout {
+                x: 170,
+                y: 108,
+                width: 236,
+                height: 66,
+                locked: false,
+            },
+            sectors: WidgetLayout {
+                x: 14,
+                y: 174,
+                width: 190,
+                height: 42,
+                locked: false,
+            },
+            mini_sectors: WidgetLayout {
+                x: 210,
+                y: 174,
+                width: 196,
+                height: 42,
+                locked: false,
+            },
+            coaching: WidgetLayout {
+                x: 260,
+                y: 48,
+                width: 146,
+                height: 58,
+                locked: false,
+            },
+            performance: WidgetLayout {
+                x: 14,
+                y: 170,
+                width: 392,
+                height: 20,
+                locked: false,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WidgetLayout {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub locked: bool,
+}
+
+impl WidgetLayout {
+    fn normalize(&mut self) {
+        self.x = self.x.clamp(-2000, 8000);
+        self.y = self.y.clamp(-2000, 8000);
+        self.width = self.width.clamp(48, 1600);
+        self.height = self.height.clamp(20, 1000);
+    }
+}
+
+impl Default for WidgetLayout {
+    fn default() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width: 160,
+            height: 80,
+            locked: false,
         }
     }
 }
@@ -217,6 +522,7 @@ pub struct PresetConfig {
     pub practice: PresetProfileConfig,
     pub qualifying: PresetProfileConfig,
     pub race: PresetProfileConfig,
+    pub custom: Vec<CustomPresetConfig>,
 }
 
 impl PresetConfig {
@@ -224,6 +530,10 @@ impl PresetConfig {
         self.practice.normalize();
         self.qualifying.normalize();
         self.race.normalize();
+        self.custom.truncate(32);
+        for preset in &mut self.custom {
+            preset.profile.normalize();
+        }
     }
 }
 
@@ -233,6 +543,23 @@ impl Default for PresetConfig {
             practice: PresetProfileConfig::practice(),
             qualifying: PresetProfileConfig::qualifying(),
             race: PresetProfileConfig::race(),
+            custom: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CustomPresetConfig {
+    pub name: String,
+    pub profile: PresetProfileConfig,
+}
+
+impl Default for CustomPresetConfig {
+    fn default() -> Self {
+        Self {
+            name: "Custom preset".to_string(),
+            profile: PresetProfileConfig::default(),
         }
     }
 }
@@ -248,6 +575,9 @@ pub struct PresetProfileConfig {
     pub pedals: bool,
     pub steering: bool,
     pub lap_info: bool,
+    pub lap_timing: bool,
+    pub sectors: bool,
+    pub mini_sector_widget: bool,
     pub input_history: bool,
     pub delta_timing: bool,
     pub ghost_inputs: bool,
@@ -266,6 +596,9 @@ impl PresetProfileConfig {
             pedals: true,
             steering: true,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: true,
             delta_timing: true,
             ghost_inputs: true,
@@ -284,6 +617,9 @@ impl PresetProfileConfig {
             pedals: true,
             steering: true,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: true,
             delta_timing: true,
             ghost_inputs: true,
@@ -302,6 +638,9 @@ impl PresetProfileConfig {
             pedals: true,
             steering: false,
             lap_info: true,
+            lap_timing: true,
+            sectors: true,
+            mini_sector_widget: true,
             input_history: false,
             delta_timing: true,
             ghost_inputs: false,
@@ -373,11 +712,13 @@ pub fn default_config_text() -> &'static str {
     r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
+config_version = 3
+
 [window]
 x = 40
 y = 40
 width = 420
-height = 190
+height = 230
 refresh_hz = 60
 sample_ms = 10
 history_samples = 180
@@ -396,7 +737,16 @@ clutch = "#22dddd"
 steering = "#eeeeee"
 delta_gain = "#44dd22"
 delta_loss = "#ee4422"
+delta_neutral = "#f2bc57"
 reference = "#aaaaaa"
+rpm = "#f2bc57"
+coaching_warning = "#f2bc57"
+coaching_positive = "#44dd22"
+font_family = "Segoe UI"
+font_size = 14
+font_weight = 500
+large_number_size = 24
+theme = "hashoverlay_default"
 
 [widgets]
 title = true
@@ -404,11 +754,89 @@ speed_gear_rpm = true
 pedals = true
 steering = true
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = true
 delta_timing = true
 ghost_inputs = true
 coaching = true
 performance_monitor = false
+
+[layout]
+lock_all = false
+snap_to_edges = true
+snap_distance = 12
+
+[layout.telemetry]
+x = 14
+y = 10
+width = 392
+height = 52
+locked = false
+
+[layout.inputs]
+x = 14
+y = 64
+width = 240
+height = 106
+locked = false
+
+[layout.lap_timing]
+x = 170
+y = 64
+width = 236
+height = 42
+locked = false
+
+[layout.timing]
+x = 170
+y = 108
+width = 236
+height = 66
+locked = false
+
+[layout.sectors]
+x = 14
+y = 174
+width = 190
+height = 42
+locked = false
+
+[layout.mini_sectors]
+x = 210
+y = 174
+width = 196
+height = 42
+locked = false
+
+[layout.coaching]
+x = 260
+y = 48
+width = 146
+height = 58
+locked = false
+
+[layout.performance]
+x = 14
+y = 170
+width = 392
+height = 20
+locked = false
+
+[units]
+speed = "kmh"
+
+[coaching]
+mode = "practice"
+brake_timing = true
+throttle_timing = true
+input_match = true
+speed = true
+gear = true
+speed_threshold_kph = 5.0
+timing_deadband_m = 3.0
+max_hints = 4
 
 [timing]
 reference_mode = "personal_best"
@@ -427,6 +855,9 @@ edit_mode = "F10"
 # custom = keep refresh_hz and sample_ms from [window]
 mode = "normal"
 
+[presets]
+custom = []
+
 [presets.practice]
 performance_mode = "normal"
 reference_mode = "last_lap"
@@ -436,6 +867,9 @@ speed_gear_rpm = true
 pedals = true
 steering = true
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = true
 delta_timing = true
 ghost_inputs = true
@@ -451,6 +885,9 @@ speed_gear_rpm = true
 pedals = true
 steering = true
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = true
 delta_timing = true
 ghost_inputs = true
@@ -466,6 +903,9 @@ speed_gear_rpm = true
 pedals = true
 steering = false
 lap_info = true
+lap_timing = true
+sectors = true
+mini_sector_widget = true
 input_history = false
 delta_timing = true
 ghost_inputs = false
@@ -498,6 +938,7 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
+        assert_eq!(config.config_version, 3);
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
@@ -505,6 +946,13 @@ mod tests {
         assert_eq!(config.performance.mode, "normal");
         assert_eq!(config.style.scale, 1.0);
         assert_eq!(config.style.line_thickness, 2);
+        assert_eq!(config.style.font_size, 14);
+        assert_eq!(config.units.speed, "kmh");
+        assert_eq!(config.coaching.mode, "practice");
+        assert!(config.coaching.brake_timing);
+        assert!(config.layout.snap_to_edges);
+        assert_eq!(config.layout.inputs.width, 240);
+        assert!(config.presets.custom.is_empty());
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
     }
 
@@ -517,6 +965,7 @@ mod tests {
     #[test]
     fn normalizes_risky_values() {
         let mut config = OverlayConfig {
+            config_version: 0,
             window: WindowConfig {
                 width: 1,
                 height: 9999,
@@ -529,9 +978,29 @@ mod tests {
                 opacity: 1,
                 scale: 10.0,
                 line_thickness: 99,
+                font_size: 99,
                 ..StyleConfig::default()
             },
             widgets: WidgetConfig::default(),
+            units: UnitsConfig {
+                speed: "knots".to_string(),
+            },
+            coaching: CoachingConfig {
+                mode: "wild".to_string(),
+                speed_threshold_kph: 999.0,
+                timing_deadband_m: 999.0,
+                max_hints: 99,
+                ..CoachingConfig::default()
+            },
+            layout: LayoutConfig {
+                snap_distance: 99,
+                telemetry: WidgetLayout {
+                    width: 1,
+                    height: 1,
+                    ..WidgetLayout::default()
+                },
+                ..LayoutConfig::default()
+            },
             timing: TimingConfig::default(),
             hotkeys: HotkeyConfig::default(),
             performance: PerformanceConfig {
@@ -542,6 +1011,7 @@ mod tests {
 
         config.normalize();
 
+        assert_eq!(config.config_version, 3);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
@@ -550,6 +1020,15 @@ mod tests {
         assert_eq!(config.style.opacity, 32);
         assert_eq!(config.style.scale, 1.75);
         assert_eq!(config.style.line_thickness, 8);
+        assert_eq!(config.style.font_size, 36);
+        assert_eq!(config.units.speed, "kmh");
+        assert_eq!(config.coaching.mode, "practice");
+        assert_eq!(config.coaching.speed_threshold_kph, 40.0);
+        assert_eq!(config.coaching.timing_deadband_m, 50.0);
+        assert_eq!(config.coaching.max_hints, 6);
+        assert_eq!(config.layout.snap_distance, 64);
+        assert_eq!(config.layout.telemetry.width, 48);
+        assert_eq!(config.layout.telemetry.height, 20);
         assert_eq!(config.timing.mini_sectors, 40);
     }
 }

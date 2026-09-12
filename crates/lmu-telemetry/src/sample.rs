@@ -123,6 +123,7 @@ pub struct TelemetryMetadata {
     pub game_phase: GamePhase,
     pub in_pits: bool,
     pub in_garage: bool,
+    pub lap_invalidated: Option<bool>,
     pub player_slot_id: i32,
 }
 
@@ -136,6 +137,7 @@ impl Default for TelemetryMetadata {
             game_phase: GamePhase::Unknown(u8::MAX),
             in_pits: false,
             in_garage: false,
+            lap_invalidated: None,
             player_slot_id: -1,
         }
     }

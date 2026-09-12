@@ -15,10 +15,13 @@ pub struct TelemetrySnapshot {
     pub lap_progress: Option<f64>,
     pub lap_number: i32,
     pub sector: i32,
+    pub session_elapsed_seconds: f64,
     pub session_kind: SessionKind,
     pub game_phase: GamePhase,
     pub in_pits: bool,
     pub in_garage: bool,
+    pub lap_invalidated: Option<bool>,
+    pub player_slot_id: i32,
     pub delta_seconds: Option<f64>,
     pub predicted_lap_seconds: Option<f64>,
     pub session_best_seconds: Option<f64>,
@@ -28,6 +31,9 @@ pub struct TelemetrySnapshot {
     pub mini_sector_delta_seconds: Option<f64>,
     pub brake_hint_meters: Option<f64>,
     pub throttle_hint_meters: Option<f64>,
+    pub speed_hint_kph: Option<f64>,
+    pub reference_gear: Option<i32>,
+    pub reference_steering: Option<f64>,
     pub reference_throttle: Option<f64>,
     pub reference_brake: Option<f64>,
     pub reference_speed_kph: Option<f64>,
@@ -51,10 +57,13 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             lap_progress: sample.lap_progress(),
             lap_number: sample.lap_number,
             sector: sample.sector,
+            session_elapsed_seconds: sample.timestamp_seconds,
             session_kind: sample.metadata.session_kind,
             game_phase: sample.metadata.game_phase,
             in_pits: sample.metadata.in_pits,
             in_garage: sample.metadata.in_garage,
+            lap_invalidated: sample.metadata.lap_invalidated,
+            player_slot_id: sample.metadata.player_slot_id,
             delta_seconds: None,
             predicted_lap_seconds: None,
             session_best_seconds: None,
@@ -64,6 +73,9 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             mini_sector_delta_seconds: None,
             brake_hint_meters: None,
             throttle_hint_meters: None,
+            speed_hint_kph: None,
+            reference_gear: None,
+            reference_steering: None,
             reference_throttle: None,
             reference_brake: None,
             reference_speed_kph: None,
@@ -104,5 +116,8 @@ mod tests {
         assert_eq!(snapshot.lap_progress, Some(0.1));
         assert_eq!(snapshot.delta_seconds, None);
         assert_eq!(snapshot.session_kind, SessionKind::Unknown(-1));
+        assert_eq!(snapshot.session_elapsed_seconds, 0.0);
+        assert_eq!(snapshot.lap_invalidated, None);
+        assert_eq!(snapshot.player_slot_id, -1);
     }
 }

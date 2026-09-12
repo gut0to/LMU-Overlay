@@ -7,3 +7,4 @@ repository.workspace = true
 
 [dependencies]
 lap-engine = { path = "../lap-engine" }
+windows-sys.workspace = true

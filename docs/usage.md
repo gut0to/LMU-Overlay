@@ -121,10 +121,16 @@ The settings app can change:
 - presets for Practice, Qualifying and Race;
 - visible widgets;
 - position, size, scale and opacity;
+- per-widget position, size, lock state and snap behavior;
+- live layout preview with draggable/resizable mock widget boxes;
 - colors and line thickness;
+- font family, font size, large-number size and km/h or mph units;
 - telemetry history, render FPS and sample interval;
-- delta reference, mini-sectors and coaching thresholds;
-- hotkeys and performance mode.
+- delta reference, mini-sectors and input thresholds;
+- coaching mode, enabled hint types, speed threshold, timing deadband and maximum hints;
+- hotkeys and performance mode;
+- TOML import/export;
+- reset for the layout or the full config.
 
 For a lightweight text config fallback:
 
@@ -139,6 +145,15 @@ This creates and opens:
 ```
 
 You can edit the same settings in TOML. Save the file, then start the overlay.
+When the overlay is already running, saved settings are hot reloaded automatically.
+
+Useful Settings workflows:
+
+- Open `Layout`, drag widgets in the preview, resize from the bottom-right corner, then press `Save`.
+- Use `F10` in the overlay to move or resize real widgets on top of the game, then press `F10` again to return to click-through mode.
+- Open `Coaching` to choose race/practice/attack behavior and decide which hint types are visible.
+- Open `Presets` to create custom presets from the current setup.
+- Open `Advanced` to export the current TOML, import a shared TOML, reset only the layout, or reset the entire config.
 
 ## 9. Run The Overlay
 
@@ -154,8 +169,9 @@ The current overlay includes:
 - always on top;
 - click-through;
 - configurable position and size;
+- independent widget position and size;
 - configurable scale, opacity, colors and line thickness;
-- toggles for title, speed/RPM, pedals, steering, lap info and input history;
+- toggles for title, speed/RPM, pedals, steering, lap timing, sectors, mini-sectors, delta, ghost inputs, coaching and input history;
 - speed, gear and RPM text;
 - throttle, brake and clutch bars;
 - steering bar;
@@ -165,10 +181,12 @@ The current overlay includes:
 - mini-sector delta based on the last completed mini-sector crossing;
 - ghost input markers for throttle/brake when a reference lap exists;
 - brake/throttle timing hints against the reference lap;
-- coaching cues for releasing brake, adding throttle and carrying more speed.
+- coaching cues for brake timing, throttle timing, pedal matching, speed delta and gear choice;
 - F9 show/hide by default;
 - F10 edit mode by default;
-- drag-to-move and edge/corner resize while edit mode is enabled.
+- drag-to-move and corner resize for each unlocked widget while edit mode is enabled;
+- persistent layout saves when a widget is moved or resized;
+- hot reload when the Settings app saves config changes.
 
 ## 10. Reference Laps And PB Storage
 
@@ -194,4 +212,5 @@ If the app says the telemetry buffer is not available:
 
 ## 12. Current Limitations
 
-- Configuration changes are loaded when the overlay starts.
+- The renderer still uses the current Win32/GDI backend while the Direct2D/DirectWrite backend is prepared.
+- LMU lap invalidation by track-cut is not mapped until an official field is identified in `LMU_Data`; the current validity gate is conservative around green flag, pits and garage.
