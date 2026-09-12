@@ -1147,6 +1147,10 @@ function WidgetStyleFields(props: {
         <Paintbrush size={16} />
         <span>Use global appearance</span>
       </label>
+      {!props.style.inherit_theme && <button className="secondaryButton" onClick={() => props.onChange("inherit_theme", true)}>
+        <RotateCcw size={16} />
+        Reset widget style to theme
+      </button>}
       {!props.style.inherit_theme && <>
         <label className="toggle full">
           <input type="checkbox" checked={props.style.show_background} onChange={(event) => props.onChange("show_background", event.target.checked)} />
