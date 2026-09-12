@@ -150,6 +150,11 @@ type PresetProfileConfig = {
   performance_mode: string;
   reference_mode: string;
   mini_sectors: number;
+  style: StyleConfig;
+  units: UnitsConfig;
+  coaching_config: CoachingConfig;
+  layout: LayoutConfig;
+  extra_widgets: Record<string, { enabled: boolean; layout: WidgetLayout }>;
 } & WidgetConfig;
 
 type PresetConfig = {
@@ -439,16 +444,7 @@ function App() {
         return current;
       }
       const preset = current.presets[name];
-      return {
-        ...current,
-        performance: { mode: preset.performance_mode },
-        timing: {
-          ...current.timing,
-          reference_mode: preset.reference_mode,
-          mini_sectors: preset.mini_sectors,
-        },
-        widgets: pickWidgets(preset),
-      };
+      return applyProfile(current, preset);
     });
   }
 
@@ -1213,6 +1209,11 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
     performance_mode: config.performance.mode,
     reference_mode: config.timing.reference_mode,
     mini_sectors: config.timing.mini_sectors,
+    style: structuredClone(config.style),
+    units: structuredClone(config.units),
+    coaching_config: structuredClone(config.coaching),
+    layout: structuredClone(config.layout),
+    extra_widgets: structuredClone(config.extra_widgets),
     ...config.widgets,
   };
 }
@@ -1227,6 +1228,11 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): Over
       mini_sectors: profile.mini_sectors,
     },
     widgets: pickWidgets(profile),
+    style: structuredClone(profile.style),
+    units: structuredClone(profile.units),
+    coaching: structuredClone(profile.coaching_config),
+    layout: structuredClone(profile.layout),
+    extra_widgets: structuredClone(profile.extra_widgets),
   };
 }
 

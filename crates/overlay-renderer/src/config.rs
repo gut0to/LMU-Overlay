@@ -14,7 +14,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use serde::{Deserialize, Serialize};
 
-const CURRENT_CONFIG_VERSION: u32 = 4;
+const CURRENT_CONFIG_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -131,12 +131,18 @@ fn migrate_config(config: &mut OverlayConfig, from_version: u32) {
             migrate_v1_to_v2(config);
             migrate_v2_to_v3(config);
             migrate_v3_to_v4(config);
+            migrate_v4_to_v5(config);
         }
         2 => {
             migrate_v2_to_v3(config);
             migrate_v3_to_v4(config);
+            migrate_v4_to_v5(config);
         }
-        3 => migrate_v3_to_v4(config),
+        3 => {
+            migrate_v3_to_v4(config);
+            migrate_v4_to_v5(config);
+        }
+        4 => migrate_v4_to_v5(config),
         _ => config.config_version = CURRENT_CONFIG_VERSION,
     }
 }
@@ -171,6 +177,11 @@ fn migrate_v3_to_v4(config: &mut OverlayConfig) {
     if config.units.fuel.trim().is_empty() {
         config.units.fuel = "liters".to_string();
     }
+    config.config_version = 4;
+}
+
+fn migrate_v4_to_v5(config: &mut OverlayConfig) {
+    config.presets.normalize();
     config.config_version = CURRENT_CONFIG_VERSION;
 }
 
@@ -738,6 +749,11 @@ pub struct PresetProfileConfig {
     pub performance_mode: String,
     pub reference_mode: String,
     pub mini_sectors: u16,
+    pub style: StyleConfig,
+    pub units: UnitsConfig,
+    pub coaching_config: CoachingConfig,
+    pub layout: LayoutConfig,
+    pub extra_widgets: BTreeMap<String, WidgetInstanceConfig>,
     pub title: bool,
     pub speed_gear_rpm: bool,
     pub pedals: bool,
@@ -754,6 +770,41 @@ pub struct PresetProfileConfig {
 }
 
 impl PresetProfileConfig {
+    fn base() -> Self {
+        Self {
+            performance_mode: "normal".to_string(),
+            reference_mode: "personal_best".to_string(),
+            mini_sectors: 40,
+            style: StyleConfig::default(),
+            units: UnitsConfig::default(),
+            coaching_config: CoachingConfig::default(),
+            layout: LayoutConfig::default(),
+            extra_widgets: crate::widgets::WIDGET_CATALOG
+                .iter()
+                .enumerate()
+                .map(|(index, definition)| {
+                    (
+                        definition.id.to_string(),
+                        WidgetInstanceConfig::disabled(index),
+                    )
+                })
+                .collect(),
+            title: false,
+            speed_gear_rpm: false,
+            pedals: false,
+            steering: false,
+            lap_info: false,
+            lap_timing: false,
+            sectors: false,
+            mini_sector_widget: false,
+            input_history: false,
+            delta_timing: false,
+            ghost_inputs: false,
+            coaching: false,
+            performance_monitor: false,
+        }
+    }
+
     fn practice() -> Self {
         Self {
             performance_mode: "normal".to_string(),
@@ -772,6 +823,7 @@ impl PresetProfileConfig {
             ghost_inputs: true,
             coaching: true,
             performance_monitor: false,
+            ..Self::base()
         }
     }
 
@@ -793,6 +845,7 @@ impl PresetProfileConfig {
             ghost_inputs: true,
             coaching: true,
             performance_monitor: false,
+            ..Self::base()
         }
     }
 
@@ -814,6 +867,7 @@ impl PresetProfileConfig {
             ghost_inputs: false,
             coaching: false,
             performance_monitor: false,
+            ..Self::base()
         }
     }
 
@@ -835,6 +889,7 @@ impl PresetProfileConfig {
             ghost_inputs: false,
             coaching: false,
             performance_monitor: false,
+            ..Self::base()
         }
     }
 
@@ -856,11 +911,20 @@ impl PresetProfileConfig {
             ghost_inputs: false,
             coaching: false,
             performance_monitor: false,
+            ..Self::base()
         }
     }
 
     fn normalize(&mut self) {
         self.mini_sectors = self.mini_sectors.clamp(1, 200);
+        self.style.opacity = self.style.opacity.clamp(32, 255);
+        self.style.scale = self.style.scale.clamp(0.65, 1.75);
+        self.layout.normalize();
+        self.units.normalize();
+        self.coaching_config.normalize();
+        for widget in self.extra_widgets.values_mut() {
+            widget.layout.normalize();
+        }
     }
 }
 
@@ -922,7 +986,7 @@ pub fn default_config_text() -> &'static str {
     r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
-config_version = 4
+config_version = 5
 
 [window]
 x = 40
@@ -1181,7 +1245,7 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
-        assert_eq!(config.config_version, 4);
+        assert_eq!(config.config_version, 5);
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
@@ -1268,7 +1332,7 @@ mod tests {
 
         config.normalize();
 
-        assert_eq!(config.config_version, 4);
+        assert_eq!(config.config_version, 5);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
@@ -1333,5 +1397,16 @@ mod tests {
         assert!(!config.extra_widgets.contains_key("unknown-widget"));
         assert!(config.extra_widgets.contains_key("fuel"));
         assert!(config.extra_widgets.contains_key("weather"));
+    }
+
+    #[test]
+    fn preset_profiles_capture_complete_overlay_state() {
+        let profile = PresetProfileConfig::practice();
+
+        assert_eq!(profile.style.theme, "hashoverlay_default");
+        assert_eq!(profile.units.speed, "kmh");
+        assert!(profile.coaching_config.brake_timing);
+        assert!(profile.extra_widgets.contains_key("fuel"));
+        assert_eq!(profile.layout.telemetry.z_index, 10);
     }
 }

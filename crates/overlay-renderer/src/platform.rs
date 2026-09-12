@@ -800,6 +800,11 @@ mod windows_overlay {
         config.performance.mode = next.performance_mode;
         config.timing.reference_mode = next.reference_mode;
         config.timing.mini_sectors = next.mini_sectors;
+        config.style = next.style;
+        config.units = next.units;
+        config.coaching = next.coaching_config;
+        config.layout = next.layout;
+        config.extra_widgets = next.extra_widgets;
         config.widgets.title = next.title;
         config.widgets.speed_gear_rpm = next.speed_gear_rpm;
         config.widgets.pedals = next.pedals;
