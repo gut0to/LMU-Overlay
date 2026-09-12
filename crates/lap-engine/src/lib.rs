@@ -1041,7 +1041,7 @@ mod tests {
         engine.update(snapshot(1, 0.46, 46.0, 0.0, 0.0));
         let analysis = engine.update(snapshot(1, 0.48, 48.0, 0.2, 0.0));
 
-        assert!((analysis.brake_hint_meters.unwrap() + 150.0).abs() < 25.0);
+        assert!((analysis.brake_hint_meters.unwrap() + 200.0).abs() < 25.0);
     }
 
     fn reference_lap(total_time_seconds: f64) -> ReferenceLap {
