@@ -291,6 +291,7 @@ fn lap_engine_config(config: &OverlayConfig) -> LapEngineConfig {
         mini_sectors: config.timing.mini_sectors,
         brake_threshold: config.timing.brake_threshold,
         throttle_threshold: config.timing.throttle_threshold,
+        event_match_tolerance_m: config.coaching.event_match_tolerance_m,
         ..LapEngineConfig::default()
     }
 }

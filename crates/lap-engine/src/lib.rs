@@ -42,6 +42,7 @@ pub struct LapEngineConfig {
     pub mini_sectors: u16,
     pub brake_threshold: f64,
     pub throttle_threshold: f64,
+    pub event_match_tolerance_m: f64,
     pub min_reference_points: usize,
 }
 
@@ -52,6 +53,7 @@ impl Default for LapEngineConfig {
             mini_sectors: 40,
             brake_threshold: 0.10,
             throttle_threshold: 0.10,
+            event_match_tolerance_m: 80.0,
             min_reference_points: 20,
         }
     }
@@ -641,8 +643,12 @@ impl LapEngine {
             .find(|event| event.kind == kind)?;
         let reference_event = matching_reference_event(reference?, current_event)?;
         let track_length_m = track_length_m?;
+        let delta_meters = (reference_event.progress - current_event.progress) * track_length_m;
+        if delta_meters.abs() > self.config.event_match_tolerance_m {
+            return None;
+        }
 
-        Some((reference_event.progress - current_event.progress) * track_length_m)
+        Some(delta_meters)
     }
 
     fn reset_if_new_session(&mut self, snapshot: TelemetrySnapshot) {
@@ -930,6 +936,7 @@ mod tests {
         .unwrap();
         let mut engine = LapEngine::new(LapEngineConfig {
             min_reference_points: 2,
+            event_match_tolerance_m: 500.0,
             ..LapEngineConfig::default()
         })
         .with_personal_best(Some(reference));
@@ -1066,6 +1073,26 @@ mod tests {
         let analysis = engine.update(snapshot(1, 0.48, 48.0, 0.2, 0.0));
 
         assert!((analysis.brake_hint_meters.unwrap() + 200.0).abs() < 25.0);
+    }
+
+    #[test]
+    fn ignores_reference_events_outside_corner_tolerance() {
+        let reference = ReferenceLap::new(
+            100.0,
+            vec![point(0.18, 18.0, 0.0, 0.0), point(0.20, 20.0, 0.0, 0.2)],
+        )
+        .unwrap();
+        let mut engine = LapEngine::new(LapEngineConfig {
+            min_reference_points: 2,
+            event_match_tolerance_m: 50.0,
+            ..LapEngineConfig::default()
+        })
+        .with_personal_best(Some(reference));
+
+        engine.update(snapshot(1, 0.44, 44.0, 0.0, 0.0));
+        let analysis = engine.update(snapshot(1, 0.46, 46.0, 0.2, 0.0));
+
+        assert_eq!(analysis.brake_hint_meters, None);
     }
 
     fn reference_lap(total_time_seconds: f64) -> ReferenceLap {

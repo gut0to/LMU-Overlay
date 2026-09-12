@@ -110,6 +110,7 @@ type CoachingConfig = {
   gear: boolean;
   speed_threshold_kph: number;
   timing_deadband_m: number;
+  event_match_tolerance_m: number;
   max_hints: number;
 };
 
@@ -527,6 +528,7 @@ function App() {
           <Segmented value={config.coaching.mode} options={coachingModes} onChange={(value) => setCoaching(config, setConfig, "mode", value)} />
           <RangeField label="Speed threshold" min={1} max={40} step={1} value={config.coaching.speed_threshold_kph} onChange={(value) => setCoaching(config, setConfig, "speed_threshold_kph", value)} />
           <RangeField label="Timing deadband" min={0} max={50} step={1} value={config.coaching.timing_deadband_m} onChange={(value) => setCoaching(config, setConfig, "timing_deadband_m", value)} />
+          <RangeField label="Corner match tolerance" min={10} max={500} step={5} value={config.coaching.event_match_tolerance_m} onChange={(value) => setCoaching(config, setConfig, "event_match_tolerance_m", value)} />
           <NumberField label="Max hints" value={config.coaching.max_hints} onChange={(value) => setCoaching(config, setConfig, "max_hints", value)} />
           <div className="toggles">
             {coachingLabels.map(([key, label]) => (

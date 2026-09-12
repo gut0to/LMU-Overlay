@@ -1311,7 +1311,7 @@ mod windows_overlay {
                         x,
                         y,
                         timing_color(hint, colors),
-                        &format!("BRK {}", brake_timing_hint(hint)),
+                        &format!("BRAKE {}", timing_hint(hint)),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -1329,7 +1329,7 @@ mod windows_overlay {
                         x,
                         y,
                         timing_color(hint, colors),
-                        &format!("THR {}", throttle_timing_hint(hint)),
+                        &format!("THROTTLE {}", timing_hint(hint)),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -1358,7 +1358,7 @@ mod windows_overlay {
                         } else {
                             colors.coaching_warning
                         },
-                        &format!("{speed_gap:+.0} km/h vs ref"),
+                        &format!("{speed_gap:+.0} km/h ENTRY"),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -1374,7 +1374,7 @@ mod windows_overlay {
                         x,
                         y,
                         colors.secondary_text,
-                        &format!("GEAR {gear} / REF {reference_gear}"),
+                        &format!("USE {reference_gear}{}", gear_suffix(reference_gear)),
                     );
                 }
             }
@@ -1737,19 +1737,20 @@ mod windows_overlay {
         }
     }
 
-    fn brake_timing_hint(meters: f64) -> String {
+    fn timing_hint(meters: f64) -> String {
         if meters >= 0.0 {
-            format!("later +{meters:.0}m")
+            format!("{meters:.0}m LATE")
         } else {
-            format!("earlier {meters:.0}m")
+            format!("{:.0}m EARLY", meters.abs())
         }
     }
 
-    fn throttle_timing_hint(meters: f64) -> String {
-        if meters >= 0.0 {
-            format!("later +{meters:.0}m")
-        } else {
-            format!("earlier {meters:.0}m")
+    fn gear_suffix(gear: i32) -> &'static str {
+        match gear {
+            1 => "ST",
+            2 => "ND",
+            3 => "RD",
+            _ => "TH",
         }
     }
 
@@ -1847,10 +1848,10 @@ mod windows_overlay {
 
         #[test]
         fn formats_direct_timing_hints() {
-            assert_eq!(brake_timing_hint(25.0), "later +25m");
-            assert_eq!(brake_timing_hint(-12.0), "earlier -12m");
-            assert_eq!(throttle_timing_hint(15.0), "later +15m");
-            assert_eq!(throttle_timing_hint(-8.0), "earlier -8m");
+            assert_eq!(timing_hint(25.0), "25m LATE");
+            assert_eq!(timing_hint(-12.0), "12m EARLY");
+            assert_eq!(gear_suffix(1), "ST");
+            assert_eq!(gear_suffix(3), "RD");
             assert_eq!(sector_time(Some(31.4567)), "31.457");
             assert_eq!(sector_time(None), "--");
         }

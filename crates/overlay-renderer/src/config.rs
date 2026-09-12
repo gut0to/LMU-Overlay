@@ -307,6 +307,7 @@ pub struct CoachingConfig {
     pub gear: bool,
     pub speed_threshold_kph: f64,
     pub timing_deadband_m: f64,
+    pub event_match_tolerance_m: f64,
     pub max_hints: u8,
 }
 
@@ -317,6 +318,7 @@ impl CoachingConfig {
         }
         self.speed_threshold_kph = self.speed_threshold_kph.clamp(1.0, 40.0);
         self.timing_deadband_m = self.timing_deadband_m.clamp(0.0, 50.0);
+        self.event_match_tolerance_m = self.event_match_tolerance_m.clamp(10.0, 500.0);
         self.max_hints = self.max_hints.clamp(1, 6);
         if self.mode == "off" {
             self.brake_timing = false;
@@ -339,6 +341,7 @@ impl Default for CoachingConfig {
             gear: true,
             speed_threshold_kph: 5.0,
             timing_deadband_m: 3.0,
+            event_match_tolerance_m: 80.0,
             max_hints: 4,
         }
     }
@@ -941,6 +944,7 @@ speed = true
 gear = true
 speed_threshold_kph = 5.0
 timing_deadband_m = 3.0
+event_match_tolerance_m = 80.0
 max_hints = 4
 
 [timing]
@@ -1140,6 +1144,7 @@ mod tests {
         assert_eq!(config.coaching.mode, "practice");
         assert_eq!(config.coaching.speed_threshold_kph, 40.0);
         assert_eq!(config.coaching.timing_deadband_m, 50.0);
+        assert_eq!(config.coaching.event_match_tolerance_m, 80.0);
         assert_eq!(config.coaching.max_hints, 6);
         assert_eq!(config.layout.snap_distance, 64);
         assert_eq!(config.layout.grid_size, 10);
