@@ -106,6 +106,7 @@ type LayoutConfig = {
 };
 
 type LayoutWidgetKey = "telemetry" | "inputs" | "lap_timing" | "timing" | "sectors" | "mini_sectors" | "coaching" | "performance";
+type LayoutSelection = LayoutWidgetKey | `extra:${string}`;
 
 type UnitsConfig = {
   speed: string;
@@ -312,7 +313,7 @@ function App() {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
-  const [selectedLayout, setSelectedLayout] = useState<LayoutWidgetKey>("telemetry");
+  const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
@@ -479,6 +480,7 @@ function App() {
     }),
     [widgetCatalog, widgetCategory, widgetSearch],
   );
+  const availableLayoutEntries = useMemo(() => config ? layoutEntries(config) : [], [config]);
 
   const activePreset = useMemo(() => {
     if (!config) {
@@ -555,7 +557,7 @@ function App() {
             config={config}
             selected={selectedLayout}
             onSelect={setSelectedLayout}
-            onLayoutChange={(widget, layout) => setConfig({ ...config, layout: { ...config.layout, [widget]: layout } })}
+            onLayoutChange={(widget, layout) => setConfig(updateLayoutSelection(config, widget, layout))}
           />
         </Section>}
 
@@ -570,7 +572,7 @@ function App() {
 
         {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Magnet />} title="Widget Layout">
           <div className="segmented">
-            {layoutLabels.map(([key, label]) => (
+            {availableLayoutEntries.map(({ key, label }) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
               </button>
@@ -611,8 +613,8 @@ function App() {
           <Segmented value={String(config.layout.grid_size)} options={gridSizes} onChange={(value) => setLayoutFlag(config, setConfig, "grid_size", Number(value))} />
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
           <WidgetLayoutFields
-            layout={config.layout[selectedLayout]}
-            onChange={(key, value) => setWidgetLayout(config, setConfig, selectedLayout, key, value)}
+            layout={layoutForSelection(config, selectedLayout)}
+            onChange={(key, value) => setLayoutSelection(config, setConfig, selectedLayout, key, value)}
           />
         </Section>}
 
@@ -774,12 +776,12 @@ function showPanel(active: Page, primary: Page, secondary: Page) {
 
 function OverlayPreview(props: {
   config: OverlayConfig;
-  selected: LayoutWidgetKey;
-  onSelect: (value: LayoutWidgetKey) => void;
-  onLayoutChange: (widget: LayoutWidgetKey, layout: WidgetLayout) => void;
+  selected: LayoutSelection;
+  onSelect: (value: LayoutSelection) => void;
+  onLayoutChange: (widget: LayoutSelection, layout: WidgetLayout) => void;
 }) {
   const [drag, setDrag] = useState<{
-    widget: LayoutWidgetKey;
+    widget: LayoutSelection;
     startX: number;
     startY: number;
     layout: WidgetLayout;
@@ -823,8 +825,7 @@ function OverlayPreview(props: {
           color: props.config.style.primary_text,
         }}
       >
-        {layoutLabels.map(([key, label]) => {
-          const layout = props.config.layout[key];
+        {layoutEntries(props.config).map(({ key, label, layout }) => {
           return (
             <button
               key={key}
@@ -873,7 +874,31 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function snapLayout(config: OverlayConfig, widget: LayoutWidgetKey, layout: WidgetLayout): WidgetLayout {
+function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; label: string; layout: WidgetLayout }> {
+  const legacy = layoutLabels.map(([key, label]) => ({ key, label, layout: config.layout[key] }));
+  const extra = Object.entries(config.extra_widgets)
+    .filter(([, widget]) => widget.enabled)
+    .map(([id, widget]) => ({ key: `extra:${id}` as LayoutSelection, label: id.replace(/_/g, " "), layout: widget.layout }));
+  return [...legacy, ...extra];
+}
+
+function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): WidgetLayout {
+  if (selection.startsWith("extra:")) {
+    return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
+  }
+  return config.layout[selection as LayoutWidgetKey];
+}
+
+function updateLayoutSelection(config: OverlayConfig, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
+  if (selection.startsWith("extra:")) {
+    const id = selection.slice("extra:".length);
+    const widget = config.extra_widgets[id];
+    return widget ? { ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, layout } } } : config;
+  }
+  return { ...config, layout: { ...config.layout, [selection]: layout } };
+}
+
+function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
   let next = { ...layout };
   if (config.layout.snap_to_grid) {
     next = {
@@ -917,14 +942,13 @@ function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout 
   return next;
 }
 
-function snapToWidgets(config: OverlayConfig, widget: LayoutWidgetKey, layout: WidgetLayout): WidgetLayout {
+function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
   let next = { ...layout };
   const distance = config.layout.snap_distance;
-  for (const [key] of layoutLabels) {
+  for (const { key, layout: other } of layoutEntries(config)) {
     if (key === widget) {
       continue;
     }
-    const other = config.layout[key];
     const nextRight = next.x + next.width;
     const nextBottom = next.y + next.height;
     const otherRight = other.x + other.width;
@@ -1107,21 +1131,15 @@ function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs"
   setConfig({ ...config, layout: { ...config.layout, [key]: value } });
 }
 
-function setWidgetLayout<K extends keyof WidgetLayout>(
+function setLayoutSelection<K extends keyof WidgetLayout>(
   config: OverlayConfig,
   setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
-  widget: LayoutWidgetKey,
+  selection: LayoutSelection,
   key: K,
   value: WidgetLayout[K],
 ) {
-  const layout = config.layout[widget] as WidgetLayout;
-  setConfig({
-    ...config,
-    layout: {
-      ...config.layout,
-      [widget]: { ...layout, [key]: value },
-    },
-  });
+  const layout = layoutForSelection(config, selection);
+  setConfig(updateLayoutSelection(config, selection, { ...layout, [key]: value }));
 }
 
 function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof HotkeyConfig, value: string) {
