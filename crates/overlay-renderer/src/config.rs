@@ -36,10 +36,11 @@ impl OverlayConfig {
         let path = path.as_ref();
         let text = fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&text)?;
-        let needs_migration = config.config_version < CURRENT_CONFIG_VERSION;
+        let original_version = config.config_version;
+        let needs_migration = original_version < CURRENT_CONFIG_VERSION;
         if needs_migration {
             write_migration_backup(path, &text)?;
-            config.config_version = CURRENT_CONFIG_VERSION;
+            migrate_config(&mut config, original_version);
         }
         config.normalize();
         if needs_migration {
@@ -107,6 +108,37 @@ impl OverlayConfig {
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
         self.presets.normalize();
     }
+}
+
+fn migrate_config(config: &mut OverlayConfig, from_version: u32) {
+    match from_version {
+        0 | 1 => {
+            migrate_v1_to_v2(config);
+            migrate_v2_to_v3(config);
+        }
+        2 => migrate_v2_to_v3(config),
+        _ => config.config_version = CURRENT_CONFIG_VERSION,
+    }
+}
+
+fn migrate_v1_to_v2(config: &mut OverlayConfig) {
+    if config.hotkeys.toggle_overlay.trim().is_empty() {
+        config.hotkeys.toggle_overlay = "F9".to_string();
+    }
+    if config.hotkeys.edit_mode.trim().is_empty() {
+        config.hotkeys.edit_mode = "F10".to_string();
+    }
+    config.config_version = 2;
+}
+
+fn migrate_v2_to_v3(config: &mut OverlayConfig) {
+    if config.hotkeys.toggle_coaching.trim().is_empty() {
+        config.hotkeys.toggle_coaching = "Shift+F10".to_string();
+    }
+    if config.hotkeys.cycle_preset.trim().is_empty() {
+        config.hotkeys.cycle_preset = "Ctrl+Shift+F9".to_string();
+    }
+    config.config_version = CURRENT_CONFIG_VERSION;
 }
 
 fn write_migration_backup(path: &Path, text: &str) -> io::Result<()> {
@@ -533,6 +565,8 @@ pub struct TimingConfig {
 pub struct HotkeyConfig {
     pub toggle_overlay: String,
     pub edit_mode: String,
+    pub toggle_coaching: String,
+    pub cycle_preset: String,
 }
 
 impl Default for HotkeyConfig {
@@ -540,6 +574,8 @@ impl Default for HotkeyConfig {
         Self {
             toggle_overlay: "F9".to_string(),
             edit_mode: "F10".to_string(),
+            toggle_coaching: "Shift+F10".to_string(),
+            cycle_preset: "Ctrl+Shift+F9".to_string(),
         }
     }
 }
@@ -916,6 +952,8 @@ throttle_threshold = 0.10
 [hotkeys]
 toggle_overlay = "F9"
 edit_mode = "F10"
+toggle_coaching = "Shift+F10"
+cycle_preset = "Ctrl+Shift+F9"
 
 [performance]
 # eco = 50 Hz telemetry / 30 FPS render
@@ -1012,6 +1050,7 @@ mod tests {
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
         assert_eq!(config.hotkeys.toggle_overlay, "F9");
+        assert_eq!(config.hotkeys.toggle_coaching, "Shift+F10");
         assert_eq!(config.performance.mode, "normal");
         assert_eq!(config.style.scale, 1.0);
         assert_eq!(config.style.line_thickness, 2);

@@ -87,6 +87,8 @@ mod windows_overlay {
     const COLOR_KEY: u32 = 0x000000;
     const HOTKEY_TOGGLE_OVERLAY: i32 = 1;
     const HOTKEY_EDIT_MODE: i32 = 2;
+    const HOTKEY_TOGGLE_COACHING: i32 = 3;
+    const HOTKEY_CYCLE_PRESET: i32 = 4;
     const EDIT_HIT_MARGIN: i32 = 16;
 
     #[derive(Clone, Copy)]
@@ -358,6 +360,7 @@ mod windows_overlay {
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
                 apply_window_config(hwnd, &config);
+                reload_hotkeys(hwnd, &config);
                 resize_history_if_needed(state, config.window.history_samples);
                 if let Ok(mut current) = state.config.lock() {
                     *current = config;
@@ -399,6 +402,46 @@ mod windows_overlay {
         }
     }
 
+    unsafe fn reload_hotkeys(hwnd: HWND, config: &OverlayConfig) {
+        UnregisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY);
+        UnregisterHotKey(hwnd, HOTKEY_EDIT_MODE);
+        UnregisterHotKey(hwnd, HOTKEY_TOGGLE_COACHING);
+        UnregisterHotKey(hwnd, HOTKEY_CYCLE_PRESET);
+        register_runtime_hotkeys(hwnd, config);
+    }
+
+    unsafe fn register_runtime_hotkeys(hwnd: HWND, config: &OverlayConfig) {
+        register_hotkey(
+            hwnd,
+            HOTKEY_TOGGLE_OVERLAY,
+            "toggle overlay",
+            &config.hotkeys.toggle_overlay,
+        );
+        register_hotkey(hwnd, HOTKEY_EDIT_MODE, "edit mode", &config.hotkeys.edit_mode);
+        register_hotkey(
+            hwnd,
+            HOTKEY_TOGGLE_COACHING,
+            "toggle coaching",
+            &config.hotkeys.toggle_coaching,
+        );
+        register_hotkey(
+            hwnd,
+            HOTKEY_CYCLE_PRESET,
+            "cycle preset",
+            &config.hotkeys.cycle_preset,
+        );
+    }
+
+    unsafe fn register_hotkey(hwnd: HWND, id: i32, label: &str, value: &str) {
+        let Some((modifiers, key)) = hotkey(value) else {
+            log::warn!("Invalid {label} hotkey: {value}");
+            return;
+        };
+        if RegisterHotKey(hwnd, id, modifiers, key) == 0 {
+            log::warn!("Could not register {label} hotkey '{value}'; it may already be in use.");
+        }
+    }
+
     fn create_window(state: SharedState) -> Result<HWND, OverlayError> {
         unsafe {
             let _ = SetProcessDpiAwarenessContext(
@@ -426,8 +469,6 @@ mod windows_overlay {
             let width = config.window.width;
             let height = config.window.height;
             let opacity = config.style.opacity;
-            let toggle_hotkey = hotkey(&config.hotkeys.toggle_overlay);
-            let edit_hotkey = hotkey(&config.hotkeys.edit_mode);
             let state_ptr = Box::into_raw(Box::new(state));
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED
@@ -464,16 +505,7 @@ mod windows_overlay {
                 SWP_NOACTIVATE,
             );
             ShowWindow(hwnd, SW_SHOW);
-            if let Some((modifiers, key)) = toggle_hotkey {
-                if RegisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY, modifiers, key) == 0 {
-                    log::warn!("Hotkey already in use: {}", config.hotkeys.toggle_overlay);
-                }
-            }
-            if let Some((modifiers, key)) = edit_hotkey {
-                if RegisterHotKey(hwnd, HOTKEY_EDIT_MODE, modifiers, key) == 0 {
-                    log::warn!("Hotkey already in use: {}", config.hotkeys.edit_mode);
-                }
-            }
+            register_runtime_hotkeys(hwnd, &config);
 
             Ok(hwnd)
         }
@@ -522,6 +554,8 @@ mod windows_overlay {
             WM_DESTROY => {
                 UnregisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY);
                 UnregisterHotKey(hwnd, HOTKEY_EDIT_MODE);
+                UnregisterHotKey(hwnd, HOTKEY_TOGGLE_COACHING);
+                UnregisterHotKey(hwnd, HOTKEY_CYCLE_PRESET);
                 let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
                     hwnd,
                     windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
@@ -554,6 +588,25 @@ mod windows_overlay {
                 state.visible.store(true, Ordering::Relaxed);
                 ShowWindow(hwnd, SW_SHOW);
                 set_click_through(hwnd, !edit_mode);
+            }
+            HOTKEY_TOGGLE_COACHING => {
+                if let Ok(mut config) = state.config.lock() {
+                    config.widgets.coaching = !config.widgets.coaching;
+                    config.coaching.mode = if config.widgets.coaching {
+                        "practice".to_string()
+                    } else {
+                        "off".to_string()
+                    };
+                }
+                InvalidateRect(hwnd, ptr::null(), 0);
+                save_runtime_config(state);
+            }
+            HOTKEY_CYCLE_PRESET => {
+                if let Ok(mut config) = state.config.lock() {
+                    cycle_runtime_preset(&mut config);
+                }
+                InvalidateRect(hwnd, ptr::null(), 0);
+                save_runtime_config(state);
             }
             _ => {}
         }
@@ -674,6 +727,32 @@ mod windows_overlay {
                 log::warn!("Could not save overlay layout: {error}");
             }
         }
+    }
+
+    fn cycle_runtime_preset(config: &mut OverlayConfig) {
+        let next = match config.performance.mode.as_str() {
+            "normal" => config.presets.qualifying.clone(),
+            "high_refresh" => config.presets.race.clone(),
+            "eco" => config.presets.practice.clone(),
+            _ => config.presets.practice.clone(),
+        };
+        config.performance.mode = next.performance_mode;
+        config.timing.reference_mode = next.reference_mode;
+        config.timing.mini_sectors = next.mini_sectors;
+        config.widgets.title = next.title;
+        config.widgets.speed_gear_rpm = next.speed_gear_rpm;
+        config.widgets.pedals = next.pedals;
+        config.widgets.steering = next.steering;
+        config.widgets.lap_info = next.lap_info;
+        config.widgets.lap_timing = next.lap_timing;
+        config.widgets.sectors = next.sectors;
+        config.widgets.mini_sector_widget = next.mini_sector_widget;
+        config.widgets.input_history = next.input_history;
+        config.widgets.delta_timing = next.delta_timing;
+        config.widgets.ghost_inputs = next.ghost_inputs;
+        config.widgets.coaching = next.coaching;
+        config.widgets.performance_monitor = next.performance_monitor;
+        config.normalize();
     }
 
     unsafe fn shared_state(hwnd: HWND) -> Option<&'static SharedState> {

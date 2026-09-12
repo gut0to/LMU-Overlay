@@ -123,6 +123,8 @@ type TimingConfig = {
 type HotkeyConfig = {
   toggle_overlay: string;
   edit_mode: string;
+  toggle_coaching: string;
+  cycle_preset: string;
 };
 
 type PerformanceConfig = {
@@ -577,8 +579,10 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Hotkeys") && <Section icon={<Activity />} title="Hotkeys">
-          <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
-          <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
+          <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} conflict={hasHotkeyConflict(config.hotkeys, "toggle_overlay")} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
+          <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} conflict={hasHotkeyConflict(config.hotkeys, "edit_mode")} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
+          <HotkeyField label="Toggle coaching" value={config.hotkeys.toggle_coaching} conflict={hasHotkeyConflict(config.hotkeys, "toggle_coaching")} onChange={(value) => setHotkey(config, setConfig, "toggle_coaching", value)} />
+          <HotkeyField label="Cycle preset" value={config.hotkeys.cycle_preset} conflict={hasHotkeyConflict(config.hotkeys, "cycle_preset")} onChange={(value) => setHotkey(config, setConfig, "cycle_preset", value)} />
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
@@ -910,9 +914,9 @@ function setCoaching<K extends keyof CoachingConfig>(
   setConfig({ ...config, coaching: { ...config.coaching, [key]: value } });
 }
 
-function HotkeyField(props: { label: string; value: string; onChange: (value: string) => void }) {
+function HotkeyField(props: { label: string; value: string; conflict: boolean; onChange: (value: string) => void }) {
   return (
-    <label className="field">
+    <label className={`field ${props.conflict ? "invalid" : ""}`}>
       <span>{props.label}</span>
       <button
         className="hotkeyButton"
@@ -937,8 +941,21 @@ function HotkeyField(props: { label: string; value: string; onChange: (value: st
       >
         {props.value || "Press a key"}
       </button>
+      {props.conflict && <small>Conflict</small>}
     </label>
   );
+}
+
+function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
+  const value = normalizeHotkey(hotkeys[key]);
+  if (!value) {
+    return false;
+  }
+  return Object.entries(hotkeys).some(([otherKey, otherValue]) => otherKey !== key && normalizeHotkey(otherValue) === value);
+}
+
+function normalizeHotkey(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, "");
 }
 
 function TextInput(props: { label: string; value: string; onChange: (value: string) => void }) {
