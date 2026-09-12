@@ -1153,9 +1153,9 @@ mod windows_overlay {
         widget_style: Option<&WidgetStyleConfig>,
     ) {
         let theme_colors = colors(config);
-        let inherit_theme = widget_style.map_or(true, |style| style.inherit_theme);
-        let show_background = widget_style.map_or(true, |style| style.show_background);
-        let show_border = widget_style.map_or(true, |style| style.show_border);
+        let inherit_theme = widget_style.is_none_or(|style| style.inherit_theme);
+        let show_background = widget_style.is_none_or(|style| style.show_background);
+        let show_border = widget_style.is_none_or(|style| style.show_border);
         let background = if inherit_theme {
             theme_colors.background
         } else {
@@ -1789,7 +1789,7 @@ mod windows_overlay {
                 .get(*id)
                 .filter(|widget| widget.enabled)
             {
-                areas.push((WidgetId::Extra(*id), area_from_layout(&widget.layout)));
+                areas.push((WidgetId::Extra(id), area_from_layout(&widget.layout)));
             }
         }
         areas.sort_by_key(|(id, _)| widget_layout(config, *id).z_index);

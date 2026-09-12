@@ -1373,6 +1373,7 @@ mod tests {
                 ..StyleConfig::default()
             },
             widgets: WidgetConfig::default(),
+            extra_widgets: BTreeMap::new(),
             units: UnitsConfig {
                 speed: "knots".to_string(),
                 temperature: "rankine".to_string(),
