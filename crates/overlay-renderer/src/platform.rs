@@ -76,7 +76,7 @@ mod windows_overlay {
         },
     };
 
-    use crate::config::WidgetLayout;
+    use crate::config::{WidgetLayout, WidgetStyleConfig};
 
     use super::{config::parse_color, OverlayConfig, OverlayError};
 
@@ -87,6 +87,8 @@ mod windows_overlay {
     const COLOR_KEY: u32 = 0x000000;
     const HOTKEY_TOGGLE_OVERLAY: i32 = 1;
     const HOTKEY_EDIT_MODE: i32 = 2;
+    const HOTKEY_TOGGLE_COACHING: i32 = 3;
+    const HOTKEY_CYCLE_PRESET: i32 = 4;
     const EDIT_HIT_MARGIN: i32 = 16;
 
     #[derive(Clone, Copy)]
@@ -121,7 +123,26 @@ mod windows_overlay {
         MiniSectors,
         Coaching,
         Performance,
+        Extra(&'static str),
     }
+
+    const EXTRA_WIDGET_IDS: &[&str] = &[
+        "speed",
+        "rpm",
+        "lap_history",
+        "position",
+        "relative",
+        "standings",
+        "flags",
+        "fuel",
+        "tyres",
+        "brakes",
+        "electronics",
+        "energy",
+        "engine",
+        "damage",
+        "weather",
+    ];
 
     #[derive(Clone, Copy)]
     struct DragState {
@@ -163,14 +184,32 @@ mod windows_overlay {
         render_frames: u64,
         telemetry_hz: u64,
         render_fps: u64,
+        acquisition_micros: u64,
+        render_micros: u64,
+        acquisition_ms: f64,
+        render_ms: f64,
+        skipped_samples: u64,
+        dropped_frames: u64,
     }
 
     impl PerfStats {
         fn refresh(&mut self) {
             self.telemetry_hz = self.telemetry_samples;
             self.render_fps = self.render_frames;
+            self.acquisition_ms = if self.telemetry_samples == 0 {
+                0.0
+            } else {
+                self.acquisition_micros as f64 / self.telemetry_samples as f64 / 1_000.0
+            };
+            self.render_ms = if self.render_frames == 0 {
+                0.0
+            } else {
+                self.render_micros as f64 / self.render_frames as f64 / 1_000.0
+            };
             self.telemetry_samples = 0;
             self.render_frames = 0;
+            self.acquisition_micros = 0;
+            self.render_micros = 0;
         }
     }
 
@@ -221,7 +260,7 @@ mod windows_overlay {
         {
             let hwnd = create_window(self.state.clone())?;
             let telemetry_state = self.state.clone();
-            thread::spawn(move || {
+            let telemetry_worker = thread::spawn(move || {
                 let mut next_sample = Instant::now();
                 while telemetry_state.running.load(Ordering::Relaxed) {
                     let sample_interval = telemetry_state
@@ -237,6 +276,7 @@ mod windows_overlay {
                         continue;
                     }
 
+                    let acquisition_started = Instant::now();
                     if let Some(snapshot) = next_snapshot() {
                         if let Ok(mut latest) = telemetry_state.latest.lock() {
                             *latest = Some(snapshot);
@@ -246,10 +286,15 @@ mod windows_overlay {
                         }
                         if let Ok(mut stats) = telemetry_state.stats.lock() {
                             stats.telemetry_samples += 1;
+                            stats.acquisition_micros +=
+                                acquisition_started.elapsed().as_micros() as u64;
                         }
                     }
                     next_sample += sample_interval;
                     if next_sample < Instant::now() {
+                        if let Ok(mut stats) = telemetry_state.stats.lock() {
+                            stats.skipped_samples += 1;
+                        }
                         next_sample = Instant::now() + sample_interval;
                     }
                 }
@@ -261,7 +306,8 @@ mod windows_overlay {
             let repaint_edit_mode = self.state.edit_mode.clone();
             let repaint_hwnd = hwnd as isize;
 
-            thread::spawn(move || {
+            let repaint_stats = self.state.stats.clone();
+            let repaint_worker = thread::spawn(move || {
                 let hwnd = repaint_hwnd as HWND;
                 let mut next_frame = Instant::now();
                 while repaint_running.load(Ordering::Relaxed) {
@@ -287,6 +333,9 @@ mod windows_overlay {
                     if now < next_frame {
                         thread::sleep(next_frame - now);
                     } else {
+                        if let Ok(mut stats) = repaint_stats.lock() {
+                            stats.dropped_frames += 1;
+                        }
                         next_frame = now + frame_duration;
                     }
                 }
@@ -301,7 +350,7 @@ mod windows_overlay {
                 .and_then(|path| modified_time(path.as_ref()));
             let mut message: MSG = unsafe { zeroed() };
 
-            loop {
+            'message_loop: loop {
                 unsafe {
                     while windows_sys::Win32::UI::WindowsAndMessaging::PeekMessageW(
                         &mut message,
@@ -313,7 +362,7 @@ mod windows_overlay {
                     {
                         if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT {
                             self.state.running.store(false, Ordering::Relaxed);
-                            return Ok(());
+                            break 'message_loop;
                         }
                         TranslateMessage(&message);
                         DispatchMessageW(&message);
@@ -334,6 +383,11 @@ mod windows_overlay {
 
                 thread::sleep(Duration::from_millis(1));
             }
+
+            self.state.running.store(false, Ordering::Relaxed);
+            let _ = telemetry_worker.join();
+            let _ = repaint_worker.join();
+            Ok(())
         }
     }
 
@@ -358,6 +412,9 @@ mod windows_overlay {
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
                 apply_window_config(hwnd, &config);
+                unsafe {
+                    reload_hotkeys(hwnd, &config);
+                }
                 resize_history_if_needed(state, config.window.history_samples);
                 if let Ok(mut current) = state.config.lock() {
                     *current = config;
@@ -399,6 +456,51 @@ mod windows_overlay {
         }
     }
 
+    unsafe fn reload_hotkeys(hwnd: HWND, config: &OverlayConfig) {
+        UnregisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY);
+        UnregisterHotKey(hwnd, HOTKEY_EDIT_MODE);
+        UnregisterHotKey(hwnd, HOTKEY_TOGGLE_COACHING);
+        UnregisterHotKey(hwnd, HOTKEY_CYCLE_PRESET);
+        register_runtime_hotkeys(hwnd, config);
+    }
+
+    unsafe fn register_runtime_hotkeys(hwnd: HWND, config: &OverlayConfig) {
+        register_hotkey(
+            hwnd,
+            HOTKEY_TOGGLE_OVERLAY,
+            "toggle overlay",
+            &config.hotkeys.toggle_overlay,
+        );
+        register_hotkey(
+            hwnd,
+            HOTKEY_EDIT_MODE,
+            "edit mode",
+            &config.hotkeys.edit_mode,
+        );
+        register_hotkey(
+            hwnd,
+            HOTKEY_TOGGLE_COACHING,
+            "toggle coaching",
+            &config.hotkeys.toggle_coaching,
+        );
+        register_hotkey(
+            hwnd,
+            HOTKEY_CYCLE_PRESET,
+            "cycle preset",
+            &config.hotkeys.cycle_preset,
+        );
+    }
+
+    unsafe fn register_hotkey(hwnd: HWND, id: i32, label: &str, value: &str) {
+        let Some((modifiers, key)) = hotkey(value) else {
+            log::warn!("Invalid {label} hotkey: {value}");
+            return;
+        };
+        if RegisterHotKey(hwnd, id, modifiers, key) == 0 {
+            log::warn!("Could not register {label} hotkey '{value}'; it may already be in use.");
+        }
+    }
+
     fn create_window(state: SharedState) -> Result<HWND, OverlayError> {
         unsafe {
             let _ = SetProcessDpiAwarenessContext(
@@ -426,8 +528,6 @@ mod windows_overlay {
             let width = config.window.width;
             let height = config.window.height;
             let opacity = config.style.opacity;
-            let toggle_hotkey = hotkey(&config.hotkeys.toggle_overlay);
-            let edit_hotkey = hotkey(&config.hotkeys.edit_mode);
             let state_ptr = Box::into_raw(Box::new(state));
             let hwnd = CreateWindowExW(
                 WS_EX_LAYERED
@@ -464,16 +564,7 @@ mod windows_overlay {
                 SWP_NOACTIVATE,
             );
             ShowWindow(hwnd, SW_SHOW);
-            if let Some((modifiers, key)) = toggle_hotkey {
-                if RegisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY, modifiers, key) == 0 {
-                    log::warn!("Hotkey already in use: {}", config.hotkeys.toggle_overlay);
-                }
-            }
-            if let Some((modifiers, key)) = edit_hotkey {
-                if RegisterHotKey(hwnd, HOTKEY_EDIT_MODE, modifiers, key) == 0 {
-                    log::warn!("Hotkey already in use: {}", config.hotkeys.edit_mode);
-                }
-            }
+            register_runtime_hotkeys(hwnd, &config);
 
             Ok(hwnd)
         }
@@ -522,6 +613,8 @@ mod windows_overlay {
             WM_DESTROY => {
                 UnregisterHotKey(hwnd, HOTKEY_TOGGLE_OVERLAY);
                 UnregisterHotKey(hwnd, HOTKEY_EDIT_MODE);
+                UnregisterHotKey(hwnd, HOTKEY_TOGGLE_COACHING);
+                UnregisterHotKey(hwnd, HOTKEY_CYCLE_PRESET);
                 let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
                     hwnd,
                     windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
@@ -554,6 +647,25 @@ mod windows_overlay {
                 state.visible.store(true, Ordering::Relaxed);
                 ShowWindow(hwnd, SW_SHOW);
                 set_click_through(hwnd, !edit_mode);
+            }
+            HOTKEY_TOGGLE_COACHING => {
+                if let Ok(mut config) = state.config.lock() {
+                    config.widgets.coaching = !config.widgets.coaching;
+                    config.coaching.mode = if config.widgets.coaching {
+                        "practice".to_string()
+                    } else {
+                        "off".to_string()
+                    };
+                }
+                InvalidateRect(hwnd, ptr::null(), 0);
+                save_runtime_config(state);
+            }
+            HOTKEY_CYCLE_PRESET => {
+                if let Ok(mut config) = state.config.lock() {
+                    cycle_runtime_preset(&mut config);
+                }
+                InvalidateRect(hwnd, ptr::null(), 0);
+                save_runtime_config(state);
             }
             _ => {}
         }
@@ -621,6 +733,9 @@ mod windows_overlay {
             let window_width = config.window.width;
             let window_height = config.window.height;
             let snap_to_edges = config.layout.snap_to_edges;
+            let snap_to_grid = config.layout.snap_to_grid;
+            let snap_to_widgets = config.layout.snap_to_widgets;
+            let grid_size = config.layout.grid_size;
             let snap_distance = config.layout.snap_distance;
             let layout = widget_layout_mut(&mut config, drag.widget);
             if drag.resize {
@@ -633,7 +748,13 @@ mod windows_overlay {
                     snap_widget_to_edges(layout, window_width, window_height, snap_distance);
                 }
             }
+            if snap_to_grid {
+                snap_widget_to_grid(layout, grid_size);
+            }
             config.normalize();
+            if snap_to_widgets {
+                snap_widget_to_widgets(&mut config, drag.widget);
+            }
         }
 
         InvalidateRect(hwnd, ptr::null(), 0);
@@ -667,6 +788,41 @@ mod windows_overlay {
         }
     }
 
+    fn cycle_runtime_preset(config: &mut OverlayConfig) {
+        let next = match (
+            config.performance.mode.as_str(),
+            config.timing.reference_mode.as_str(),
+        ) {
+            ("normal", "last_lap") => config.presets.qualifying.clone(),
+            ("high_refresh", "personal_best") => config.presets.race.clone(),
+            ("eco", "session_best") => config.presets.endurance.clone(),
+            ("eco", _) => config.presets.minimal.clone(),
+            _ => config.presets.practice.clone(),
+        };
+        config.performance.mode = next.performance_mode;
+        config.timing.reference_mode = next.reference_mode;
+        config.timing.mini_sectors = next.mini_sectors;
+        config.style = next.style;
+        config.units = next.units;
+        config.coaching = next.coaching_config;
+        config.layout = next.layout;
+        config.extra_widgets = next.extra_widgets;
+        config.widgets.title = next.title;
+        config.widgets.speed_gear_rpm = next.speed_gear_rpm;
+        config.widgets.pedals = next.pedals;
+        config.widgets.steering = next.steering;
+        config.widgets.lap_info = next.lap_info;
+        config.widgets.lap_timing = next.lap_timing;
+        config.widgets.sectors = next.sectors;
+        config.widgets.mini_sector_widget = next.mini_sector_widget;
+        config.widgets.input_history = next.input_history;
+        config.widgets.delta_timing = next.delta_timing;
+        config.widgets.ghost_inputs = next.ghost_inputs;
+        config.widgets.coaching = next.coaching;
+        config.widgets.performance_monitor = next.performance_monitor;
+        config.normalize();
+    }
+
     unsafe fn shared_state(hwnd: HWND) -> Option<&'static SharedState> {
         let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
             hwnd,
@@ -688,6 +844,7 @@ mod windows_overlay {
     }
 
     unsafe fn paint(hwnd: HWND) {
+        let render_started = Instant::now();
         let mut paint: PAINTSTRUCT = zeroed();
         let hdc = BeginPaint(hwnd, &mut paint);
         let mut rect: RECT = zeroed();
@@ -747,6 +904,10 @@ mod windows_overlay {
             draw_edit_handles(hdc, &config, selected);
         }
 
+        if let Ok(mut stats) = state.stats.lock() {
+            stats.render_micros += render_started.elapsed().as_micros() as u64;
+        }
+
         EndPaint(hwnd, &paint);
     }
 
@@ -779,47 +940,45 @@ mod windows_overlay {
     }
 
     unsafe fn draw_snapshot(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
-        let telemetry_area = area_from_layout(&config.layout.telemetry);
-        let input_area = area_from_layout(&config.layout.inputs);
-        let lap_timing_area = area_from_layout(&config.layout.lap_timing);
-        let timing_area = area_from_layout(&config.layout.timing);
-        let sectors_area = area_from_layout(&config.layout.sectors);
-        let mini_sectors_area = area_from_layout(&config.layout.mini_sectors);
-        let coaching_area = area_from_layout(&config.layout.coaching);
-
-        if config.widgets.title || config.widgets.speed_gear_rpm {
-            draw_widget_panel(hdc, telemetry_area, config);
-            draw_telemetry_widget(hdc, snapshot, config, telemetry_area);
-        }
-
-        if config.widgets.lap_info || config.widgets.lap_timing {
-            draw_widget_panel(hdc, lap_timing_area, config);
-            draw_lap_timing_widget(hdc, snapshot, config, lap_timing_area);
-        }
-
-        if config.widgets.pedals || config.widgets.steering || config.widgets.input_history {
-            draw_widget_panel(hdc, input_area, config);
-            draw_input_widget(hdc, snapshot, config, input_area);
-        }
-
-        if config.widgets.delta_timing {
-            draw_widget_panel(hdc, timing_area, config);
-            draw_delta_widget(hdc, snapshot, config, timing_area);
-        }
-
-        if config.widgets.sectors {
-            draw_widget_panel(hdc, sectors_area, config);
-            draw_sectors_widget(hdc, snapshot, config, sectors_area);
-        }
-
-        if config.widgets.mini_sector_widget {
-            draw_widget_panel(hdc, mini_sectors_area, config);
-            draw_mini_sectors_widget(hdc, snapshot, config, mini_sectors_area);
-        }
-
-        if config.widgets.coaching && config.coaching.mode != "off" {
-            draw_widget_panel(hdc, coaching_area, config);
-            draw_coaching_widget(hdc, snapshot, config, coaching_area);
+        for (widget, area) in widget_areas(config) {
+            match widget {
+                WidgetId::Telemetry if config.widgets.title || config.widgets.speed_gear_rpm => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_telemetry_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::LapTiming if config.widgets.lap_info || config.widgets.lap_timing => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_lap_timing_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Inputs
+                    if config.widgets.pedals
+                        || config.widgets.steering
+                        || config.widgets.input_history =>
+                {
+                    draw_widget_panel(hdc, area, config);
+                    draw_input_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Timing if config.widgets.delta_timing => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_delta_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Sectors if config.widgets.sectors => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_sectors_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::MiniSectors if config.widgets.mini_sector_widget => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_mini_sectors_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Coaching if config.widgets.coaching && config.coaching.mode != "off" => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_coaching_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Extra(id) => {
+                    draw_extra_widget(hdc, snapshot, config, area, id);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -854,6 +1013,223 @@ mod windows_overlay {
                 ),
             );
         }
+    }
+
+    unsafe fn draw_extra_widget(
+        hdc: HDC,
+        snapshot: TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        id: &str,
+    ) {
+        let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
+        draw_extra_widget_panel(hdc, area, config, widget_style);
+        let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
+        let value = match id {
+            "speed" => format!(
+                "{:.0} {}",
+                display_speed(snapshot.speed_kph, config),
+                speed_unit_label(config)
+            ),
+            "rpm" => snapshot.vehicle.max_rpm.map_or_else(
+                || format!("{:.0} RPM", snapshot.rpm),
+                |limit| {
+                    format!(
+                        "{:.0} RPM  {:.0}%",
+                        snapshot.rpm,
+                        snapshot.rpm / limit * 100.0
+                    )
+                },
+            ),
+            "position" => match (snapshot.session.position, snapshot.session.total_vehicles) {
+                (Some(position), Some(total)) => format!("P{position}/{total}"),
+                (Some(position), None) => format!("P{position}"),
+                _ => "POSITION --".to_string(),
+            },
+            "flags" => snapshot
+                .session
+                .flag
+                .map_or_else(|| "FLAG --".to_string(), |flag| format!("FLAG {flag}")),
+            "fuel" => match (
+                snapshot.vehicle.fuel_liters,
+                snapshot.vehicle.fuel_capacity_liters,
+            ) {
+                (Some(fuel), Some(capacity)) if capacity > 0.0 => {
+                    format!("FUEL {fuel:.1} L  {:.0}%", fuel / capacity * 100.0)
+                }
+                (Some(fuel), _) => format!("FUEL {fuel:.1} L"),
+                _ => "FUEL --".to_string(),
+            },
+            "tyres" => wheel_summary(
+                "TYRES",
+                [
+                    snapshot.wheels.front_left.pressure_kpa,
+                    snapshot.wheels.front_right.pressure_kpa,
+                    snapshot.wheels.rear_left.pressure_kpa,
+                    snapshot.wheels.rear_right.pressure_kpa,
+                ],
+                "kPa",
+            ),
+            "brakes" => wheel_summary(
+                "BRAKES",
+                [
+                    snapshot.wheels.front_left.brake_temp_c,
+                    snapshot.wheels.front_right.brake_temp_c,
+                    snapshot.wheels.rear_left.brake_temp_c,
+                    snapshot.wheels.rear_right.brake_temp_c,
+                ],
+                "C",
+            ),
+            "electronics" => match (snapshot.vehicle.tc_setting, snapshot.vehicle.abs_setting) {
+                (Some(tc), Some(abs)) => format!("TC {tc}  ABS {abs}"),
+                _ => "TC / ABS --".to_string(),
+            },
+            "energy" => snapshot.vehicle.battery_charge_percent.map_or_else(
+                || "ENERGY --".to_string(),
+                |charge| format!("ENERGY {charge:.0}%"),
+            ),
+            "engine" => match (
+                snapshot.vehicle.engine_water_temp_c,
+                snapshot.vehicle.engine_oil_temp_c,
+            ) {
+                (Some(water), Some(oil)) => format!("W {water:.0}C  O {oil:.0}C"),
+                _ => "ENGINE --".to_string(),
+            },
+            "weather" => match (
+                snapshot.session.ambient_temp_c,
+                snapshot.session.track_temp_c,
+            ) {
+                (Some(ambient), Some(track)) => format!("AIR {ambient:.0}C  TRACK {track:.0}C"),
+                _ => "WEATHER --".to_string(),
+            },
+            "damage" => {
+                if [
+                    snapshot.wheels.front_left,
+                    snapshot.wheels.front_right,
+                    snapshot.wheels.rear_left,
+                    snapshot.wheels.rear_right,
+                ]
+                .into_iter()
+                .any(|wheel| wheel.flat == Some(true) || wheel.detached == Some(true))
+                {
+                    "DAMAGE WARNING".to_string()
+                } else {
+                    "DAMAGE --".to_string()
+                }
+            }
+            "relative" | "standings" | "lap_history" => "WAITING FOR OFFICIAL SCORING".to_string(),
+            _ => "--".to_string(),
+        };
+        let title_height = if widget_style.is_some_and(|style| style.show_title) {
+            let title = widget_style
+                .and_then(|style| {
+                    (!style.title_text.trim().is_empty()).then_some(style.title_text.as_str())
+                })
+                .unwrap_or(id);
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding,
+                widget_secondary_color(config, widget_style),
+                title,
+            );
+            scale_px(config, 18)
+        } else {
+            0
+        };
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding + title_height,
+            widget_primary_color(config, widget_style),
+            &value,
+        );
+    }
+
+    unsafe fn draw_extra_widget_panel(
+        hdc: HDC,
+        area: Area,
+        config: &OverlayConfig,
+        widget_style: Option<&WidgetStyleConfig>,
+    ) {
+        let theme_colors = colors(config);
+        let inherit_theme = widget_style.is_none_or(|style| style.inherit_theme);
+        let show_background = widget_style.is_none_or(|style| style.show_background);
+        let show_border = widget_style.is_none_or(|style| style.show_border);
+        let background = if inherit_theme {
+            theme_colors.background
+        } else {
+            parse_color(
+                &widget_style.expect("style checked").background_color,
+                theme_colors.background,
+            )
+        };
+        let border = if inherit_theme {
+            theme_colors.border
+        } else {
+            parse_color(
+                &widget_style.expect("style checked").border_color,
+                theme_colors.border,
+            )
+        };
+        let rect = RECT {
+            left: area.x,
+            top: area.y,
+            right: area.right(),
+            bottom: area.bottom(),
+        };
+        if show_background {
+            let brush = CreateSolidBrush(background);
+            FillRect(hdc, &rect, brush);
+            DeleteObject(brush);
+        }
+        if show_border {
+            let width = widget_style
+                .map_or(config.style.line_thickness, |style| style.border_width)
+                .max(1);
+            let pen = CreatePen(PS_SOLID, width, border);
+            let old_pen = SelectObject(hdc, pen);
+            Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
+            SelectObject(hdc, old_pen);
+            DeleteObject(pen);
+        }
+    }
+
+    fn widget_primary_color(
+        config: &OverlayConfig,
+        widget_style: Option<&WidgetStyleConfig>,
+    ) -> u32 {
+        let theme_colors = colors(config);
+        widget_style
+            .filter(|style| !style.inherit_theme)
+            .map_or(theme_colors.primary_text, |style| {
+                parse_color(&style.primary_color, theme_colors.primary_text)
+            })
+    }
+
+    fn widget_secondary_color(
+        config: &OverlayConfig,
+        widget_style: Option<&WidgetStyleConfig>,
+    ) -> u32 {
+        let theme_colors = colors(config);
+        widget_style
+            .filter(|style| !style.inherit_theme)
+            .map_or(theme_colors.secondary_text, |style| {
+                parse_color(&style.secondary_color, theme_colors.secondary_text)
+            })
+    }
+
+    fn wheel_summary(label: &str, values: [Option<f64>; 4], unit: &str) -> String {
+        if values.iter().any(Option::is_none) {
+            return format!("{label} --");
+        }
+        format!(
+            "{label} {:.0} {:.0} / {:.0} {:.0} {unit}",
+            values[0].unwrap_or_default(),
+            values[1].unwrap_or_default(),
+            values[2].unwrap_or_default(),
+            values[3].unwrap_or_default(),
+        )
     }
 
     unsafe fn draw_lap_timing_widget(
@@ -1140,13 +1516,48 @@ mod windows_overlay {
             colors.secondary_text,
             &format!("Sector {}", snapshot.sector),
         );
-        draw_text(
-            hdc,
-            area.x + scale_px(config, 10),
-            area.y + scale_px(config, 26),
-            colors.secondary_text,
-            "S1 --  S2 --  S3 --",
-        );
+        let sectors = [
+            (
+                "S1",
+                snapshot
+                    .current_sector1_seconds
+                    .or(snapshot.last_sector1_seconds),
+                snapshot.best_sector1_seconds,
+            ),
+            (
+                "S2",
+                snapshot
+                    .current_sector2_seconds
+                    .or(snapshot.last_sector2_seconds),
+                snapshot.best_sector2_seconds,
+            ),
+            (
+                "S3",
+                snapshot.last_sector3_seconds,
+                snapshot.best_sector3_seconds,
+            ),
+        ];
+        let mut x = area.x + scale_px(config, 10);
+        for (label, current, best) in sectors {
+            let delta = current.zip(best).map(|(current, best)| current - best);
+            let color = delta.map_or(colors.secondary_text, |delta| {
+                if delta < -0.01 {
+                    colors.delta_gain
+                } else if delta > 0.01 {
+                    colors.delta_loss
+                } else {
+                    colors.delta_neutral
+                }
+            });
+            draw_text(
+                hdc,
+                x,
+                area.y + scale_px(config, 26),
+                color,
+                &format!("{label} {}", sector_time(current)),
+            );
+            x += (area.width / 3).max(scale_size(config, 52));
+        }
     }
 
     unsafe fn draw_mini_sectors_widget(
@@ -1201,7 +1612,7 @@ mod windows_overlay {
                         x,
                         y,
                         timing_color(hint, colors),
-                        &format!("BRK {}", brake_timing_hint(hint)),
+                        &format!("BRAKE {}", timing_hint(hint)),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -1219,7 +1630,7 @@ mod windows_overlay {
                         x,
                         y,
                         timing_color(hint, colors),
-                        &format!("THR {}", throttle_timing_hint(hint)),
+                        &format!("THROTTLE {}", timing_hint(hint)),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -1248,7 +1659,7 @@ mod windows_overlay {
                         } else {
                             colors.coaching_warning
                         },
-                        &format!("{speed_gap:+.0} km/h vs ref"),
+                        &format!("{speed_gap:+.0} km/h ENTRY"),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -1264,7 +1675,7 @@ mod windows_overlay {
                         x,
                         y,
                         colors.secondary_text,
-                        &format!("GEAR {gear} / REF {reference_gear}"),
+                        &format!("USE {reference_gear}{}", gear_suffix(reference_gear)),
                     );
                 }
             }
@@ -1288,8 +1699,14 @@ mod windows_overlay {
                 area.y + scale_px(config, 2),
                 colors.secondary_text,
                 &format!(
-                    "telemetry {} Hz  render {} FPS  ring {}",
-                    stats.telemetry_hz, stats.render_fps, ring_usage
+                    "tel {} Hz  draw {} FPS  read {:.2} ms  draw {:.2} ms  skip {}  drop {}  ring {}",
+                    stats.telemetry_hz,
+                    stats.render_fps,
+                    stats.acquisition_ms,
+                    stats.render_ms,
+                    stats.skipped_samples,
+                    stats.dropped_frames,
+                    ring_usage
                 ),
             );
         }
@@ -1353,7 +1770,7 @@ mod windows_overlay {
     }
 
     fn widget_areas(config: &OverlayConfig) -> Vec<(WidgetId, Area)> {
-        [
+        let mut areas: Vec<_> = [
             (WidgetId::Telemetry, &config.layout.telemetry),
             (WidgetId::Inputs, &config.layout.inputs),
             (WidgetId::LapTiming, &config.layout.lap_timing),
@@ -1365,15 +1782,26 @@ mod windows_overlay {
         ]
         .into_iter()
         .map(|(id, layout)| (id, area_from_layout(layout)))
-        .collect()
+        .collect();
+        for id in EXTRA_WIDGET_IDS {
+            if let Some(widget) = config
+                .extra_widgets
+                .get(*id)
+                .filter(|widget| widget.enabled)
+            {
+                areas.push((WidgetId::Extra(id), area_from_layout(&widget.layout)));
+            }
+        }
+        areas.sort_by_key(|(id, _)| widget_layout(config, *id).z_index);
+        areas
     }
 
     fn area_from_layout(layout: &WidgetLayout) -> Area {
         Area {
             x: layout.x,
             y: layout.y,
-            width: layout.width,
-            height: layout.height,
+            width: (f64::from(layout.width) * layout.scale).round() as i32,
+            height: (f64::from(layout.height) * layout.scale).round() as i32,
         }
     }
 
@@ -1387,6 +1815,13 @@ mod windows_overlay {
             WidgetId::MiniSectors => &config.layout.mini_sectors,
             WidgetId::Coaching => &config.layout.coaching,
             WidgetId::Performance => &config.layout.performance,
+            WidgetId::Extra(id) => {
+                &config
+                    .extra_widgets
+                    .get(id)
+                    .expect("widget area only contains configured extra widgets")
+                    .layout
+            }
         }
     }
 
@@ -1400,6 +1835,13 @@ mod windows_overlay {
             WidgetId::MiniSectors => &mut config.layout.mini_sectors,
             WidgetId::Coaching => &mut config.layout.coaching,
             WidgetId::Performance => &mut config.layout.performance,
+            WidgetId::Extra(id) => {
+                &mut config
+                    .extra_widgets
+                    .get_mut(id)
+                    .expect("widget area only contains configured extra widgets")
+                    .layout
+            }
         }
     }
 
@@ -1427,6 +1869,59 @@ mod windows_overlay {
         if bottom_gap.abs() <= snap_distance {
             layout.y = window_height - layout.height;
         }
+    }
+
+    fn snap_widget_to_grid(layout: &mut WidgetLayout, grid_size: i32) {
+        let grid_size = if matches!(grid_size, 5 | 10 | 20) {
+            grid_size
+        } else {
+            10
+        };
+        layout.x = snap_i32(layout.x, grid_size);
+        layout.y = snap_i32(layout.y, grid_size);
+        layout.width = snap_i32(layout.width, grid_size).max(48);
+        layout.height = snap_i32(layout.height, grid_size).max(20);
+    }
+
+    fn snap_widget_to_widgets(config: &mut OverlayConfig, widget: WidgetId) {
+        let snap_distance = config.layout.snap_distance;
+        if snap_distance <= 0 {
+            return;
+        }
+        let others = widget_areas(config)
+            .into_iter()
+            .filter(|(id, _)| *id != widget)
+            .map(|(_, area)| area)
+            .collect::<Vec<_>>();
+        let layout = widget_layout_mut(config, widget);
+        let mut area = area_from_layout(layout);
+
+        for other in others {
+            if (area.x - other.x).abs() <= snap_distance {
+                layout.x = other.x;
+            } else if (area.x - other.right()).abs() <= snap_distance {
+                layout.x = other.right();
+            } else if (area.right() - other.x).abs() <= snap_distance {
+                layout.x = other.x - area.width;
+            } else if (area.right() - other.right()).abs() <= snap_distance {
+                layout.x = other.right() - area.width;
+            }
+
+            if (area.y - other.y).abs() <= snap_distance {
+                layout.y = other.y;
+            } else if (area.y - other.bottom()).abs() <= snap_distance {
+                layout.y = other.bottom();
+            } else if (area.bottom() - other.y).abs() <= snap_distance {
+                layout.y = other.y - area.height;
+            } else if (area.bottom() - other.bottom()).abs() <= snap_distance {
+                layout.y = other.bottom() - area.height;
+            }
+            area = area_from_layout(layout);
+        }
+    }
+
+    fn snap_i32(value: i32, grid_size: i32) -> i32 {
+        ((value as f64 / f64::from(grid_size)).round() as i32) * grid_size
     }
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {
@@ -1544,6 +2039,12 @@ mod windows_overlay {
         format!("{seconds:+.3}")
     }
 
+    fn sector_time(seconds: Option<f64>) -> String {
+        seconds
+            .map(|seconds| format!("{seconds:.3}"))
+            .unwrap_or_else(|| "--".to_string())
+    }
+
     fn lap_time(seconds: f64) -> String {
         let minutes = (seconds / 60.0).floor() as u32;
         let seconds = seconds - f64::from(minutes) * 60.0;
@@ -1566,19 +2067,20 @@ mod windows_overlay {
         }
     }
 
-    fn brake_timing_hint(meters: f64) -> String {
+    fn timing_hint(meters: f64) -> String {
         if meters >= 0.0 {
-            format!("later +{meters:.0}m")
+            format!("{meters:.0}m LATE")
         } else {
-            format!("earlier {meters:.0}m")
+            format!("{:.0}m EARLY", meters.abs())
         }
     }
 
-    fn throttle_timing_hint(meters: f64) -> String {
-        if meters >= 0.0 {
-            format!("later +{meters:.0}m")
-        } else {
-            format!("earlier {meters:.0}m")
+    fn gear_suffix(gear: i32) -> &'static str {
+        match gear {
+            1 => "ST",
+            2 => "ND",
+            3 => "RD",
+            _ => "TH",
         }
     }
 
@@ -1676,10 +2178,12 @@ mod windows_overlay {
 
         #[test]
         fn formats_direct_timing_hints() {
-            assert_eq!(brake_timing_hint(25.0), "later +25m");
-            assert_eq!(brake_timing_hint(-12.0), "earlier -12m");
-            assert_eq!(throttle_timing_hint(15.0), "later +15m");
-            assert_eq!(throttle_timing_hint(-8.0), "earlier -8m");
+            assert_eq!(timing_hint(25.0), "25m LATE");
+            assert_eq!(timing_hint(-12.0), "12m EARLY");
+            assert_eq!(gear_suffix(1), "ST");
+            assert_eq!(gear_suffix(3), "RD");
+            assert_eq!(sector_time(Some(31.4567)), "31.457");
+            assert_eq!(sector_time(None), "--");
         }
 
         #[test]
@@ -1725,6 +2229,17 @@ mod windows_overlay {
                 lap_progress: Some(0.2),
                 lap_number: 1,
                 sector: 1,
+                current_sector1_seconds: None,
+                current_sector2_seconds: None,
+                last_sector1_seconds: None,
+                last_sector2_seconds: None,
+                last_sector3_seconds: None,
+                best_sector1_seconds: None,
+                best_sector2_seconds: None,
+                best_sector3_seconds: None,
+                vehicle: lmu_telemetry::VehicleSystems::default(),
+                wheels: lmu_telemetry::Wheels::default(),
+                session: lmu_telemetry::SessionData::default(),
                 session_elapsed_seconds: 10.0,
                 session_kind: SessionKind::Practice,
                 game_phase: GamePhase::GreenFlag,

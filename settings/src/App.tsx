@@ -1,11 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
+  FolderOpen,
   Gauge,
   LayoutGrid,
   Lock,
   Magnet,
   Paintbrush,
+  Play,
   Plus,
   RotateCcw,
   Save,
@@ -67,17 +69,53 @@ type WidgetConfig = {
   performance_monitor: boolean;
 };
 
+type WidgetDefinition = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  data_requirement: string;
+};
+
 type WidgetLayout = {
   x: number;
   y: number;
   width: number;
   height: number;
   locked: boolean;
+  scale: number;
+  opacity: number;
+  z_index: number;
+};
+
+type WidgetStyleConfig = {
+  inherit_theme: boolean;
+  show_background: boolean;
+  background_color: string;
+  show_border: boolean;
+  border_color: string;
+  border_width: number;
+  padding: number;
+  font_scale: number;
+  primary_color: string;
+  secondary_color: string;
+  accent_color: string;
+  show_title: boolean;
+  title_text: string;
+};
+
+type WidgetInstanceConfig = {
+  enabled: boolean;
+  layout: WidgetLayout;
+  style: WidgetStyleConfig;
 };
 
 type LayoutConfig = {
   lock_all: boolean;
   snap_to_edges: boolean;
+  snap_to_grid: boolean;
+  snap_to_widgets: boolean;
+  grid_size: number;
   snap_distance: number;
   telemetry: WidgetLayout;
   inputs: WidgetLayout;
@@ -90,9 +128,13 @@ type LayoutConfig = {
 };
 
 type LayoutWidgetKey = "telemetry" | "inputs" | "lap_timing" | "timing" | "sectors" | "mini_sectors" | "coaching" | "performance";
+type LayoutSelection = LayoutWidgetKey | `extra:${string}`;
 
 type UnitsConfig = {
   speed: string;
+  temperature: string;
+  pressure: string;
+  fuel: string;
 };
 
 type CoachingConfig = {
@@ -104,6 +146,7 @@ type CoachingConfig = {
   gear: boolean;
   speed_threshold_kph: number;
   timing_deadband_m: number;
+  event_match_tolerance_m: number;
   max_hints: number;
 };
 
@@ -117,6 +160,8 @@ type TimingConfig = {
 type HotkeyConfig = {
   toggle_overlay: string;
   edit_mode: string;
+  toggle_coaching: string;
+  cycle_preset: string;
 };
 
 type PerformanceConfig = {
@@ -127,12 +172,19 @@ type PresetProfileConfig = {
   performance_mode: string;
   reference_mode: string;
   mini_sectors: number;
+  style: StyleConfig;
+  units: UnitsConfig;
+  coaching_config: CoachingConfig;
+  layout: LayoutConfig;
+  extra_widgets: Record<string, WidgetInstanceConfig>;
 } & WidgetConfig;
 
 type PresetConfig = {
   practice: PresetProfileConfig;
   qualifying: PresetProfileConfig;
   race: PresetProfileConfig;
+  endurance: PresetProfileConfig;
+  minimal: PresetProfileConfig;
   custom: CustomPresetConfig[];
 };
 
@@ -146,6 +198,7 @@ type OverlayConfig = {
   window: WindowConfig;
   style: StyleConfig;
   widgets: WidgetConfig;
+  extra_widgets: Record<string, WidgetInstanceConfig>;
   layout: LayoutConfig;
   units: UnitsConfig;
   coaching: CoachingConfig;
@@ -166,7 +219,7 @@ type SectionProps = {
   children: React.ReactNode;
 };
 
-const presetNames = ["practice", "qualifying", "race"] as const;
+const presetNames = ["practice", "qualifying", "race", "endurance", "minimal"] as const;
 type StandardPresetKey = (typeof presetNames)[number];
 const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
@@ -199,6 +252,23 @@ const coachingModes = [
   ["practice", "Practice"],
   ["attack", "Attack"],
 ];
+const temperatureUnits = [
+  ["celsius", "Celsius"],
+  ["fahrenheit", "Fahrenheit"],
+];
+const pressureUnits = [
+  ["kpa", "kPa"],
+  ["psi", "psi"],
+];
+const fuelUnits = [
+  ["liters", "Liters"],
+  ["gallons", "Gallons"],
+];
+const gridSizes = [
+  ["5", "5 px"],
+  ["10", "10 px"],
+  ["20", "20 px"],
+];
 const coachingLabels: Array<[keyof Pick<CoachingConfig, "brake_timing" | "throttle_timing" | "input_match" | "speed" | "gear">, string]> = [
   ["brake_timing", "Brake timing"],
   ["throttle_timing", "Throttle timing"],
@@ -222,6 +292,19 @@ const widgetLabels: Array<[keyof WidgetConfig, string]> = [
   ["coaching", "Coaching"],
   ["performance_monitor", "Performance monitor"],
 ];
+
+const legacyWidgetById: Partial<Record<string, keyof WidgetConfig>> = {
+  telemetry: "speed_gear_rpm",
+  inputs: "pedals",
+  steering: "steering",
+  lap_timing: "lap_timing",
+  timing: "delta_timing",
+  sectors: "sectors",
+  mini_sectors: "mini_sector_widget",
+  input_history: "input_history",
+  coaching: "coaching",
+  performance: "performance_monitor",
+};
 
 const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["telemetry", "Telemetry"],
@@ -257,14 +340,18 @@ function App() {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
-  const [selectedLayout, setSelectedLayout] = useState<LayoutWidgetKey>("telemetry");
+  const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
+  const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
+  const [widgetSearch, setWidgetSearch] = useState("");
+  const [widgetCategory, setWidgetCategory] = useState("All");
 
   useEffect(() => {
     void loadConfig();
     void loadDefaultConfig();
+    void loadWidgetCatalog();
   }, []);
 
   async function loadConfig() {
@@ -339,6 +426,32 @@ function App() {
     }
   }
 
+  async function startOverlay() {
+    try {
+      await invoke("start_overlay");
+      setStatus("Overlay started");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function loadWidgetCatalog() {
+    try {
+      setWidgetCatalog(await invoke<WidgetDefinition[]>("widget_catalog"));
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function openConfigFolder() {
+    try {
+      await invoke("open_config_folder");
+      setStatus("Config folder opened");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
   function resetLayout() {
     if (!defaultConfigState) {
       return;
@@ -353,18 +466,39 @@ function App() {
         return current;
       }
       const preset = current.presets[name];
-      return {
-        ...current,
-        performance: { mode: preset.performance_mode },
-        timing: {
-          ...current.timing,
-          reference_mode: preset.reference_mode,
-          mini_sectors: preset.mini_sectors,
-        },
-        widgets: pickWidgets(preset),
-      };
+      return applyProfile(current, preset);
     });
   }
+
+  function setCatalogWidget(id: string, enabled: boolean) {
+    const legacy = legacyWidgetById[id];
+    setConfig((current) => {
+      if (!current) {
+        return current;
+      }
+      if (legacy) {
+        return { ...current, widgets: { ...current.widgets, [legacy]: enabled } };
+      }
+      const widget = current.extra_widgets[id];
+      return widget
+        ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...widget, enabled } } }
+        : current;
+    });
+  }
+
+  const widgetCategories = useMemo(
+    () => ["All", ...new Set(widgetCatalog.map((widget) => widget.category))],
+    [widgetCatalog],
+  );
+  const filteredWidgetCatalog = useMemo(
+    () => widgetCatalog.filter((widget) => {
+      const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
+      const query = widgetSearch.trim().toLocaleLowerCase();
+      return matchesCategory && (!query || `${widget.name} ${widget.description}`.toLocaleLowerCase().includes(query));
+    }),
+    [widgetCatalog, widgetCategory, widgetSearch],
+  );
+  const availableLayoutEntries = useMemo(() => config ? layoutEntries(config) : [], [config]);
 
   const activePreset = useMemo(() => {
     if (!config) {
@@ -398,8 +532,15 @@ function App() {
           <p>{path}</p>
         </div>
         <div className="actions">
+          <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
+            <FolderOpen size={18} />
+          </button>
           <button className="iconButton" title="Reload config" onClick={loadConfig}>
             <RotateCcw size={18} />
+          </button>
+          <button className="primaryButton" onClick={startOverlay}>
+            <Play size={18} />
+            Start overlay
           </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
@@ -434,7 +575,7 @@ function App() {
             config={config}
             selected={selectedLayout}
             onSelect={setSelectedLayout}
-            onLayoutChange={(widget, layout) => setConfig({ ...config, layout: { ...config.layout, [widget]: layout } })}
+            onLayoutChange={(widget, layout) => setConfig(updateLayoutSelection(config, widget, layout))}
           />
         </Section>}
 
@@ -449,7 +590,7 @@ function App() {
 
         {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Magnet />} title="Widget Layout">
           <div className="segmented">
-            {layoutLabels.map(([key, label]) => (
+            {availableLayoutEntries.map(({ key, label }) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
               </button>
@@ -471,11 +612,34 @@ function App() {
             />
             <span>Snap to screen edges</span>
           </label>
+          <label className="toggle full">
+            <input
+              type="checkbox"
+              checked={config.layout.snap_to_grid}
+              onChange={(event) => setLayoutFlag(config, setConfig, "snap_to_grid", event.target.checked)}
+            />
+            <span>Snap to grid</span>
+          </label>
+          <label className="toggle full">
+            <input
+              type="checkbox"
+              checked={config.layout.snap_to_widgets}
+              onChange={(event) => setLayoutFlag(config, setConfig, "snap_to_widgets", event.target.checked)}
+            />
+            <span>Snap to widgets</span>
+          </label>
+          <Segmented value={String(config.layout.grid_size)} options={gridSizes} onChange={(value) => setLayoutFlag(config, setConfig, "grid_size", Number(value))} />
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
           <WidgetLayoutFields
-            layout={config.layout[selectedLayout]}
-            onChange={(key, value) => setWidgetLayout(config, setConfig, selectedLayout, key, value)}
+            layout={layoutForSelection(config, selectedLayout)}
+            onChange={(key, value) => setLayoutSelection(config, setConfig, selectedLayout, key, value)}
           />
+          {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
+            <WidgetStyleFields
+              style={config.extra_widgets[selectedLayout.slice("extra:".length)].style}
+              onChange={(key, value) => setExtraWidgetStyle(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
+            />
+          )}
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
@@ -497,6 +661,7 @@ function App() {
           <Segmented value={config.coaching.mode} options={coachingModes} onChange={(value) => setCoaching(config, setConfig, "mode", value)} />
           <RangeField label="Speed threshold" min={1} max={40} step={1} value={config.coaching.speed_threshold_kph} onChange={(value) => setCoaching(config, setConfig, "speed_threshold_kph", value)} />
           <RangeField label="Timing deadband" min={0} max={50} step={1} value={config.coaching.timing_deadband_m} onChange={(value) => setCoaching(config, setConfig, "timing_deadband_m", value)} />
+          <RangeField label="Corner match tolerance" min={10} max={500} step={5} value={config.coaching.event_match_tolerance_m} onChange={(value) => setCoaching(config, setConfig, "event_match_tolerance_m", value)} />
           <NumberField label="Max hints" value={config.coaching.max_hints} onChange={(value) => setCoaching(config, setConfig, "max_hints", value)} />
           <div className="toggles">
             {coachingLabels.map(([key, label]) => (
@@ -525,11 +690,32 @@ function App() {
               </label>
             ))}
           </div>
+          <div className="widgetBrowser">
+            <input value={widgetSearch} placeholder="Search widgets" onChange={(event) => setWidgetSearch(event.target.value)} />
+            <div className="segmented">
+              {widgetCategories.map((category) => (
+                <button key={category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
+              ))}
+            </div>
+            {filteredWidgetCatalog.map((widget) => {
+              const legacy = legacyWidgetById[widget.id];
+              const enabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
+              return (
+                <label className="widgetCatalogRow" key={widget.id}>
+                  <input type="checkbox" checked={enabled} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
+                  <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement}</small></span>
+                </label>
+              );
+            })}
+          </div>
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Appearance") && <Section icon={<Paintbrush />} title="Appearance">
           <Segmented value={config.style.theme} options={themes} onChange={(value) => setStyle(config, setConfig, "theme", value)} />
           <Segmented value={config.units.speed} options={speedUnits} onChange={(value) => setUnits(config, setConfig, "speed", value)} />
+          <Segmented value={config.units.temperature} options={temperatureUnits} onChange={(value) => setUnits(config, setConfig, "temperature", value)} />
+          <Segmented value={config.units.pressure} options={pressureUnits} onChange={(value) => setUnits(config, setConfig, "pressure", value)} />
+          <Segmented value={config.units.fuel} options={fuelUnits} onChange={(value) => setUnits(config, setConfig, "fuel", value)} />
           <TextInput label="Font family" value={config.style.font_family} onChange={(value) => setStyle(config, setConfig, "font_family", value)} />
           <RangeField label="Font size" min={8} max={36} step={1} value={config.style.font_size} onChange={(value) => setStyle(config, setConfig, "font_size", value)} />
           <RangeField label="Font weight" min={100} max={900} step={100} value={config.style.font_weight} onChange={(value) => setStyle(config, setConfig, "font_weight", value)} />
@@ -549,8 +735,10 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Hotkeys") && <Section icon={<Activity />} title="Hotkeys">
-          <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
-          <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
+          <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} conflict={hasHotkeyConflict(config.hotkeys, "toggle_overlay")} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
+          <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} conflict={hasHotkeyConflict(config.hotkeys, "edit_mode")} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
+          <HotkeyField label="Toggle coaching" value={config.hotkeys.toggle_coaching} conflict={hasHotkeyConflict(config.hotkeys, "toggle_coaching")} onChange={(value) => setHotkey(config, setConfig, "toggle_coaching", value)} />
+          <HotkeyField label="Cycle preset" value={config.hotkeys.cycle_preset} conflict={hasHotkeyConflict(config.hotkeys, "cycle_preset")} onChange={(value) => setHotkey(config, setConfig, "cycle_preset", value)} />
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
@@ -612,12 +800,12 @@ function showPanel(active: Page, primary: Page, secondary: Page) {
 
 function OverlayPreview(props: {
   config: OverlayConfig;
-  selected: LayoutWidgetKey;
-  onSelect: (value: LayoutWidgetKey) => void;
-  onLayoutChange: (widget: LayoutWidgetKey, layout: WidgetLayout) => void;
+  selected: LayoutSelection;
+  onSelect: (value: LayoutSelection) => void;
+  onLayoutChange: (widget: LayoutSelection, layout: WidgetLayout) => void;
 }) {
   const [drag, setDrag] = useState<{
-    widget: LayoutWidgetKey;
+    widget: LayoutSelection;
     startX: number;
     startY: number;
     layout: WidgetLayout;
@@ -644,7 +832,7 @@ function OverlayPreview(props: {
           x: Math.round(drag.layout.x + deltaX),
           y: Math.round(drag.layout.y + deltaY),
         };
-    props.onLayoutChange(drag.widget, next);
+    props.onLayoutChange(drag.widget, snapLayout(props.config, drag.widget, next));
   }
 
   return (
@@ -661,8 +849,9 @@ function OverlayPreview(props: {
           color: props.config.style.primary_text,
         }}
       >
-        {layoutLabels.map(([key, label]) => {
-          const layout = props.config.layout[key];
+        {layoutEntries(props.config).map(({ key, label, layout }) => {
+          const widgetStyle = key.startsWith("extra:") ? props.config.extra_widgets[key.slice("extra:".length)]?.style : undefined;
+          const useCustomStyle = widgetStyle && !widgetStyle.inherit_theme;
           return (
             <button
               key={key}
@@ -672,7 +861,13 @@ function OverlayPreview(props: {
                 top: layout.y * scale,
                 width: layout.width * scale,
                 height: layout.height * scale,
-                borderColor: props.config.style.border,
+                opacity: layout.opacity,
+                transform: `scale(${layout.scale})`,
+                transformOrigin: "top left",
+                zIndex: layout.z_index,
+                backgroundColor: useCustomStyle && widgetStyle.show_background ? widgetStyle.background_color : undefined,
+                borderColor: useCustomStyle && widgetStyle.show_border ? widgetStyle.border_color : props.config.style.border,
+                color: useCustomStyle ? widgetStyle.primary_color : undefined,
               }}
               onClick={() => props.onSelect(key)}
               onPointerDown={(event) => {
@@ -707,6 +902,107 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; label: string; layout: WidgetLayout }> {
+  const legacy = layoutLabels.map(([key, label]) => ({ key, label, layout: config.layout[key] }));
+  const extra = Object.entries(config.extra_widgets)
+    .filter(([, widget]) => widget.enabled)
+    .map(([id, widget]) => ({ key: `extra:${id}` as LayoutSelection, label: id.replace(/_/g, " "), layout: widget.layout }));
+  return [...legacy, ...extra];
+}
+
+function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): WidgetLayout {
+  if (selection.startsWith("extra:")) {
+    return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
+  }
+  return config.layout[selection as LayoutWidgetKey];
+}
+
+function updateLayoutSelection(config: OverlayConfig, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
+  if (selection.startsWith("extra:")) {
+    const id = selection.slice("extra:".length);
+    const widget = config.extra_widgets[id];
+    return widget ? { ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, layout } } } : config;
+  }
+  return { ...config, layout: { ...config.layout, [selection]: layout } };
+}
+
+function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
+  let next = { ...layout };
+  if (config.layout.snap_to_grid) {
+    next = {
+      ...next,
+      x: snapNumber(next.x, config.layout.grid_size),
+      y: snapNumber(next.y, config.layout.grid_size),
+      width: snapNumber(next.width, config.layout.grid_size),
+      height: snapNumber(next.height, config.layout.grid_size),
+    };
+  }
+
+  if (config.layout.snap_to_edges) {
+    next = snapToEdges(config, next);
+  }
+  if (config.layout.snap_to_widgets) {
+    next = snapToWidgets(config, widget, next);
+  }
+  return next;
+}
+
+function snapNumber(value: number, gridSize: number) {
+  const size = [5, 10, 20].includes(gridSize) ? gridSize : 10;
+  return Math.round(value / size) * size;
+}
+
+function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout {
+  const next = { ...layout };
+  const distance = config.layout.snap_distance;
+  if (Math.abs(next.x) <= distance) {
+    next.x = 0;
+  }
+  if (Math.abs(next.y) <= distance) {
+    next.y = 0;
+  }
+  if (Math.abs(config.window.width - (next.x + next.width)) <= distance) {
+    next.x = config.window.width - next.width;
+  }
+  if (Math.abs(config.window.height - (next.y + next.height)) <= distance) {
+    next.y = config.window.height - next.height;
+  }
+  return next;
+}
+
+function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
+  let next = { ...layout };
+  const distance = config.layout.snap_distance;
+  for (const { key, layout: other } of layoutEntries(config)) {
+    if (key === widget) {
+      continue;
+    }
+    const nextRight = next.x + next.width;
+    const nextBottom = next.y + next.height;
+    const otherRight = other.x + other.width;
+    const otherBottom = other.y + other.height;
+    if (Math.abs(next.x - other.x) <= distance) {
+      next.x = other.x;
+    } else if (Math.abs(next.x - otherRight) <= distance) {
+      next.x = otherRight;
+    } else if (Math.abs(nextRight - other.x) <= distance) {
+      next.x = other.x - next.width;
+    } else if (Math.abs(nextRight - otherRight) <= distance) {
+      next.x = otherRight - next.width;
+    }
+    if (Math.abs(next.y - other.y) <= distance) {
+      next.y = other.y;
+    } else if (Math.abs(next.y - otherBottom) <= distance) {
+      next.y = otherBottom;
+    } else if (Math.abs(nextBottom - other.y) <= distance) {
+      next.y = other.y - next.height;
+    } else if (Math.abs(nextBottom - otherBottom) <= distance) {
+      next.y = otherBottom - next.height;
+    }
+  }
+  return next;
+}
+
 function Section({ icon, title, children }: SectionProps) {
   return (
     <section className="panel">
@@ -729,6 +1025,9 @@ function WidgetLayoutFields(props: {
       <NumberField label="Widget Y" value={props.layout.y} onChange={(value) => props.onChange("y", value)} />
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
       <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
+      <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
+      <RangeField label="Widget opacity" min={0.1} max={1} step={0.05} value={props.layout.opacity} onChange={(value) => props.onChange("opacity", value)} />
+      <NumberField label="Layer order" value={props.layout.z_index} onChange={(value) => props.onChange("z_index", value)} />
       <label className="toggle full">
         <input type="checkbox" checked={props.layout.locked} onChange={(event) => props.onChange("locked", event.target.checked)} />
         <Lock size={16} />
@@ -798,9 +1097,9 @@ function setCoaching<K extends keyof CoachingConfig>(
   setConfig({ ...config, coaching: { ...config.coaching, [key]: value } });
 }
 
-function HotkeyField(props: { label: string; value: string; onChange: (value: string) => void }) {
+function HotkeyField(props: { label: string; value: string; conflict: boolean; onChange: (value: string) => void }) {
   return (
-    <label className="field">
+    <label className={`field ${props.conflict ? "invalid" : ""}`}>
       <span>{props.label}</span>
       <button
         className="hotkeyButton"
@@ -825,8 +1124,72 @@ function HotkeyField(props: { label: string; value: string; onChange: (value: st
       >
         {props.value || "Press a key"}
       </button>
+      {props.conflict && <small>Conflict</small>}
     </label>
   );
+}
+
+function WidgetStyleFields(props: {
+  style: WidgetStyleConfig;
+  onChange: <K extends keyof WidgetStyleConfig>(key: K, value: WidgetStyleConfig[K]) => void;
+}) {
+  const colorFields: Array<[keyof Pick<WidgetStyleConfig, "background_color" | "border_color" | "primary_color" | "secondary_color" | "accent_color">, string]> = [
+    ["background_color", "Widget background"],
+    ["border_color", "Widget border"],
+    ["primary_color", "Value color"],
+    ["secondary_color", "Title color"],
+    ["accent_color", "Accent color"],
+  ];
+  return (
+    <>
+      <label className="toggle full">
+        <input type="checkbox" checked={props.style.inherit_theme} onChange={(event) => props.onChange("inherit_theme", event.target.checked)} />
+        <Paintbrush size={16} />
+        <span>Use global appearance</span>
+      </label>
+      {!props.style.inherit_theme && <button className="secondaryButton" onClick={() => props.onChange("inherit_theme", true)}>
+        <RotateCcw size={16} />
+        Reset widget style to theme
+      </button>}
+      {!props.style.inherit_theme && <>
+        <label className="toggle full">
+          <input type="checkbox" checked={props.style.show_background} onChange={(event) => props.onChange("show_background", event.target.checked)} />
+          <span>Show widget background</span>
+        </label>
+        <label className="toggle full">
+          <input type="checkbox" checked={props.style.show_border} onChange={(event) => props.onChange("show_border", event.target.checked)} />
+          <span>Show widget border</span>
+        </label>
+        <NumberField label="Border width" value={props.style.border_width} onChange={(value) => props.onChange("border_width", value)} />
+        <NumberField label="Inner padding" value={props.style.padding} onChange={(value) => props.onChange("padding", value)} />
+        <div className="swatches">
+          {colorFields.map(([key, label]) => (
+            <label className="swatch" key={key}>
+              <span>{label}</span>
+              <input type="color" value={props.style[key]} onChange={(event) => props.onChange(key, event.target.value)} />
+            </label>
+          ))}
+        </div>
+      </>}
+      <label className="toggle full">
+        <input type="checkbox" checked={props.style.show_title} onChange={(event) => props.onChange("show_title", event.target.checked)} />
+        <span>Show widget title</span>
+      </label>
+      {props.style.show_title && <TextInput label="Widget title" value={props.style.title_text} onChange={(value) => props.onChange("title_text", value)} />}
+    </>
+  );
+}
+
+function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
+  const value = normalizeHotkey(hotkeys[key]);
+  if (!value) {
+    return false;
+  }
+  return Object.entries(hotkeys).some(([otherKey, otherValue]) => otherKey !== key && normalizeHotkey(otherValue) === value);
+}
+
+function normalizeHotkey(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, "");
 }
 
 function TextInput(props: { label: string; value: string; onChange: (value: string) => void }) {
@@ -847,21 +1210,29 @@ function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs"
   setConfig({ ...config, layout: { ...config.layout, [key]: value } });
 }
 
-function setWidgetLayout<K extends keyof WidgetLayout>(
+function setLayoutSelection<K extends keyof WidgetLayout>(
   config: OverlayConfig,
   setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
-  widget: LayoutWidgetKey,
+  selection: LayoutSelection,
   key: K,
   value: WidgetLayout[K],
 ) {
-  const layout = config.layout[widget] as WidgetLayout;
-  setConfig({
-    ...config,
-    layout: {
-      ...config.layout,
-      [widget]: { ...layout, [key]: value },
-    },
-  });
+  const layout = layoutForSelection(config, selection);
+  setConfig(updateLayoutSelection(config, selection, { ...layout, [key]: value }));
+}
+
+function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  id: string,
+  key: K,
+  value: WidgetStyleConfig[K],
+) {
+  const widget = config.extra_widgets[id];
+  if (!widget) {
+    return;
+  }
+  setConfig({ ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, style: { ...widget.style, [key]: value } } } });
 }
 
 function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof HotkeyConfig, value: string) {
@@ -935,6 +1306,11 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
     performance_mode: config.performance.mode,
     reference_mode: config.timing.reference_mode,
     mini_sectors: config.timing.mini_sectors,
+    style: structuredClone(config.style),
+    units: structuredClone(config.units),
+    coaching_config: structuredClone(config.coaching),
+    layout: structuredClone(config.layout),
+    extra_widgets: structuredClone(config.extra_widgets),
     ...config.widgets,
   };
 }
@@ -949,6 +1325,11 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): Over
       mini_sectors: profile.mini_sectors,
     },
     widgets: pickWidgets(profile),
+    style: structuredClone(profile.style),
+    units: structuredClone(profile.units),
+    coaching: structuredClone(profile.coaching_config),
+    layout: structuredClone(profile.layout),
+    extra_widgets: structuredClone(profile.extra_widgets),
   };
 }
 

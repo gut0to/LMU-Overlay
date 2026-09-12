@@ -1,101 +1,41 @@
-# LMU Overlay
+# HashOverlay LMU
 
-HashOverlay LMU is an open source, local-first telemetry overlay for **Le Mans Ultimate**.
-
-The goal is simple: show useful live telemetry and delta information with very low overhead, while keeping the project fair-play friendly and easy to reason about.
-
-## Project Status
-
-This repository is in the first milestone. It currently contains:
-
-- a read-only reader for LMU's built-in shared memory interface;
-- a compact telemetry sample model;
-- a small CLI that prints speed, gear, throttle, brake, RPM, lap and sector;
-- a transparent always-on-top telemetry overlay window;
-- independent telemetry, input, timing, coaching and performance widgets;
-- a user config opened from the app for position, size, opacity, colors, fonts, units, visible widgets and per-widget layout;
-- lap/reference logic for session best, personal best, live delta, predicted lap and mini-sectors;
-- local binary PB storage under `%APPDATA%\HashOverlay\laps`;
-- a Tauri + React + TypeScript settings app with tabs, presets, custom presets, coaching controls, import/export/reset tools, live layout preview and visual controls;
-- a pure telemetry engine crate with a tested ring buffer;
-- hotkeys for show/hide and edit mode;
-- native drag/resize edit mode with persistent widget layout;
-- hot reload for saved config changes while the overlay is running;
-- a debug performance monitor;
-- Windows release packaging through GitHub Actions.
-
-## Principles
-
-- 100% local.
-- Read-only telemetry access.
-- No DLL injection.
-- No input automation.
-- No hidden opponent data.
-- No backend server, cloud dependency or database.
-- Stable `main` branch.
-- Small, focused pull requests.
+HashOverlay is a local, read-only racing overlay for Le Mans Ultimate. It is built around the game's official shared-memory interface and keeps all telemetry, references and settings on your PC.
 
 ## Quick Start
 
-See [docs/usage.md](docs/usage.md) for the full step-by-step guide.
+1. Download and extract the Windows release.
+2. Open **HashOverlay Settings**.
+3. Choose a preset, adjust the widgets you want and press **Start overlay**.
+4. Start Le Mans Ultimate and enter a session.
 
-```powershell
-cargo run -p hashoverlay -- --once
-```
+The overlay waits safely for LMU when the game is not running. By default, `F9` shows or hides it and `F10` enters layout edit mode.
 
-```powershell
-cargo run -p hashoverlay -- --overlay
-```
+The full guide is in [docs/usage.md](docs/usage.md). Widget availability and data sources are listed in [docs/widgets.md](docs/widgets.md).
 
-Open the overlay configuration:
+## What It Does
 
-```powershell
-cargo run -p hashoverlay -- --configure
-```
+- Transparent, always-on-top, click-through overlay with in-game drag, resize and snapping.
+- Settings app with a widget catalog, search, category filters, presets, hotkeys, preview, import/export and hot reload.
+- Core driving HUD: gear, speed, RPM, pedals, steering, input history, delta, timing, sectors and mini sectors.
+- Local reference-lap analysis: PB/session references, predicted lap, bounded histories and coaching.
+- Optional engineering and race widgets for fuel, tyres, brakes, electronics, energy, engine, weather, flags, position and scoring-derived views.
+- Explicit unavailable states: data that LMU has not officially exposed is shown as `--`, never invented.
 
-Run the settings app:
+## Fair Play
 
-```powershell
-cd settings
-npm install
-npm run tauri dev
-```
+HashOverlay opens `LMU_Data` with read-only access. It does not inject code, write game memory, automate input, alter vehicle behaviour, use a cloud backend or read hidden data. See [docs/telemetry-sources.md](docs/telemetry-sources.md) for the source boundary.
 
-If LMU is not running or its built-in shared memory interface is unavailable, the command exits cleanly with a warning.
+## Project Notes
 
-## Development
+The public data model and widget catalog are intentionally broader than the currently verified LMU header available on this machine. Fields that need confirmation from LMU's shipped `Support/SharedMemoryInterface` remain optional until that header is verified. This protects users from misleading readings while keeping the overlay ready to consume official additions.
 
-```powershell
-cargo test
-```
-
-```powershell
-cargo run -p hashoverlay
-```
-
-Pull requests run Windows CI for Rust formatting, Clippy, tests, the Settings frontend build and the Settings Tauri shell check.
-
-## Architecture
-
-The intended runtime flow is:
-
-```text
-LMU
-  -> Built-in Shared Memory (LMU_Data)
-  -> Telemetry Reader
-  -> Telemetry Engine
-  -> Snapshot
-  -> Overlay Renderer
-```
-
-The renderer must not read shared memory directly. It will consume compact snapshots from the telemetry pipeline.
-
-More detail is available in [docs/architecture.md](docs/architecture.md).
+Architecture, development and release notes live in [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md) and [docs/release.md](docs/release.md).
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE).

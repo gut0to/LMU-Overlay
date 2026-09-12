@@ -1,6 +1,9 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, process::Command};
 
-use overlay_renderer::config::{default_config_text, OverlayConfig};
+use overlay_renderer::{
+    config::{default_config_text, OverlayConfig},
+    widget_catalog as overlay_widget_catalog, WidgetDefinition,
+};
 use serde::Serialize;
 
 #[derive(Debug, Serialize)]
@@ -27,7 +30,9 @@ fn save_config(mut config: OverlayConfig) -> Result<ConfigResponse, String> {
 
 #[tauri::command]
 fn default_config() -> Result<OverlayConfig, String> {
-    toml::from_str(default_config_text()).map_err(|error| error.to_string())
+    let mut config: OverlayConfig = toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
+    config.normalize();
+    Ok(config)
 }
 
 #[tauri::command]
@@ -49,6 +54,40 @@ fn import_config(text: String) -> Result<ConfigResponse, String> {
 fn reset_config() -> Result<ConfigResponse, String> {
     let config: OverlayConfig = toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
     save_config(config)
+}
+
+#[tauri::command]
+fn widget_catalog() -> Vec<WidgetDefinition> {
+    overlay_widget_catalog().to_vec()
+}
+
+#[tauri::command]
+fn start_overlay() -> Result<(), String> {
+    let executable = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("hashoverlay.exe")))
+        .filter(|path| path.exists())
+        .unwrap_or_else(|| PathBuf::from("hashoverlay.exe"));
+
+    Command::new(executable)
+        .arg("--overlay")
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not start HashOverlay: {error}"))
+}
+
+#[tauri::command]
+fn open_config_folder() -> Result<(), String> {
+    let folder = overlay_config_path()
+        .parent()
+        .map(PathBuf::from)
+        .ok_or_else(|| "Could not resolve the config folder".to_string())?;
+    fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+    Command::new("explorer.exe")
+        .arg(folder)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Could not open config folder: {error}"))
 }
 
 impl ConfigResponse {
@@ -76,7 +115,10 @@ fn main() {
             default_config,
             export_config,
             import_config,
-            reset_config
+            reset_config,
+            widget_catalog,
+            start_overlay,
+            open_config_folder
         ])
         .setup(|_| {
             let path = overlay_config_path();

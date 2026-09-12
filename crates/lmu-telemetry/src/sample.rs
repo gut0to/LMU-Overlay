@@ -117,6 +117,7 @@ impl fmt::Display for GamePhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TelemetryMetadata {
     pub track_name: Option<String>,
+    pub track_layout: Option<String>,
     pub vehicle_name: Option<String>,
     pub vehicle_class: Option<String>,
     pub session_kind: SessionKind,
@@ -131,6 +132,7 @@ impl Default for TelemetryMetadata {
     fn default() -> Self {
         Self {
             track_name: None,
+            track_layout: None,
             vehicle_name: None,
             vehicle_class: None,
             session_kind: SessionKind::Unknown(-1),
@@ -158,7 +160,86 @@ pub struct TelemetrySample {
     pub lap_number: i32,
     pub lap_start_seconds: f64,
     pub sector: i32,
+    pub sector_times: SectorTimes,
+    pub vehicle: VehicleSystems,
+    pub wheels: Wheels,
+    pub session: SessionData,
     pub metadata: TelemetryMetadata,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SectorTimes {
+    pub current_sector1_seconds: Option<f64>,
+    pub current_sector2_seconds: Option<f64>,
+    pub last_sector1_seconds: Option<f64>,
+    pub last_sector2_seconds: Option<f64>,
+    pub last_sector3_seconds: Option<f64>,
+    pub best_sector1_seconds: Option<f64>,
+    pub best_sector2_seconds: Option<f64>,
+    pub best_sector3_seconds: Option<f64>,
+}
+
+/// Optional official vehicle-system data. Fields remain absent until their
+/// layout is verified against the SharedMemoryInterface header shipped by LMU.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct VehicleSystems {
+    pub max_rpm: Option<f64>,
+    pub fuel_liters: Option<f64>,
+    pub fuel_capacity_liters: Option<f64>,
+    pub engine_water_temp_c: Option<f64>,
+    pub engine_oil_temp_c: Option<f64>,
+    pub engine_torque_nm: Option<f64>,
+    pub turbo_boost_kpa: Option<f64>,
+    pub brake_bias_front_percent: Option<f64>,
+    pub speed_limiter_active: Option<bool>,
+    pub drs_active: Option<bool>,
+    pub tc_active: Option<bool>,
+    pub abs_active: Option<bool>,
+    pub tc_setting: Option<i32>,
+    pub abs_setting: Option<i32>,
+    pub motor_map: Option<i32>,
+    pub battery_charge_percent: Option<f64>,
+    pub virtual_energy_percent: Option<f64>,
+    pub hybrid_regen_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct WheelData {
+    pub pressure_kpa: Option<f64>,
+    pub surface_temp_left_c: Option<f64>,
+    pub surface_temp_center_c: Option<f64>,
+    pub surface_temp_right_c: Option<f64>,
+    pub carcass_temp_c: Option<f64>,
+    pub wear_percent: Option<f64>,
+    pub brake_temp_c: Option<f64>,
+    pub brake_pressure_kpa: Option<f64>,
+    pub grip_fraction: Option<f64>,
+    pub detached: Option<bool>,
+    pub flat: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Wheels {
+    pub front_left: WheelData,
+    pub front_right: WheelData,
+    pub rear_left: WheelData,
+    pub rear_right: WheelData,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SessionData {
+    pub position: Option<i32>,
+    pub total_vehicles: Option<i32>,
+    pub penalties: Option<i32>,
+    pub count_lap_flag: Option<i32>,
+    pub flag: Option<i32>,
+    pub gap_ahead_seconds: Option<f64>,
+    pub gap_behind_seconds: Option<f64>,
+    pub session_remaining_seconds: Option<f64>,
+    pub ambient_temp_c: Option<f64>,
+    pub track_temp_c: Option<f64>,
+    pub rain_density: Option<f64>,
+    pub track_wetness: Option<f64>,
 }
 
 impl TelemetrySample {
@@ -251,6 +332,10 @@ mod tests {
             lap_number: 3,
             lap_start_seconds: 30.0,
             sector: 2,
+            sector_times: SectorTimes::default(),
+            vehicle: VehicleSystems::default(),
+            wheels: Wheels::default(),
+            session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
         };
 
@@ -276,6 +361,10 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 10.0,
             sector: 0,
+            sector_times: SectorTimes::default(),
+            vehicle: VehicleSystems::default(),
+            wheels: Wheels::default(),
+            session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
         }
         .sanitized();
@@ -307,6 +396,10 @@ mod tests {
             lap_number: 1,
             lap_start_seconds: 0.0,
             sector: 0,
+            sector_times: SectorTimes::default(),
+            vehicle: VehicleSystems::default(),
+            wheels: Wheels::default(),
+            session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
         };
 
