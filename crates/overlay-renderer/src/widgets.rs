@@ -190,3 +190,27 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
 pub fn widget_catalog() -> &'static [WidgetDefinition] {
     WIDGET_CATALOG
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    #[test]
+    fn catalog_has_unique_ids_and_core_categories() {
+        let ids = WIDGET_CATALOG
+            .iter()
+            .map(|widget| widget.id)
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(ids.len(), WIDGET_CATALOG.len());
+        assert!(WIDGET_CATALOG.iter().any(|widget| widget.id == "fuel"));
+        assert!(WIDGET_CATALOG
+            .iter()
+            .any(|widget| widget.category == "Timing"));
+        assert!(WIDGET_CATALOG
+            .iter()
+            .any(|widget| widget.category == "Race"));
+    }
+}

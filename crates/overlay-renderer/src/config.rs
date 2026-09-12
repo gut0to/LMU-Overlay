@@ -1319,4 +1319,19 @@ mod tests {
         assert_eq!(config.units.pressure, "kpa");
         assert_eq!(config.units.fuel, "liters");
     }
+
+    #[test]
+    fn fills_missing_widget_instances_without_preserving_unknown_ids() {
+        let mut config = OverlayConfig::default();
+        config.extra_widgets.insert(
+            "unknown-widget".to_string(),
+            WidgetInstanceConfig::default(),
+        );
+
+        config.normalize();
+
+        assert!(!config.extra_widgets.contains_key("unknown-widget"));
+        assert!(config.extra_widgets.contains_key("fuel"));
+        assert!(config.extra_widgets.contains_key("weather"));
+    }
 }
