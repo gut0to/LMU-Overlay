@@ -1,218 +1,39 @@
-# Usage Guide
+# Using HashOverlay
 
-This guide explains how to clone, build and run the current milestone of LMU Overlay.
+## Install and Drive
 
-## 1. Install Requirements
+1. Download the Windows release ZIP and extract it anywhere you can write to.
+2. Open `HashOverlay Settings.exe`.
+3. Select **Practice**, **Qualifying** or **Race**, then open **Widgets** to choose what is visible.
+4. Use **Layout** to drag, resize, lock and snap widgets in the preview. Press **Save**.
+5. Select **Start overlay**.
+6. Start Le Mans Ultimate, enable its built-in plugin/shared-memory option, and enter a session.
 
-Install:
+The overlay displays **WAITING FOR LMU** until it has a valid player sample. It never manufactures values while LMU is closed.
 
-- Windows 10 or newer;
-- Git;
-- Rust stable from <https://rustup.rs/>.
+## In-Game Controls
 
-After installing Rust, open a new PowerShell window and check:
+- `F9`: show or hide the overlay.
+- `F10`: toggle edit mode. In edit mode the overlay stops click-through so unlocked widgets can be moved and resized. Press `F10` again to race normally.
+- `Shift+F10`: toggle coaching.
+- `Ctrl+Shift+F9`: cycle the saved profiles.
 
-```powershell
-rustc --version
-cargo --version
-```
+All shortcuts can be changed in **Settings > Hotkeys**. Conflicting shortcuts are highlighted before saving.
 
-## 2. Clone the Repository
+## Choosing a Layout
 
-```powershell
-git clone https://github.com/gut0to/LMU-Overlay.git
-cd LMU-Overlay
-```
+The default layout is deliberately small: driving HUD, inputs, timing, relative/race information when available, fuel and flags. Turn on additional widgets one by one rather than placing everything on screen.
 
-If you already cloned it:
+Use the Widget Browser to search by name or filter by category. A widget can be enabled even if LMU does not currently expose its official data on your installed game version; it will show `--` until that data becomes available.
 
-```powershell
-git pull
-```
+## Settings and Storage
 
-## 3. Build
+Settings are stored in `%APPDATA%\HashOverlay\hashoverlay.toml`. You normally never need to edit it. The app supports export, import, reset, live preview and hot reload while the overlay is running.
 
-```powershell
-cargo build
-```
+Personal-best reference laps are stored under `%APPDATA%\HashOverlay\laps` and keyed by track, track layout and car. Only valid non-pit laps can update a PB or coaching reference.
 
-## 4. Run Tests
+## Troubleshooting
 
-```powershell
-cargo test
-```
+If the overlay stays on **WAITING FOR LMU**, start LMU first, confirm its shared-memory/plugins option is enabled, and make sure the game and HashOverlay run as the same Windows user.
 
-For the same checks used by CI:
-
-```powershell
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-```
-
-## 5. Build A Release Package
-
-Maintainers can publish a Windows release by pushing a semantic version tag:
-
-```powershell
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-GitHub Actions builds the release ZIP with:
-
-- `hashoverlay.exe`;
-- README, license and usage guide;
-- the Settings app bundle.
-
-## 6. Run One Telemetry Read
-
-Start Le Mans Ultimate and enable plugins in the game settings:
-
-```text
-Settings -> Gameplay -> Enable Plugins -> On
-```
-
-LMU Overlay reads LMU's built-in `LMU_Data` shared memory interface on Windows. It does not require the rFactor 2 shared memory plugin for LMU.
-
-Then run:
-
-```powershell
-cargo run -p hashoverlay -- --once
-```
-
-Expected behavior:
-
-- If telemetry is available, the app prints speed, gear, throttle, brake, RPM, lap and sector.
-- If telemetry is not available, the app exits cleanly with a warning.
-
-## 7. Run Continuous Logging
-
-```powershell
-cargo run -p hashoverlay
-```
-
-Press `Ctrl+C` to stop.
-
-To wait for LMU if it is not open yet:
-
-```powershell
-cargo run -p hashoverlay -- --wait
-```
-
-To change the CLI logging interval:
-
-```powershell
-cargo run -p hashoverlay -- --interval-ms 50
-```
-
-## 8. Configure The Overlay
-
-For the full settings app:
-
-```powershell
-cd settings
-npm install
-npm run tauri dev
-```
-
-The settings app can change:
-
-- presets for Practice, Qualifying and Race;
-- visible widgets;
-- position, size, scale and opacity;
-- per-widget position, size, lock state and snap behavior;
-- live layout preview with draggable/resizable mock widget boxes;
-- colors and line thickness;
-- font family, font size, large-number size and km/h or mph units;
-- telemetry history, render FPS and sample interval;
-- delta reference, mini-sectors and input thresholds;
-- coaching mode, enabled hint types, speed threshold, timing deadband and maximum hints;
-- hotkeys and performance mode;
-- TOML import/export;
-- reset for the layout or the full config.
-
-For a lightweight text config fallback:
-
-```powershell
-cargo run -p hashoverlay -- --configure
-```
-
-This creates and opens:
-
-```text
-%APPDATA%\HashOverlay\hashoverlay.toml
-```
-
-You can edit the same settings in TOML. Save the file, then start the overlay.
-When the overlay is already running, saved settings are hot reloaded automatically.
-
-Useful Settings workflows:
-
-- Open `Layout`, drag widgets in the preview, resize from the bottom-right corner, then press `Save`.
-- Use `F10` in the overlay to move or resize real widgets on top of the game, then press `F10` again to return to click-through mode.
-- Open `Coaching` to choose race/practice/attack behavior and decide which hint types are visible.
-- Open `Presets` to create custom presets from the current setup.
-- Open `Advanced` to export the current TOML, import a shared TOML, reset only the layout, or reset the entire config.
-
-## 9. Run The Overlay
-
-Start LMU, enter a session, and run:
-
-```powershell
-cargo run -p hashoverlay -- --overlay
-```
-
-The current overlay includes:
-
-- transparent;
-- always on top;
-- click-through;
-- configurable position and size;
-- independent widget position and size;
-- configurable scale, opacity, colors and line thickness;
-- toggles for title, speed/RPM, pedals, steering, lap timing, sectors, mini-sectors, delta, ghost inputs, coaching and input history;
-- speed, gear and RPM text;
-- throttle, brake and clutch bars;
-- steering bar;
-- throttle and brake history graphs.
-- live delta once a reference lap exists;
-- predicted lap, personal best, session best and mini-sector indicator;
-- mini-sector delta based on the last completed mini-sector crossing;
-- ghost input markers for throttle/brake when a reference lap exists;
-- brake/throttle timing hints against the reference lap;
-- coaching cues for brake timing, throttle timing, pedal matching, speed delta and gear choice;
-- F9 show/hide by default;
-- F10 edit mode by default;
-- drag-to-move and corner resize for each unlocked widget while edit mode is enabled;
-- persistent layout saves when a widget is moved or resized;
-- hot reload when the Settings app saves config changes.
-
-## 10. Reference Laps And PB Storage
-
-HashOverlay stores personal-best reference laps under:
-
-```text
-%APPDATA%\HashOverlay\laps
-```
-
-Reference laps are keyed by LMU telemetry metadata, using track, track layout and car. When LMU does not expose a separate track-layout value, HashOverlay uses the explicit `unknown-layout` fallback instead of treating the car class as a layout.
-
-Older PB files written by early V3 builds used `track + car + vehicle class`. HashOverlay can still read those legacy files, but new PBs are saved with the corrected `track + track layout + car` key.
-
-Only clean green-flag samples outside the pits and garage are eligible for session-best and personal-best references. Pit/garage/out-of-session samples can still be shown by the overlay, but they do not overwrite your reference laps.
-
-## 11. Troubleshooting
-
-If PowerShell says `cargo` is not recognized, Rust is not installed or the terminal was opened before Rust updated the PATH.
-
-If the app says the telemetry buffer is not available:
-
-- start LMU before running the command;
-- confirm `Enable Plugins` is turned on in LMU's gameplay settings;
-- run the terminal as the same Windows user that is running the game.
-
-## 12. Current Limitations
-
-- The renderer still uses the current Win32/GDI backend while the Direct2D/DirectWrite backend is prepared.
-- LMU lap invalidation by track-cut is not mapped until an official field is identified in `LMU_Data`; the current validity gate is conservative around green flag, pits and garage.
+For source-level development and validation, see [development.md](development.md). For the exact data-source limits, see [telemetry-sources.md](telemetry-sources.md).

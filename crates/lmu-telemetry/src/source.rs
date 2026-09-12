@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    GamePhase, Gear, SessionData, SessionKind, TelemetryMetadata, TelemetrySample,
-    VehicleSystems, Wheels,
+    GamePhase, Gear, SessionData, SessionKind, TelemetryMetadata, TelemetrySample, VehicleSystems,
+    Wheels,
 };
 
 #[cfg(windows)]
