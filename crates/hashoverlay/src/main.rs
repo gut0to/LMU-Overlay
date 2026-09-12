@@ -266,16 +266,17 @@ fn reference_lap_key(sample: &TelemetrySample) -> ReferenceLapKey {
             .track_name
             .clone()
             .unwrap_or_else(|| "unknown-track".to_string()),
+        track_layout: sample
+            .metadata
+            .track_layout
+            .clone()
+            .unwrap_or_else(|| "unknown-layout".to_string()),
         car: sample
             .metadata
             .vehicle_name
             .clone()
             .unwrap_or_else(|| "unknown-car".to_string()),
-        layout: sample
-            .metadata
-            .vehicle_class
-            .clone()
-            .unwrap_or_else(|| "default".to_string()),
+        legacy_vehicle_class: sample.metadata.vehicle_class.clone(),
     }
 }
 
@@ -372,6 +373,7 @@ mod tests {
             sector: 0,
             metadata: lmu_telemetry::TelemetryMetadata {
                 track_name: Some("Sebring".to_string()),
+                track_layout: Some("International".to_string()),
                 vehicle_name: Some("Porsche 963".to_string()),
                 vehicle_class: Some("Hypercar".to_string()),
                 ..lmu_telemetry::TelemetryMetadata::default()
@@ -382,8 +384,9 @@ mod tests {
             reference_lap_key(&sample),
             ReferenceLapKey {
                 track: "Sebring".to_string(),
+                track_layout: "International".to_string(),
                 car: "Porsche 963".to_string(),
-                layout: "Hypercar".to_string(),
+                legacy_vehicle_class: Some("Hypercar".to_string()),
             }
         );
     }

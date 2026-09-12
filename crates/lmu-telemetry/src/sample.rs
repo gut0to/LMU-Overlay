@@ -117,6 +117,7 @@ impl fmt::Display for GamePhase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TelemetryMetadata {
     pub track_name: Option<String>,
+    pub track_layout: Option<String>,
     pub vehicle_name: Option<String>,
     pub vehicle_class: Option<String>,
     pub session_kind: SessionKind,
@@ -131,6 +132,7 @@ impl Default for TelemetryMetadata {
     fn default() -> Self {
         Self {
             track_name: None,
+            track_layout: None,
             vehicle_name: None,
             vehicle_class: None,
             session_kind: SessionKind::Unknown(-1),

@@ -196,7 +196,9 @@ HashOverlay stores personal-best reference laps under:
 %APPDATA%\HashOverlay\laps
 ```
 
-Reference laps are keyed by LMU telemetry metadata, using track, vehicle and class. That keeps a Sebring/Porsche PB separate from a Le Mans/Ferrari PB.
+Reference laps are keyed by LMU telemetry metadata, using track, track layout and car. When LMU does not expose a separate track-layout value, HashOverlay uses the explicit `unknown-layout` fallback instead of treating the car class as a layout.
+
+Older PB files written by early V3 builds used `track + car + vehicle class`. HashOverlay can still read those legacy files, but new PBs are saved with the corrected `track + track layout + car` key.
 
 Only clean green-flag samples outside the pits and garage are eligible for session-best and personal-best references. Pit/garage/out-of-session samples can still be shown by the overlay, but they do not overwrite your reference laps.
 

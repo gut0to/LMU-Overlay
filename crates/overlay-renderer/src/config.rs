@@ -355,6 +355,9 @@ impl Default for WidgetConfig {
 pub struct LayoutConfig {
     pub lock_all: bool,
     pub snap_to_edges: bool,
+    pub snap_to_grid: bool,
+    pub snap_to_widgets: bool,
+    pub grid_size: i32,
     pub snap_distance: i32,
     pub telemetry: WidgetLayout,
     pub inputs: WidgetLayout,
@@ -368,6 +371,9 @@ pub struct LayoutConfig {
 
 impl LayoutConfig {
     fn normalize(&mut self) {
+        if !matches!(self.grid_size, 5 | 10 | 20) {
+            self.grid_size = 10;
+        }
         self.snap_distance = self.snap_distance.clamp(0, 64);
         self.telemetry.normalize();
         self.inputs.normalize();
@@ -385,6 +391,9 @@ impl Default for LayoutConfig {
         Self {
             lock_all: false,
             snap_to_edges: true,
+            snap_to_grid: false,
+            snap_to_widgets: true,
+            grid_size: 10,
             snap_distance: 12,
             telemetry: WidgetLayout {
                 x: 14,
@@ -392,6 +401,9 @@ impl Default for LayoutConfig {
                 width: 392,
                 height: 52,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 10,
             },
             inputs: WidgetLayout {
                 x: 14,
@@ -399,6 +411,9 @@ impl Default for LayoutConfig {
                 width: 240,
                 height: 106,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 20,
             },
             lap_timing: WidgetLayout {
                 x: 170,
@@ -406,6 +421,9 @@ impl Default for LayoutConfig {
                 width: 236,
                 height: 42,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 30,
             },
             timing: WidgetLayout {
                 x: 170,
@@ -413,6 +431,9 @@ impl Default for LayoutConfig {
                 width: 236,
                 height: 66,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 40,
             },
             sectors: WidgetLayout {
                 x: 14,
@@ -420,6 +441,9 @@ impl Default for LayoutConfig {
                 width: 190,
                 height: 42,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 50,
             },
             mini_sectors: WidgetLayout {
                 x: 210,
@@ -427,6 +451,9 @@ impl Default for LayoutConfig {
                 width: 196,
                 height: 42,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 60,
             },
             coaching: WidgetLayout {
                 x: 260,
@@ -434,6 +461,9 @@ impl Default for LayoutConfig {
                 width: 146,
                 height: 58,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 70,
             },
             performance: WidgetLayout {
                 x: 14,
@@ -441,6 +471,9 @@ impl Default for LayoutConfig {
                 width: 392,
                 height: 20,
                 locked: false,
+                scale: 1.0,
+                opacity: 1.0,
+                z_index: 80,
             },
         }
     }
@@ -454,6 +487,9 @@ pub struct WidgetLayout {
     pub width: i32,
     pub height: i32,
     pub locked: bool,
+    pub scale: f64,
+    pub opacity: f64,
+    pub z_index: i32,
 }
 
 impl WidgetLayout {
@@ -462,6 +498,9 @@ impl WidgetLayout {
         self.y = self.y.clamp(-2000, 8000);
         self.width = self.width.clamp(48, 1600);
         self.height = self.height.clamp(20, 1000);
+        self.scale = self.scale.clamp(0.5, 2.0);
+        self.opacity = self.opacity.clamp(0.1, 1.0);
+        self.z_index = self.z_index.clamp(-1000, 1000);
     }
 }
 
@@ -473,6 +512,9 @@ impl Default for WidgetLayout {
             width: 160,
             height: 80,
             locked: false,
+            scale: 1.0,
+            opacity: 1.0,
+            z_index: 0,
         }
     }
 }
@@ -766,6 +808,9 @@ performance_monitor = false
 [layout]
 lock_all = false
 snap_to_edges = true
+snap_to_grid = false
+snap_to_widgets = true
+grid_size = 10
 snap_distance = 12
 
 [layout.telemetry]
@@ -774,6 +819,9 @@ y = 10
 width = 392
 height = 52
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 10
 
 [layout.inputs]
 x = 14
@@ -781,6 +829,9 @@ y = 64
 width = 240
 height = 106
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 20
 
 [layout.lap_timing]
 x = 170
@@ -788,6 +839,9 @@ y = 64
 width = 236
 height = 42
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 30
 
 [layout.timing]
 x = 170
@@ -795,6 +849,9 @@ y = 108
 width = 236
 height = 66
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 40
 
 [layout.sectors]
 x = 14
@@ -802,6 +859,9 @@ y = 174
 width = 190
 height = 42
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 50
 
 [layout.mini_sectors]
 x = 210
@@ -809,6 +869,9 @@ y = 174
 width = 196
 height = 42
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 60
 
 [layout.coaching]
 x = 260
@@ -816,6 +879,9 @@ y = 48
 width = 146
 height = 58
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 70
 
 [layout.performance]
 x = 14
@@ -823,6 +889,9 @@ y = 170
 width = 392
 height = 20
 locked = false
+scale = 1.0
+opacity = 1.0
+z_index = 80
 
 [units]
 speed = "kmh"
@@ -951,6 +1020,9 @@ mod tests {
         assert_eq!(config.coaching.mode, "practice");
         assert!(config.coaching.brake_timing);
         assert!(config.layout.snap_to_edges);
+        assert_eq!(config.layout.grid_size, 10);
+        assert_eq!(config.layout.telemetry.z_index, 10);
+        assert_eq!(config.layout.telemetry.opacity, 1.0);
         assert_eq!(config.layout.inputs.width, 240);
         assert!(config.presets.custom.is_empty());
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
@@ -994,9 +1066,13 @@ mod tests {
             },
             layout: LayoutConfig {
                 snap_distance: 99,
+                grid_size: 7,
                 telemetry: WidgetLayout {
                     width: 1,
                     height: 1,
+                    scale: 9.0,
+                    opacity: 0.0,
+                    z_index: 9_999,
                     ..WidgetLayout::default()
                 },
                 ..LayoutConfig::default()
@@ -1027,8 +1103,12 @@ mod tests {
         assert_eq!(config.coaching.timing_deadband_m, 50.0);
         assert_eq!(config.coaching.max_hints, 6);
         assert_eq!(config.layout.snap_distance, 64);
+        assert_eq!(config.layout.grid_size, 10);
         assert_eq!(config.layout.telemetry.width, 48);
         assert_eq!(config.layout.telemetry.height, 20);
+        assert_eq!(config.layout.telemetry.scale, 2.0);
+        assert_eq!(config.layout.telemetry.opacity, 0.1);
+        assert_eq!(config.layout.telemetry.z_index, 1000);
         assert_eq!(config.timing.mini_sectors, 40);
     }
 }

@@ -73,11 +73,17 @@ type WidgetLayout = {
   width: number;
   height: number;
   locked: boolean;
+  scale: number;
+  opacity: number;
+  z_index: number;
 };
 
 type LayoutConfig = {
   lock_all: boolean;
   snap_to_edges: boolean;
+  snap_to_grid: boolean;
+  snap_to_widgets: boolean;
+  grid_size: number;
   snap_distance: number;
   telemetry: WidgetLayout;
   inputs: WidgetLayout;
@@ -198,6 +204,11 @@ const coachingModes = [
   ["race", "Race"],
   ["practice", "Practice"],
   ["attack", "Attack"],
+];
+const gridSizes = [
+  ["5", "5 px"],
+  ["10", "10 px"],
+  ["20", "20 px"],
 ];
 const coachingLabels: Array<[keyof Pick<CoachingConfig, "brake_timing" | "throttle_timing" | "input_match" | "speed" | "gear">, string]> = [
   ["brake_timing", "Brake timing"],
@@ -471,6 +482,23 @@ function App() {
             />
             <span>Snap to screen edges</span>
           </label>
+          <label className="toggle full">
+            <input
+              type="checkbox"
+              checked={config.layout.snap_to_grid}
+              onChange={(event) => setLayoutFlag(config, setConfig, "snap_to_grid", event.target.checked)}
+            />
+            <span>Snap to grid</span>
+          </label>
+          <label className="toggle full">
+            <input
+              type="checkbox"
+              checked={config.layout.snap_to_widgets}
+              onChange={(event) => setLayoutFlag(config, setConfig, "snap_to_widgets", event.target.checked)}
+            />
+            <span>Snap to widgets</span>
+          </label>
+          <Segmented value={String(config.layout.grid_size)} options={gridSizes} onChange={(value) => setLayoutFlag(config, setConfig, "grid_size", Number(value))} />
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
           <WidgetLayoutFields
             layout={config.layout[selectedLayout]}
@@ -644,7 +672,7 @@ function OverlayPreview(props: {
           x: Math.round(drag.layout.x + deltaX),
           y: Math.round(drag.layout.y + deltaY),
         };
-    props.onLayoutChange(drag.widget, next);
+    props.onLayoutChange(drag.widget, snapLayout(props.config, drag.widget, next));
   }
 
   return (
@@ -672,6 +700,10 @@ function OverlayPreview(props: {
                 top: layout.y * scale,
                 width: layout.width * scale,
                 height: layout.height * scale,
+                opacity: layout.opacity,
+                transform: `scale(${layout.scale})`,
+                transformOrigin: "top left",
+                zIndex: layout.z_index,
                 borderColor: props.config.style.border,
               }}
               onClick={() => props.onSelect(key)}
@@ -707,6 +739,83 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function snapLayout(config: OverlayConfig, widget: LayoutWidgetKey, layout: WidgetLayout): WidgetLayout {
+  let next = { ...layout };
+  if (config.layout.snap_to_grid) {
+    next = {
+      ...next,
+      x: snapNumber(next.x, config.layout.grid_size),
+      y: snapNumber(next.y, config.layout.grid_size),
+      width: snapNumber(next.width, config.layout.grid_size),
+      height: snapNumber(next.height, config.layout.grid_size),
+    };
+  }
+  if (config.layout.snap_to_edges) {
+    next = snapToEdges(config, next);
+  }
+  if (config.layout.snap_to_widgets) {
+    next = snapToWidgets(config, widget, next);
+  }
+  return next;
+}
+
+function snapNumber(value: number, gridSize: number) {
+  const size = [5, 10, 20].includes(gridSize) ? gridSize : 10;
+  return Math.round(value / size) * size;
+}
+
+function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout {
+  const next = { ...layout };
+  const distance = config.layout.snap_distance;
+  if (Math.abs(next.x) <= distance) {
+    next.x = 0;
+  }
+  if (Math.abs(next.y) <= distance) {
+    next.y = 0;
+  }
+  if (Math.abs(config.window.width - (next.x + next.width)) <= distance) {
+    next.x = config.window.width - next.width;
+  }
+  if (Math.abs(config.window.height - (next.y + next.height)) <= distance) {
+    next.y = config.window.height - next.height;
+  }
+  return next;
+}
+
+function snapToWidgets(config: OverlayConfig, widget: LayoutWidgetKey, layout: WidgetLayout): WidgetLayout {
+  let next = { ...layout };
+  const distance = config.layout.snap_distance;
+  for (const [key] of layoutLabels) {
+    if (key === widget) {
+      continue;
+    }
+    const other = config.layout[key];
+    const nextRight = next.x + next.width;
+    const nextBottom = next.y + next.height;
+    const otherRight = other.x + other.width;
+    const otherBottom = other.y + other.height;
+    if (Math.abs(next.x - other.x) <= distance) {
+      next.x = other.x;
+    } else if (Math.abs(next.x - otherRight) <= distance) {
+      next.x = otherRight;
+    } else if (Math.abs(nextRight - other.x) <= distance) {
+      next.x = other.x - next.width;
+    } else if (Math.abs(nextRight - otherRight) <= distance) {
+      next.x = otherRight - next.width;
+    }
+    if (Math.abs(next.y - other.y) <= distance) {
+      next.y = other.y;
+    } else if (Math.abs(next.y - otherBottom) <= distance) {
+      next.y = otherBottom;
+    } else if (Math.abs(nextBottom - other.y) <= distance) {
+      next.y = other.y - next.height;
+    } else if (Math.abs(nextBottom - otherBottom) <= distance) {
+      next.y = otherBottom - next.height;
+    }
+  }
+  return next;
+}
+
 function Section({ icon, title, children }: SectionProps) {
   return (
     <section className="panel">
@@ -729,6 +838,9 @@ function WidgetLayoutFields(props: {
       <NumberField label="Widget Y" value={props.layout.y} onChange={(value) => props.onChange("y", value)} />
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
       <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
+      <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
+      <RangeField label="Widget opacity" min={0.1} max={1} step={0.05} value={props.layout.opacity} onChange={(value) => props.onChange("opacity", value)} />
+      <NumberField label="Layer order" value={props.layout.z_index} onChange={(value) => props.onChange("z_index", value)} />
       <label className="toggle full">
         <input type="checkbox" checked={props.layout.locked} onChange={(event) => props.onChange("locked", event.target.checked)} />
         <Lock size={16} />

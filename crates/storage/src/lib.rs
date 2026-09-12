@@ -23,16 +23,18 @@ const MAX_STORED_POINTS: usize = 2_001;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceLapKey {
     pub track: String,
+    pub track_layout: String,
     pub car: String,
-    pub layout: String,
+    pub legacy_vehicle_class: Option<String>,
 }
 
 impl ReferenceLapKey {
     pub fn fallback() -> Self {
         Self {
             track: "unknown-track".to_string(),
+            track_layout: "unknown-layout".to_string(),
             car: "unknown-car".to_string(),
-            layout: "default".to_string(),
+            legacy_vehicle_class: None,
         }
     }
 
@@ -40,9 +42,19 @@ impl ReferenceLapKey {
         format!(
             "{}__{}__{}",
             sanitize_path_part(&self.track),
-            sanitize_path_part(&self.car),
-            sanitize_path_part(&self.layout)
+            sanitize_path_part(&self.track_layout),
+            sanitize_path_part(&self.car)
         )
+    }
+
+    fn legacy_file_stem(&self) -> Option<String> {
+        let vehicle_class = self.legacy_vehicle_class.as_deref()?;
+        Some(format!(
+            "{}__{}__{}",
+            sanitize_path_part(&self.track),
+            sanitize_path_part(&self.car),
+            sanitize_path_part(vehicle_class)
+        ))
     }
 }
 
@@ -70,11 +82,18 @@ impl ReferenceLapStore {
         key: &ReferenceLapKey,
     ) -> Result<Option<ReferenceLap>, StorageError> {
         let path = self.personal_best_path(key);
-        if !path.exists() {
+        if path.exists() {
+            return read_reference_lap(&path).map(Some);
+        }
+
+        let Some(legacy_path) = self.legacy_personal_best_path(key) else {
+            return Ok(None);
+        };
+        if !legacy_path.exists() {
             return Ok(None);
         }
 
-        read_reference_lap(&path).map(Some)
+        read_reference_lap(&legacy_path).map(Some)
     }
 
     pub fn save_personal_best(
@@ -88,6 +107,11 @@ impl ReferenceLapStore {
 
     pub fn personal_best_path(&self, key: &ReferenceLapKey) -> PathBuf {
         self.root.join(format!("{}.pb-lap", key.file_stem()))
+    }
+
+    fn legacy_personal_best_path(&self, key: &ReferenceLapKey) -> Option<PathBuf> {
+        key.legacy_file_stem()
+            .map(|file_stem| self.root.join(format!("{file_stem}.pb-lap")))
     }
 }
 
@@ -280,11 +304,43 @@ mod tests {
     fn sanitizes_lap_keys_for_paths() {
         let key = ReferenceLapKey {
             track: "Le Mans/24h".to_string(),
+            track_layout: "2026".to_string(),
             car: "Car:Hyper".to_string(),
-            layout: "2026".to_string(),
+            legacy_vehicle_class: Some("Hypercar".to_string()),
         };
 
-        assert_eq!(key.file_stem(), "le-mans-24h__car-hyper__2026");
+        assert_eq!(key.file_stem(), "le-mans-24h__2026__car-hyper");
+        assert_eq!(
+            key.legacy_file_stem().as_deref(),
+            Some("le-mans-24h__car-hyper__hypercar")
+        );
+    }
+
+    #[test]
+    fn loads_legacy_vehicle_class_personal_best_path() {
+        let root = env::temp_dir().join(format!(
+            "hashoverlay-storage-legacy-key-{}",
+            std::process::id()
+        ));
+        let store = ReferenceLapStore::new(&root);
+        fs::create_dir_all(&root).unwrap();
+        let key = ReferenceLapKey {
+            track: "Sebring".to_string(),
+            track_layout: "unknown-layout".to_string(),
+            car: "Porsche 963".to_string(),
+            legacy_vehicle_class: Some("Hypercar".to_string()),
+        };
+        let legacy_path = root.join("sebring__porsche-963__hypercar.pb-lap");
+        let lap = ReferenceLap::new(
+            90.0,
+            vec![point(0.0, 0.0), point(0.5, 45.0), point(1.0, 90.0)],
+        )
+        .unwrap();
+
+        write_reference_lap(&legacy_path, &lap).unwrap();
+
+        let loaded = store.load_personal_best(&key).unwrap().unwrap();
+        assert_eq!(loaded.total_time_seconds, 90.0);
     }
 
     #[test]

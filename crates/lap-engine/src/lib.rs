@@ -307,6 +307,7 @@ pub struct LapEngine {
     current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
     last_valid_lap: Option<ReferenceLap>,
+    best_valid_lap: Option<ReferenceLap>,
     session_best: Option<ReferenceLap>,
     personal_best: Option<ReferenceLap>,
     pending_personal_best: Option<ReferenceLap>,
@@ -331,6 +332,7 @@ impl LapEngine {
             current_lap_valid: false,
             last_lap: None,
             last_valid_lap: None,
+            best_valid_lap: None,
             session_best: None,
             personal_best: None,
             pending_personal_best: None,
@@ -450,6 +452,9 @@ impl LapEngine {
                     self.last_lap = Some(lap.clone());
                     if self.current_lap_valid {
                         self.last_valid_lap = Some(lap.clone());
+                        if is_better(&self.best_valid_lap, &lap) {
+                            self.best_valid_lap = Some(lap.clone());
+                        }
                         if is_better(&self.session_best, &lap) {
                             self.session_best = Some(lap.clone());
                         }
@@ -605,7 +610,7 @@ impl LapEngine {
                 .or(self.personal_best.as_ref())
                 .or(self.last_lap.as_ref()),
             ReferenceMode::BestValidLap => self
-                .last_valid_lap
+                .best_valid_lap
                 .as_ref()
                 .or(self.session_best.as_ref())
                 .or(self.personal_best.as_ref()),
@@ -666,6 +671,7 @@ impl LapEngine {
         self.current_lap_valid = false;
         self.last_lap = None;
         self.last_valid_lap = None;
+        self.best_valid_lap = None;
         self.session_best = None;
     }
 }
@@ -1013,6 +1019,24 @@ mod tests {
 
         assert!(engine.session_best().is_none());
         assert!(engine.personal_best().is_none());
+    }
+
+    #[test]
+    fn best_valid_lap_keeps_fastest_valid_lap_in_session() {
+        let mut engine = LapEngine::new(LapEngineConfig {
+            reference_mode: ReferenceMode::BestValidLap,
+            min_reference_points: 2,
+            ..LapEngineConfig::default()
+        });
+
+        engine.update(snapshot(1, 0.1, 10.0, 0.0, 0.0));
+        engine.update(snapshot(1, 0.9, 90.0, 0.0, 0.0));
+        engine.update(snapshot(2, 0.1, 9.0, 0.0, 0.0));
+        engine.update(snapshot(2, 0.9, 95.0, 0.0, 0.0));
+        let analysis = engine.update(snapshot(3, 0.5, 50.0, 0.0, 0.0));
+
+        assert_eq!(analysis.reference_lap_seconds, Some(90.0));
+        assert_eq!(analysis.delta_seconds, Some(5.0));
     }
 
     #[test]

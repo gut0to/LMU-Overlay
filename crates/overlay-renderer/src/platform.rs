@@ -621,6 +621,9 @@ mod windows_overlay {
             let window_width = config.window.width;
             let window_height = config.window.height;
             let snap_to_edges = config.layout.snap_to_edges;
+            let snap_to_grid = config.layout.snap_to_grid;
+            let snap_to_widgets = config.layout.snap_to_widgets;
+            let grid_size = config.layout.grid_size;
             let snap_distance = config.layout.snap_distance;
             let layout = widget_layout_mut(&mut config, drag.widget);
             if drag.resize {
@@ -633,7 +636,13 @@ mod windows_overlay {
                     snap_widget_to_edges(layout, window_width, window_height, snap_distance);
                 }
             }
+            if snap_to_grid {
+                snap_widget_to_grid(layout, grid_size);
+            }
             config.normalize();
+            if snap_to_widgets {
+                snap_widget_to_widgets(&mut config, drag.widget);
+            }
         }
 
         InvalidateRect(hwnd, ptr::null(), 0);
@@ -779,47 +788,42 @@ mod windows_overlay {
     }
 
     unsafe fn draw_snapshot(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
-        let telemetry_area = area_from_layout(&config.layout.telemetry);
-        let input_area = area_from_layout(&config.layout.inputs);
-        let lap_timing_area = area_from_layout(&config.layout.lap_timing);
-        let timing_area = area_from_layout(&config.layout.timing);
-        let sectors_area = area_from_layout(&config.layout.sectors);
-        let mini_sectors_area = area_from_layout(&config.layout.mini_sectors);
-        let coaching_area = area_from_layout(&config.layout.coaching);
-
-        if config.widgets.title || config.widgets.speed_gear_rpm {
-            draw_widget_panel(hdc, telemetry_area, config);
-            draw_telemetry_widget(hdc, snapshot, config, telemetry_area);
-        }
-
-        if config.widgets.lap_info || config.widgets.lap_timing {
-            draw_widget_panel(hdc, lap_timing_area, config);
-            draw_lap_timing_widget(hdc, snapshot, config, lap_timing_area);
-        }
-
-        if config.widgets.pedals || config.widgets.steering || config.widgets.input_history {
-            draw_widget_panel(hdc, input_area, config);
-            draw_input_widget(hdc, snapshot, config, input_area);
-        }
-
-        if config.widgets.delta_timing {
-            draw_widget_panel(hdc, timing_area, config);
-            draw_delta_widget(hdc, snapshot, config, timing_area);
-        }
-
-        if config.widgets.sectors {
-            draw_widget_panel(hdc, sectors_area, config);
-            draw_sectors_widget(hdc, snapshot, config, sectors_area);
-        }
-
-        if config.widgets.mini_sector_widget {
-            draw_widget_panel(hdc, mini_sectors_area, config);
-            draw_mini_sectors_widget(hdc, snapshot, config, mini_sectors_area);
-        }
-
-        if config.widgets.coaching && config.coaching.mode != "off" {
-            draw_widget_panel(hdc, coaching_area, config);
-            draw_coaching_widget(hdc, snapshot, config, coaching_area);
+        for (widget, area) in widget_areas(config) {
+            match widget {
+                WidgetId::Telemetry if config.widgets.title || config.widgets.speed_gear_rpm => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_telemetry_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::LapTiming if config.widgets.lap_info || config.widgets.lap_timing => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_lap_timing_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Inputs
+                    if config.widgets.pedals
+                        || config.widgets.steering
+                        || config.widgets.input_history =>
+                {
+                    draw_widget_panel(hdc, area, config);
+                    draw_input_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Timing if config.widgets.delta_timing => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_delta_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Sectors if config.widgets.sectors => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_sectors_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::MiniSectors if config.widgets.mini_sector_widget => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_mini_sectors_widget(hdc, snapshot, config, area);
+                }
+                WidgetId::Coaching if config.widgets.coaching && config.coaching.mode != "off" => {
+                    draw_widget_panel(hdc, area, config);
+                    draw_coaching_widget(hdc, snapshot, config, area);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -1353,7 +1357,7 @@ mod windows_overlay {
     }
 
     fn widget_areas(config: &OverlayConfig) -> Vec<(WidgetId, Area)> {
-        [
+        let mut areas: Vec<_> = [
             (WidgetId::Telemetry, &config.layout.telemetry),
             (WidgetId::Inputs, &config.layout.inputs),
             (WidgetId::LapTiming, &config.layout.lap_timing),
@@ -1365,15 +1369,17 @@ mod windows_overlay {
         ]
         .into_iter()
         .map(|(id, layout)| (id, area_from_layout(layout)))
-        .collect()
+        .collect();
+        areas.sort_by_key(|(id, _)| widget_layout(config, *id).z_index);
+        areas
     }
 
     fn area_from_layout(layout: &WidgetLayout) -> Area {
         Area {
             x: layout.x,
             y: layout.y,
-            width: layout.width,
-            height: layout.height,
+            width: (f64::from(layout.width) * layout.scale).round() as i32,
+            height: (f64::from(layout.height) * layout.scale).round() as i32,
         }
     }
 
@@ -1427,6 +1433,59 @@ mod windows_overlay {
         if bottom_gap.abs() <= snap_distance {
             layout.y = window_height - layout.height;
         }
+    }
+
+    fn snap_widget_to_grid(layout: &mut WidgetLayout, grid_size: i32) {
+        let grid_size = if matches!(grid_size, 5 | 10 | 20) {
+            grid_size
+        } else {
+            10
+        };
+        layout.x = snap_i32(layout.x, grid_size);
+        layout.y = snap_i32(layout.y, grid_size);
+        layout.width = snap_i32(layout.width, grid_size).max(48);
+        layout.height = snap_i32(layout.height, grid_size).max(20);
+    }
+
+    fn snap_widget_to_widgets(config: &mut OverlayConfig, widget: WidgetId) {
+        let snap_distance = config.layout.snap_distance;
+        if snap_distance <= 0 {
+            return;
+        }
+        let others = widget_areas(config)
+            .into_iter()
+            .filter(|(id, _)| *id != widget)
+            .map(|(_, area)| area)
+            .collect::<Vec<_>>();
+        let layout = widget_layout_mut(config, widget);
+        let mut area = area_from_layout(layout);
+
+        for other in others {
+            if (area.x - other.x).abs() <= snap_distance {
+                layout.x = other.x;
+            } else if (area.x - other.right()).abs() <= snap_distance {
+                layout.x = other.right();
+            } else if (area.right() - other.x).abs() <= snap_distance {
+                layout.x = other.x - area.width;
+            } else if (area.right() - other.right()).abs() <= snap_distance {
+                layout.x = other.right() - area.width;
+            }
+
+            if (area.y - other.y).abs() <= snap_distance {
+                layout.y = other.y;
+            } else if (area.y - other.bottom()).abs() <= snap_distance {
+                layout.y = other.bottom();
+            } else if (area.bottom() - other.y).abs() <= snap_distance {
+                layout.y = other.y - area.height;
+            } else if (area.bottom() - other.bottom()).abs() <= snap_distance {
+                layout.y = other.bottom() - area.height;
+            }
+            area = area_from_layout(layout);
+        }
+    }
+
+    fn snap_i32(value: i32, grid_size: i32) -> i32 {
+        ((value as f64 / f64::from(grid_size)).round() as i32) * grid_size
     }
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {

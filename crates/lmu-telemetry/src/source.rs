@@ -338,6 +338,7 @@ fn read_metadata(
 
     Ok(TelemetryMetadata {
         track_name,
+        track_layout: None,
         vehicle_name,
         vehicle_class,
         session_kind: SessionKind::from(read_i32(bytes, OFFSET_SCORING_SESSION)?),
