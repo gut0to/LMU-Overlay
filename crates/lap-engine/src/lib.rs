@@ -3,7 +3,6 @@ use telemetry_engine::TelemetrySnapshot;
 
 const NORMALIZED_REFERENCE_POINTS: usize = 2_001;
 const MAX_MINI_SECTORS: usize = 200;
-const EVENT_MATCH_TOLERANCE_PROGRESS: f64 = 0.035;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReferenceMode {
@@ -281,7 +280,9 @@ impl SessionMarker {
             || self
                 .lap_time_seconds
                 .zip(previous.lap_time_seconds)
-                .is_some_and(|(current, previous)| current + 1.0 < previous)
+                .is_some_and(|(current, previous)| {
+                    self.lap_number == previous.lap_number && current + 1.0 < previous
+                })
             || (previous.game_phase == lmu_telemetry::GamePhase::SessionOver
                 && self.game_phase == lmu_telemetry::GamePhase::GreenFlag)
     }
@@ -770,10 +771,7 @@ fn matching_reference_event<'a>(
         .events
         .iter()
         .filter(|event| event.kind == current.kind)
-        .filter_map(|event| {
-            let distance = (event.progress - current.progress).abs();
-            (distance <= EVENT_MATCH_TOLERANCE_PROGRESS).then_some((distance, event))
-        })
+        .map(|event| ((event.progress - current.progress).abs(), event))
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, event)| event)
 }
@@ -1078,7 +1076,7 @@ mod tests {
             lap_progress: Some(progress),
             lap_number,
             sector: 1,
-            session_elapsed_seconds: lap_time_seconds,
+            session_elapsed_seconds: f64::from(lap_number) * 1_000.0 + lap_time_seconds,
             session_kind: lmu_telemetry::SessionKind::Practice,
             game_phase: lmu_telemetry::GamePhase::GreenFlag,
             in_pits: false,
