@@ -487,10 +487,18 @@ impl LapEngine {
     }
 
     fn record_driving_events(&mut self, snapshot: TelemetrySnapshot) {
-        if crossed_up(self.previous_brake, snapshot.brake, self.config.brake_threshold) {
+        if crossed_up(
+            self.previous_brake,
+            snapshot.brake,
+            self.config.brake_threshold,
+        ) {
             self.push_event(snapshot, DrivingEventKind::BrakeStart, snapshot.brake);
         }
-        if crossed_down(self.previous_brake, snapshot.brake, self.config.brake_threshold) {
+        if crossed_down(
+            self.previous_brake,
+            snapshot.brake,
+            self.config.brake_threshold,
+        ) {
             self.push_event(snapshot, DrivingEventKind::BrakeRelease, snapshot.brake);
         }
         if crossed_up(
@@ -619,7 +627,11 @@ impl LapEngine {
         track_length_m: Option<f64>,
         kind: DrivingEventKind,
     ) -> Option<f64> {
-        let current_event = self.current_events.iter().rev().find(|event| event.kind == kind)?;
+        let current_event = self
+            .current_events
+            .iter()
+            .rev()
+            .find(|event| event.kind == kind)?;
         let reference_event = matching_reference_event(reference?, current_event)?;
         let track_length_m = track_length_m?;
 
@@ -683,7 +695,11 @@ fn driving_events_from_points(points: &[ReferencePoint]) -> Vec<DrivingEvent> {
 
     for point in points.iter().copied().skip(1) {
         if crossed_up(previous_brake, point.brake, 0.10) {
-            events.push(event_from_point(point, DrivingEventKind::BrakeStart, point.brake));
+            events.push(event_from_point(
+                point,
+                DrivingEventKind::BrakeStart,
+                point.brake,
+            ));
         }
         if crossed_down(previous_brake, point.brake, 0.10) {
             events.push(event_from_point(
@@ -708,9 +724,17 @@ fn driving_events_from_points(points: &[ReferencePoint]) -> Vec<DrivingEvent> {
             ));
         }
         if point.gear > previous_gear {
-            events.push(event_from_point(point, DrivingEventKind::GearUp, point.throttle));
+            events.push(event_from_point(
+                point,
+                DrivingEventKind::GearUp,
+                point.throttle,
+            ));
         } else if point.gear < previous_gear {
-            events.push(event_from_point(point, DrivingEventKind::GearDown, point.throttle));
+            events.push(event_from_point(
+                point,
+                DrivingEventKind::GearDown,
+                point.throttle,
+            ));
         }
 
         previous_brake = point.brake;
@@ -722,7 +746,11 @@ fn driving_events_from_points(points: &[ReferencePoint]) -> Vec<DrivingEvent> {
     events
 }
 
-fn event_from_point(point: ReferencePoint, kind: DrivingEventKind, input_value: f64) -> DrivingEvent {
+fn event_from_point(
+    point: ReferencePoint,
+    kind: DrivingEventKind,
+    input_value: f64,
+) -> DrivingEvent {
     DrivingEvent {
         kind,
         progress: point.progress,

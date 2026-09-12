@@ -199,28 +199,29 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
 
         match source.read_sample() {
             Ok(Some(sample)) => {
-            let lap_key = reference_lap_key(&sample);
-            if current_lap_key.as_ref() != Some(&lap_key) {
-                let personal_best = match lap_store.load_personal_best(&lap_key) {
-                    Ok(personal_best) => personal_best,
-                    Err(error) => {
-                        warn!("Could not load personal best reference lap: {error}");
-                        None
-                    }
-                };
-                lap_engine = LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
-                current_lap_key = Some(lap_key.clone());
-            }
-
-            let mut snapshot = TelemetrySnapshot::from(sample);
-            lap_engine.update(snapshot).apply_to(&mut snapshot);
-            if let Some(lap) = lap_engine.take_new_personal_best() {
-                if let Some(lap_key) = &current_lap_key {
-                    let _ = runtime_lap_writer.send((lap_key.clone(), lap));
+                let lap_key = reference_lap_key(&sample);
+                if current_lap_key.as_ref() != Some(&lap_key) {
+                    let personal_best = match lap_store.load_personal_best(&lap_key) {
+                        Ok(personal_best) => personal_best,
+                        Err(error) => {
+                            warn!("Could not load personal best reference lap: {error}");
+                            None
+                        }
+                    };
+                    lap_engine =
+                        LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
+                    current_lap_key = Some(lap_key.clone());
                 }
+
+                let mut snapshot = TelemetrySnapshot::from(sample);
+                lap_engine.update(snapshot).apply_to(&mut snapshot);
+                if let Some(lap) = lap_engine.take_new_personal_best() {
+                    if let Some(lap_key) = &current_lap_key {
+                        let _ = runtime_lap_writer.send((lap_key.clone(), lap));
+                    }
+                }
+                Some(snapshot)
             }
-            Some(snapshot)
-        }
             Ok(None) => None,
             Err(error) => {
                 warn!("Could not read telemetry sample: {error}");

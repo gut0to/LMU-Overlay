@@ -66,8 +66,7 @@ mod windows_overlay {
             },
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
-                RegisterClassW, ReleaseCapture, SetCapture, SetLayeredWindowAttributes, ShowWindow,
-                TranslateMessage,
+                RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
                 HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
                 SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_LBUTTONDOWN,
@@ -342,11 +341,7 @@ mod windows_overlay {
         fs::metadata(path).ok()?.modified().ok()
     }
 
-    fn reload_runtime_config(
-        hwnd: HWND,
-        state: &SharedState,
-        last_mtime: &mut Option<SystemTime>,
-    ) {
+    fn reload_runtime_config(hwnd: HWND, state: &SharedState, last_mtime: &mut Option<SystemTime>) {
         if state.edit_mode.load(Ordering::Relaxed) {
             return;
         }
@@ -602,7 +597,6 @@ mod windows_overlay {
                     && area.bottom() - mouse_y <= EDIT_HIT_MARGIN,
             });
         }
-        SetCapture(hwnd);
         InvalidateRect(hwnd, ptr::null(), 0);
     }
 
@@ -655,7 +649,6 @@ mod windows_overlay {
             .ok()
             .and_then(|mut value| value.take())
             .is_some();
-        ReleaseCapture();
         if had_drag {
             save_runtime_config(state);
             InvalidateRect(hwnd, ptr::null(), 0);
@@ -774,7 +767,13 @@ mod windows_overlay {
         let colors = colors(config);
         let border = CreatePen(PS_SOLID, config.style.line_thickness.max(1), colors.border);
         let old_pen = SelectObject(hdc, border);
-        Rectangle(hdc, area.x, area.y, area.x + area.width, area.y + area.height);
+        Rectangle(
+            hdc,
+            area.x,
+            area.y,
+            area.x + area.width,
+            area.y + area.height,
+        );
         SelectObject(hdc, old_pen);
         DeleteObject(border);
     }
@@ -1351,9 +1350,7 @@ mod windows_overlay {
         widget_areas(config)
             .into_iter()
             .rev()
-            .find(|(widget, area)| {
-                area.contains(x, y) && !widget_layout(config, *widget).locked
-            })
+            .find(|(widget, area)| area.contains(x, y) && !widget_layout(config, *widget).locked)
     }
 
     fn widget_areas(config: &OverlayConfig) -> Vec<(WidgetId, Area)> {
@@ -1640,7 +1637,10 @@ mod windows_overlay {
     fn hotkey(value: &str) -> Option<(u32, u32)> {
         let mut modifiers = 0;
         let mut key = None;
-        for part in value.split('+').map(|part| part.trim().to_ascii_uppercase()) {
+        for part in value
+            .split('+')
+            .map(|part| part.trim().to_ascii_uppercase())
+        {
             match part.as_str() {
                 "CTRL" | "CONTROL" => modifiers |= MOD_CONTROL,
                 "SHIFT" => modifiers |= MOD_SHIFT,
@@ -1685,7 +1685,10 @@ mod windows_overlay {
 
         #[test]
         fn parses_hotkey_modifiers() {
-            assert_eq!(hotkey("Ctrl+Shift+F9"), Some((MOD_CONTROL | MOD_SHIFT, 0x78)));
+            assert_eq!(
+                hotkey("Ctrl+Shift+F9"),
+                Some((MOD_CONTROL | MOD_SHIFT, 0x78))
+            );
             assert_eq!(hotkey("Alt+F10"), Some((MOD_ALT, 0x79)));
             assert_eq!(hotkey("Nope"), None);
         }
