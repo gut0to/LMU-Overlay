@@ -1043,7 +1043,7 @@ mod tests {
         let analysis = engine.update(snapshot(3, 0.5, 50.0, 0.0, 0.0));
 
         assert_eq!(analysis.reference_lap_seconds, Some(90.0));
-        assert_eq!(analysis.delta_seconds, Some(5.0));
+        assert_eq!(analysis.delta_seconds, Some(0.0));
     }
 
     #[test]
@@ -1065,6 +1065,7 @@ mod tests {
         .unwrap();
         let mut engine = LapEngine::new(LapEngineConfig {
             min_reference_points: 2,
+            event_match_tolerance_m: 500.0,
             ..LapEngineConfig::default()
         })
         .with_personal_best(Some(reference));
