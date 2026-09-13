@@ -1405,12 +1405,23 @@ mod windows_overlay {
                     );
                 }
                 let stats_y = detail_y + scale_size(config, 14);
+                if options.show_average {
+                    if let Some(average) = snapshot.fuel_average_lap_used {
+                        draw_text(
+                            hdc,
+                            area.x + padding,
+                            stats_y,
+                            detail_color,
+                            &format!("AVG {average:.2} L/lap"),
+                        );
+                    }
+                }
                 if options.show_last_lap {
                     if let Some(last) = snapshot.fuel_last_lap_used {
                         draw_text(
                             hdc,
                             area.x + padding,
-                            stats_y,
+                            stats_y + scale_px(config, 18),
                             detail_color,
                             &format!("LAST {last:.2} L/lap"),
                         );
@@ -1421,7 +1432,7 @@ mod windows_overlay {
                         draw_text(
                             hdc,
                             area.x + padding,
-                            stats_y + scale_px(config, 18),
+                            stats_y + scale_px(config, 36),
                             detail_color,
                             &format!("REMAIN {remaining:.1} laps"),
                         );
