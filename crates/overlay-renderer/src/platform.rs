@@ -1236,6 +1236,7 @@ mod windows_overlay {
                     snapshot.wheels.rear_right,
                 ],
                 false,
+                options.show_wear,
             ),
             "brakes" => draw_four_wheel_detail(
                 hdc,
@@ -1250,6 +1251,7 @@ mod windows_overlay {
                     snapshot.wheels.rear_right,
                 ],
                 true,
+                false,
             ),
             "electronics" => {
                 draw_text(
@@ -1570,6 +1572,7 @@ mod windows_overlay {
         color: u32,
         wheels: [lmu_telemetry::WheelData; 4],
         brake: bool,
+        show_wear: bool,
     ) {
         let labels = ["FL", "FR", "RL", "RR"];
         for (index, wheel) in wheels.into_iter().enumerate() {
@@ -1580,6 +1583,15 @@ mod windows_overlay {
                     "{} {:.0} C",
                     labels[index],
                     wheel.brake_temp_c.unwrap_or_default()
+                )
+            } else if show_wear {
+                format!(
+                    "{} {:.0} kPa W{}%",
+                    labels[index],
+                    wheel.pressure_kpa.unwrap_or_default(),
+                    wheel
+                        .wear_percent
+                        .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
                 )
             } else {
                 format!(
