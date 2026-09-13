@@ -96,6 +96,7 @@ export type WidgetOptions = {
   show_position: boolean;
   show_laps: boolean;
   show_driver: boolean;
+  show_car: boolean;
   show_class: boolean;
   show_gap: boolean;
   show_pit: boolean;

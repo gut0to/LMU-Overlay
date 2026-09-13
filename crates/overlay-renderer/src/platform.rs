@@ -1761,6 +1761,11 @@ mod windows_overlay {
             } else {
                 "CAR"
             };
+            let car_name = if options.show_car {
+                car.vehicle_name.as_deref().unwrap_or("--")
+            } else {
+                ""
+            };
             let gap = if !options.show_gap {
                 String::new()
             } else if car.is_player || car.slot_id == snapshot.player_slot_id {
@@ -1774,13 +1779,18 @@ mod windows_overlay {
                 y,
                 text_color,
                 &format!(
-                    "{marker} {}{} {}{}{}{}",
+                    "{marker} {}{} {}{}{}{}{}",
                     if options.show_position {
                         format!("P{}", car.place.unwrap_or(0))
                     } else {
                         String::new()
                     },
                     name,
+                    if options.show_car {
+                        format!(" [{car_name}]")
+                    } else {
+                        String::new()
+                    },
                     if options.show_class {
                         format!(" {}", car.vehicle_class.as_deref().unwrap_or("--"))
                     } else {
@@ -1938,6 +1948,11 @@ mod windows_overlay {
             } else {
                 "CAR"
             };
+            let car_name = if options.show_car {
+                car.vehicle_name.as_deref().unwrap_or("--")
+            } else {
+                ""
+            };
             let lap = if options.show_laps && car.lap_number > 0 {
                 format!("L{}", car.lap_number)
             } else if options.show_laps {
@@ -1964,13 +1979,14 @@ mod windows_overlay {
                 y,
                 text_color,
                 &format!(
-                    "{marker} {:>2} {:<16} {:>4} {:>8} {:>9} {:>9}{}{}",
+                    "{marker} {:>2} {:<16} {:<16} {:>4} {:>8} {:>9} {:>9}{}{}",
                     if options.show_position {
                         format!("{:>2}", car.place.unwrap_or(0))
                     } else {
                         String::new()
                     },
                     name,
+                    car_name,
                     lap,
                     gap,
                     last,
