@@ -14,7 +14,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use serde::{Deserialize, Serialize};
 
-const CURRENT_CONFIG_VERSION: u32 = 6;
+const CURRENT_CONFIG_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -134,23 +134,31 @@ fn migrate_config(config: &mut OverlayConfig, from_version: u32) {
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
         2 => {
             migrate_v2_to_v3(config);
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
         3 => {
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
         4 => {
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
-        5 => migrate_v5_to_v6(config),
+        5 => {
+            migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
+        }
+        6 => migrate_v6_to_v7(config),
         _ => config.config_version = CURRENT_CONFIG_VERSION,
     }
 }
@@ -210,6 +218,12 @@ fn migrate_v5_to_v6(config: &mut OverlayConfig) {
         preset.profile.normalize();
     }
     config.config_version = CURRENT_CONFIG_VERSION;
+}
+
+fn migrate_v6_to_v7(config: &mut OverlayConfig) {
+    // WidgetOptions uses serde defaults, so existing widget instances remain
+    // compatible while gaining the new per-widget controls.
+    config.config_version = 7;
 }
 
 fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<()> {
@@ -1129,7 +1143,7 @@ pub fn default_config_text() -> &'static str {
     r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
-config_version = 6
+config_version = 7
 
 [window]
 x = 40
@@ -1388,7 +1402,7 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
-        assert_eq!(config.config_version, 6);
+        assert_eq!(config.config_version, 7);
         assert_eq!(config.window.width, 420);
         assert!(config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 40);
@@ -1476,7 +1490,7 @@ mod tests {
 
         config.normalize();
 
-        assert_eq!(config.config_version, 6);
+        assert_eq!(config.config_version, 7);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
