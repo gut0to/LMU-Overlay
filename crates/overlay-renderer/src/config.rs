@@ -1494,6 +1494,8 @@ mod tests {
         assert!(!config.extra_widgets["standings"].enabled);
         assert!(config.presets.custom.is_empty());
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
+        assert!(config.presets.race.extra_widgets["relative"].enabled);
+        assert!(config.presets.endurance.extra_widgets["damage"].enabled);
     }
 
     #[test]

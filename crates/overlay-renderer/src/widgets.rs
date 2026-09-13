@@ -67,7 +67,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Current, last, session and personal-best timing.",
         data_requirement: "lap engine",
-        status: "Unavailable in current LMU interface",
+        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "timing",
