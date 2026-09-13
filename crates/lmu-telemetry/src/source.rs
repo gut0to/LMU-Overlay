@@ -375,7 +375,7 @@ fn read_sample_once(
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_sector(bytes, scoring_offset, vehicle_offset)?,
         sector_times: read_sector_times(bytes, scoring_offset)?,
-        vehicle: read_vehicle_systems(bytes, vehicle_offset)?,
+        vehicle: read_vehicle_systems(bytes, vehicle_offset, scoring_offset)?,
         wheels: read_wheels(bytes, vehicle_offset)?,
         session,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
@@ -504,7 +504,11 @@ fn read_sector_times(
     })
 }
 
-fn read_vehicle_systems(bytes: &[u8], offset: usize) -> Result<VehicleSystems, TelemetryError> {
+fn read_vehicle_systems(
+    bytes: &[u8],
+    offset: usize,
+    scoring_offset: Option<usize>,
+) -> Result<VehicleSystems, TelemetryError> {
     let hybrid_state = read_u8(bytes, offset + OFFSET_ELECTRIC_STATE)?;
     let hybrid = (hybrid_state != 0).then_some(());
     Ok(VehicleSystems {
@@ -518,7 +522,15 @@ fn read_vehicle_systems(bytes: &[u8], offset: usize) -> Result<VehicleSystems, T
         brake_bias_front_percent: finite(read_f64(bytes, offset + OFFSET_REAR_BRAKE_BIAS)?)
             .map(|rear| (1.0 - rear) * 100.0),
         speed_limiter_active: Some(read_bool(bytes, offset + OFFSET_SPEED_LIMITER_ACTIVE)?),
-        drs_active: None,
+        drs_active: scoring_offset
+            .map(|scoring| read_u8(bytes, scoring + raw::scoring::DRS_STATE))
+            .transpose()?
+            .map(|state| state != 0),
+        wiper_state: Some(read_u8(bytes, offset + raw::telemetry::WIPER_STATE)?),
+        lift_and_coast_progress: finite(
+            read_f32(bytes, offset + raw::telemetry::LIFT_AND_COAST)? as f64
+        ),
+        track_limit_steps: Some(read_u8(bytes, offset + raw::telemetry::TRACK_LIMIT_STEPS)?),
         tc_active: Some(read_bool(bytes, offset + OFFSET_TC_ACTIVE)?),
         abs_active: Some(read_bool(bytes, offset + OFFSET_ABS_ACTIVE)?),
         tc_setting: Some(read_u8(bytes, offset + OFFSET_TC)? as i32),
@@ -551,7 +563,10 @@ fn read_vehicle_systems(bytes: &[u8], offset: usize) -> Result<VehicleSystems, T
             .transpose()?,
         electric_motor_state: hybrid.map(|_| hybrid_state),
         tc_slip: Some(read_u8(bytes, offset + OFFSET_TC_SLIP)?),
+        tc_max: Some(read_u8(bytes, offset + raw::telemetry::TC_MAX)?),
+        tc_slip_max: Some(read_u8(bytes, offset + raw::telemetry::TC_SLIP_MAX)?),
         tc_cut: Some(read_u8(bytes, offset + OFFSET_TC_CUT)?),
+        tc_cut_max: Some(read_u8(bytes, offset + raw::telemetry::TC_CUT_MAX)?),
         abs_max: Some(read_u8(bytes, offset + OFFSET_ABS_MAX)?),
         motor_map_max: Some(read_u8(bytes, offset + OFFSET_MOTOR_MAP_MAX)?),
         migration: Some(read_u8(bytes, offset + OFFSET_MIGRATION)?),

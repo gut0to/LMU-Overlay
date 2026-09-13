@@ -1465,9 +1465,11 @@ mod windows_overlay {
                     detail_y,
                     detail_color,
                     &format!(
-                        "TC SLIP {}  CUT {}",
+                        "TC SLIP {}/{}  CUT {}/{}",
                         option_number(snapshot.vehicle.tc_slip),
-                        option_number(snapshot.vehicle.tc_cut)
+                        option_number(snapshot.vehicle.tc_slip_max),
+                        option_number(snapshot.vehicle.tc_cut),
+                        option_number(snapshot.vehicle.tc_cut_max)
                     ),
                 );
                 draw_text(
@@ -1479,6 +1481,17 @@ mod windows_overlay {
                         "MIG {} / {}",
                         option_number(snapshot.vehicle.migration),
                         option_number(snapshot.vehicle.migration_max)
+                    ),
+                );
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y + scale_px(config, 36),
+                    detail_color,
+                    &format!(
+                        "WIPER {}  LIMITS {}",
+                        option_number(snapshot.vehicle.wiper_state),
+                        option_number(snapshot.vehicle.track_limit_steps)
                     ),
                 );
             }
