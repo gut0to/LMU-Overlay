@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use telemetry_engine::{LapHistoryEntry, TelemetrySnapshot};
 
@@ -226,7 +228,7 @@ pub struct LapAnalysis {
     pub speed_hint_kph: Option<f64>,
     pub reference_gear: Option<i32>,
     pub reference_steering: Option<f64>,
-    pub mini_sector_history: Vec<MiniSectorResult>,
+    pub mini_sector_history: Arc<[MiniSectorResult]>,
     pub reference_throttle: Option<f64>,
     pub reference_brake: Option<f64>,
     pub reference_speed_kph: Option<f64>,
@@ -308,6 +310,7 @@ pub struct LapEngine {
     previous_boundary_delta: Option<f64>,
     completed_mini_sector_delta: Option<f64>,
     completed_mini_sectors: Vec<MiniSectorResult>,
+    completed_mini_sector_snapshot: Arc<[MiniSectorResult]>,
     lap_history: std::collections::VecDeque<LapHistoryEntry>,
     current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
@@ -334,6 +337,7 @@ impl LapEngine {
             previous_boundary_delta: None,
             completed_mini_sector_delta: None,
             completed_mini_sectors: Vec::with_capacity(MAX_MINI_SECTORS),
+            completed_mini_sector_snapshot: Arc::from(Vec::new()),
             lap_history: std::collections::VecDeque::with_capacity(10),
             current_lap_valid: false,
             last_lap: None,
@@ -431,7 +435,7 @@ impl LapEngine {
             speed_hint_kph,
             reference_gear: reference_point.map(|point| point.gear),
             reference_steering: reference_point.map(|point| point.steering),
-            mini_sector_history: self.completed_mini_sectors.clone(),
+            mini_sector_history: Arc::clone(&self.completed_mini_sector_snapshot),
             reference_throttle: reference_point.map(|point| point.throttle),
             reference_brake: reference_point.map(|point| point.brake),
             reference_speed_kph: reference_point.map(|point| point.speed_kph),
@@ -614,6 +618,8 @@ impl LapEngine {
                     delta_seconds: own_delta,
                     state: mini_sector_state(own_delta),
                 });
+                self.completed_mini_sector_snapshot =
+                    Arc::from(self.completed_mini_sectors.clone());
             }
         }
 
@@ -695,6 +701,7 @@ impl LapEngine {
         self.previous_boundary_delta = None;
         self.completed_mini_sector_delta = None;
         self.completed_mini_sectors.clear();
+        self.completed_mini_sector_snapshot = Arc::from(Vec::new());
         self.current_lap_valid = false;
         self.last_lap = None;
         self.last_valid_lap = None;
