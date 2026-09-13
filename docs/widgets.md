@@ -1,15 +1,15 @@
 # Widget Catalog
 
-| Widget | Data source | Description |
+| Widget | Data source | Status |
 | --- | --- | --- |
-| Gear and RPM, Speed, Pedals, Steering | Fast LMU telemetry | Driving HUD values and controls. |
-| Input trace, Delta, Lap timing, Mini sectors, Coaching | Local LapEngine history/reference | Bounded reference-lap analysis. |
-| Sectors | Official scoring when mapped | S1, S2 and S3 values; unavailable values remain `--`. |
-| Position, Relative, Standings, Flags | Official scoring when mapped | Race state and nearby cars. |
-| Fuel | Official vehicle data when mapped | Quantity and future consumption estimate. |
-| Tyres, Brakes | Official wheel data when mapped | Per-wheel pressure, temperature, wear and brake state. |
-| Electronics, Energy, Engine, Damage | Official vehicle data when mapped | Car-state indicators. |
-| Weather | Official session data when mapped | Ambient and track conditions. |
-| Performance monitor | Overlay runtime | Telemetry/render rate, costs and skipped work. |
+| Gear and RPM, Speed, Pedals, Steering | Fast LMU telemetry | Real |
+| Input trace, Delta, Lap timing, Mini sectors, Coaching | Local LapEngine history/reference | Computed from official data |
+| Sectors | Official scoring | Unavailable in current LMU interface |
+| Position, Relative, Standings, Flags | Official scoring | Unavailable in current LMU interface |
+| Fuel | Official vehicle data | Unavailable in current LMU interface |
+| Tyres, Brakes | Official wheel data | Unavailable in current LMU interface |
+| Electronics, Energy, Engine, Damage | Official vehicle data | Unavailable in current LMU interface |
+| Weather | Official session data | Unavailable in current LMU interface |
+| Performance monitor | Overlay runtime | Real |
 
-Widgets can be enabled from **Settings > Widgets**. Each widget instance has an independent position, size, scale, opacity, lock state and z-order. The Widget Browser identifies whether it needs fast telemetry, scoring or another official source.
+Widgets can be enabled from **Settings > Widgets**. Each widget instance has an independent position, size, scale, opacity, lock state and z-order. The Widget Browser identifies both the required source and the truth status. Widgets marked unavailable remain disabled until the official LMU header is available and the corresponding layout is verified; they are not treated as live data.

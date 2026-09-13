@@ -75,6 +75,7 @@ type WidgetDefinition = {
   category: string;
   description: string;
   data_requirement: string;
+  status: "Real" | "Computed from official data" | "Unavailable in current LMU interface";
 };
 
 type WidgetLayout = {
@@ -703,7 +704,7 @@ function App() {
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
                   <input type="checkbox" checked={enabled} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
-                  <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement}</small></span>
+                  <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement} · {widget.status}</small></span>
                 </label>
               );
             })}
