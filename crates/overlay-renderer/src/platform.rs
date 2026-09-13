@@ -1439,6 +1439,23 @@ mod windows_overlay {
                     }
                 }
             }
+            "rpm" => {
+                if let Some(max_rpm) = snapshot.vehicle.max_rpm {
+                    draw_rpm_segments(
+                        hdc,
+                        Area {
+                            x: area.x + padding,
+                            y: detail_y,
+                            width: (area.width - padding * 2).max(scale_size(config, 60)),
+                            height: scale_size(config, 8),
+                        },
+                        snapshot.rpm,
+                        max_rpm,
+                        colors(config).reference,
+                        detail_color,
+                    );
+                }
+            }
             "tyres" => draw_four_wheel_detail(
                 hdc,
                 area,
@@ -2367,6 +2384,62 @@ mod windows_overlay {
         let fill_brush = CreateSolidBrush(widget_color(fill));
         FillRect(hdc, &filled, fill_brush);
         DeleteObject(fill_brush);
+    }
+
+    unsafe fn draw_rpm_segments(
+        hdc: HDC,
+        area: Area,
+        rpm: f64,
+        max_rpm: f64,
+        active_color: u32,
+        inactive_color: u32,
+    ) {
+        let ratio = if max_rpm > 0.0 {
+            (rpm / max_rpm).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let segments = 10;
+        let gap = 2;
+        let segment_width = ((area.width - gap * (segments - 1)) / segments).max(2);
+        let active = (ratio * segments as f64).ceil() as i32;
+        for index in 0..segments {
+            let left = area.x + index * (segment_width + gap);
+            let right = (left + segment_width).min(area.right());
+            let color = if index < active {
+                if index >= 8 {
+                    0x000000FF
+                } else if index >= 6 {
+                    0x0000FFFF
+                } else {
+                    active_color
+                }
+            } else {
+                inactive_color
+            };
+            if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+                queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                    left: left as f32,
+                    top: area.y as f32,
+                    right: right as f32,
+                    bottom: area.bottom() as f32,
+                    fill: Some(widget_color(color)),
+                    stroke: None,
+                    stroke_width: 0.0,
+                    radius: 1.0,
+                });
+            } else {
+                let brush = CreateSolidBrush(widget_color(color));
+                let rect = RECT {
+                    left,
+                    top: area.y,
+                    right,
+                    bottom: area.bottom(),
+                };
+                FillRect(hdc, &rect, brush);
+                DeleteObject(brush);
+            }
+        }
     }
 
     unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
