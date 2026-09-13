@@ -138,6 +138,7 @@ mod tests {
                 vehicle_name: Some("car".into()),
                 ..Default::default()
             },
+            field: std::sync::Arc::from(Vec::new()),
         }
     }
 }

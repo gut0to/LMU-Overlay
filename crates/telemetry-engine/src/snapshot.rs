@@ -151,6 +151,7 @@ mod tests {
             wheels: lmu_telemetry::Wheels::default(),
             session: lmu_telemetry::SessionData::default(),
             metadata: lmu_telemetry::TelemetryMetadata::default(),
+            field: std::sync::Arc::from(Vec::new()),
         });
 
         assert_eq!(snapshot.speed_kph, 36.0);

@@ -110,6 +110,7 @@ pub mod scoring {
     pub const TOTAL_LAPS: usize = 100;
     pub const SECTOR: usize = 102;
     pub const LAP_DISTANCE: usize = 104;
+    pub const FINISH_STATUS: usize = 101;
     pub const BEST_SECTOR1: usize = 128;
     pub const BEST_SECTOR2: usize = 136;
     pub const BEST_LAP: usize = 144;

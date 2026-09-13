@@ -408,6 +408,7 @@ mod tests {
                 vehicle_class: Some("Hypercar".to_string()),
                 ..lmu_telemetry::TelemetryMetadata::default()
             },
+            field: std::sync::Arc::from(Vec::new()),
         };
 
         assert_eq!(

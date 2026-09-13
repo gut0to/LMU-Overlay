@@ -2,6 +2,7 @@ use std::{
     error::Error,
     fmt,
     mem::size_of,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -346,6 +347,7 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         wheels: read_wheels(bytes, vehicle_offset)?,
         session: read_session(bytes, scoring_offset)?,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
+        field: Arc::from(read_field(bytes, scoring_vehicles)?),
     };
 
     ensure_same_frame(marker_before, read_frame_marker(bytes)?)?;
@@ -634,6 +636,53 @@ fn read_session(
             .transpose()?,
         penalties,
     })
+}
+
+fn read_field(
+    bytes: &[u8],
+    scoring_vehicles: usize,
+) -> Result<Vec<crate::VehicleScoringSnapshot>, TelemetryError> {
+    let mut field = Vec::with_capacity(scoring_vehicles.min(raw::MAX_VEHICLES));
+    for index in 0..scoring_vehicles.min(raw::MAX_VEHICLES) {
+        let offset = OFFSET_SCORING_VEHICLES + index * raw::VEHICLE_SCORING_SIZE;
+        let slot_id = read_i32(bytes, offset + raw::scoring::SLOT_ID)?;
+        if slot_id < 0 {
+            continue;
+        }
+        let world_position = Some([
+            read_f64(bytes, offset + raw::scoring::WORLD_POSITION)?,
+            read_f64(bytes, offset + raw::scoring::WORLD_POSITION + 8)?,
+            read_f64(bytes, offset + raw::scoring::WORLD_POSITION + 16)?,
+        ]);
+        field.push(crate::VehicleScoringSnapshot {
+            slot_id,
+            driver_name: read_string(bytes, offset + raw::scoring::DRIVER_NAME, 32)?,
+            vehicle_name: read_string(bytes, offset + raw::scoring::VEHICLE_NAME, 64)?,
+            vehicle_class: read_string(bytes, offset + raw::scoring::VEHICLE_CLASS, 32)?,
+            place: Some(read_u8(bytes, offset + raw::scoring::PLACE)? as i32)
+                .filter(|value| *value > 0),
+            lap_number: i32::from(read_i16(bytes, offset + raw::scoring::TOTAL_LAPS)?),
+            lap_distance_m: finite(read_f64(bytes, offset + raw::scoring::LAP_DISTANCE)?),
+            current_sector: Some(i32::from(read_i8(bytes, offset + raw::scoring::SECTOR)?)),
+            last_lap_seconds: valid_time(read_f64(bytes, offset + raw::scoring::LAST_LAP)?),
+            best_lap_seconds: valid_time(read_f64(bytes, offset + raw::scoring::BEST_LAP)?),
+            gap_to_next_seconds: finite(read_f64(bytes, offset + raw::scoring::TIME_BEHIND_NEXT)?),
+            gap_to_leader_seconds: finite(read_f64(
+                bytes,
+                offset + raw::scoring::TIME_BEHIND_LEADER,
+            )?),
+            laps_behind_next: Some(read_i32(bytes, offset + raw::scoring::LAPS_BEHIND_NEXT)?),
+            laps_behind_leader: Some(read_i32(bytes, offset + raw::scoring::LAPS_BEHIND_LEADER)?),
+            in_pits: read_bool(bytes, offset + raw::scoring::IN_PITS)?,
+            in_garage: read_bool(bytes, offset + raw::scoring::IN_GARAGE_STALL)?,
+            pit_state: Some(read_u8(bytes, offset + raw::scoring::PIT_STATE)? as i32),
+            finish_status: Some(read_u8(bytes, offset + raw::scoring::FINISH_STATUS)? as i32),
+            flag: Some(read_u8(bytes, offset + raw::scoring::FLAG)? as i32),
+            is_player: read_bool(bytes, offset + raw::scoring::IS_PLAYER)?,
+            world_position,
+        });
+    }
+    Ok(field)
 }
 
 fn finite(value: f64) -> Option<f64> {

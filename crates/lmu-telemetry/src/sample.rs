@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gear {
@@ -165,6 +165,7 @@ pub struct TelemetrySample {
     pub wheels: Wheels,
     pub session: SessionData,
     pub metadata: TelemetryMetadata,
+    pub field: Arc<[VehicleScoringSnapshot]>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -279,6 +280,31 @@ pub struct SessionData {
     pub pit_state: Option<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct VehicleScoringSnapshot {
+    pub slot_id: i32,
+    pub driver_name: Option<String>,
+    pub vehicle_name: Option<String>,
+    pub vehicle_class: Option<String>,
+    pub place: Option<i32>,
+    pub lap_number: i32,
+    pub lap_distance_m: Option<f64>,
+    pub current_sector: Option<i32>,
+    pub last_lap_seconds: Option<f64>,
+    pub best_lap_seconds: Option<f64>,
+    pub gap_to_next_seconds: Option<f64>,
+    pub gap_to_leader_seconds: Option<f64>,
+    pub laps_behind_next: Option<i32>,
+    pub laps_behind_leader: Option<i32>,
+    pub in_pits: bool,
+    pub in_garage: bool,
+    pub pit_state: Option<i32>,
+    pub finish_status: Option<i32>,
+    pub flag: Option<i32>,
+    pub is_player: bool,
+    pub world_position: Option<[f64; 3]>,
+}
+
 impl TelemetrySample {
     pub fn sanitized(mut self) -> Self {
         self.speed_mps = non_negative_finite(self.speed_mps);
@@ -374,6 +400,7 @@ mod tests {
             wheels: Wheels::default(),
             session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
+            field: Arc::from(Vec::new()),
         };
 
         assert_eq!(
@@ -403,6 +430,7 @@ mod tests {
             wheels: Wheels::default(),
             session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
+            field: Arc::from(Vec::new()),
         }
         .sanitized();
 
@@ -438,6 +466,7 @@ mod tests {
             wheels: Wheels::default(),
             session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
+            field: Arc::from(Vec::new()),
         };
 
         assert_eq!(sample.lap_progress(), Some(0.5));
