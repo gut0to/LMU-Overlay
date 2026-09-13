@@ -831,10 +831,29 @@ impl PresetConfig {
 impl Default for PresetConfig {
     fn default() -> Self {
         Self {
-            practice: PresetProfileConfig::practice(),
-            qualifying: PresetProfileConfig::qualifying(),
-            race: PresetProfileConfig::race(),
-            endurance: PresetProfileConfig::endurance(),
+            practice: PresetProfileConfig::practice()
+                .with_extra_widgets(&["tyres", "brakes", "fuel", "engine", "weather"]),
+            qualifying: PresetProfileConfig::qualifying()
+                .with_extra_widgets(&["tyres", "brakes", "engine"]),
+            race: PresetProfileConfig::race().with_extra_widgets(&[
+                "position",
+                "relative",
+                "standings",
+                "fuel",
+                "flags",
+            ]),
+            endurance: PresetProfileConfig::endurance().with_extra_widgets(&[
+                "position",
+                "relative",
+                "standings",
+                "fuel",
+                "energy",
+                "tyres",
+                "brakes",
+                "engine",
+                "weather",
+                "damage",
+            ]),
             minimal: PresetProfileConfig::minimal(),
             custom: Vec::new(),
         }
@@ -884,6 +903,15 @@ pub struct PresetProfileConfig {
 }
 
 impl PresetProfileConfig {
+    fn with_extra_widgets(mut self, ids: &[&str]) -> Self {
+        for id in ids {
+            if let Some(widget) = self.extra_widgets.get_mut(*id) {
+                widget.enabled = true;
+            }
+        }
+        self
+    }
+
     fn base() -> Self {
         Self {
             performance_mode: "normal".to_string(),
