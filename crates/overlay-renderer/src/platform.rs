@@ -1314,10 +1314,7 @@ mod windows_overlay {
                 ],
                 temperature_unit_label(config),
             ),
-            "electronics" => match (snapshot.vehicle.tc_setting, snapshot.vehicle.abs_setting) {
-                (Some(tc), Some(abs)) => format!("TC {tc}  ABS {abs}"),
-                _ => "TC / ABS --".to_string(),
-            },
+            "electronics" => electronics_summary(&snapshot),
             "energy" => match (
                 snapshot
                     .vehicle
@@ -2205,6 +2202,48 @@ mod windows_overlay {
     fn option_number(value: Option<u8>) -> String {
         value.map_or_else(|| "--".to_string(), |value| value.to_string())
     }
+
+    fn electronics_summary(snapshot: &TelemetrySnapshot) -> String {
+        let vehicle = snapshot.vehicle;
+        let tc = vehicle.tc_active.map_or_else(
+            || {
+                vehicle
+                    .tc_setting
+                    .map_or_else(|| "TC --".to_string(), |value| format!("TC {value}"))
+            },
+            |active| {
+                if active {
+                    "TC ACTIVE".to_string()
+                } else {
+                    "TC READY".to_string()
+                }
+            },
+        );
+        let abs = vehicle.abs_active.map_or_else(
+            || {
+                vehicle
+                    .abs_setting
+                    .map_or_else(|| "ABS --".to_string(), |value| format!("ABS {value}"))
+            },
+            |active| {
+                if active {
+                    "ABS ACTIVE".to_string()
+                } else {
+                    "ABS READY".to_string()
+                }
+            },
+        );
+        let limiter = vehicle
+            .speed_limiter_active
+            .filter(|active| *active)
+            .map(|_| "LIMITER".to_string());
+        let mut parts = vec![tc, abs];
+        if let Some(limiter) = limiter {
+            parts.push(limiter);
+        }
+        parts.join("  ")
+    }
+
     fn option_decimal(value: Option<f64>) -> String {
         value.map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
     }
@@ -3693,6 +3732,18 @@ mod windows_overlay {
                 scoring_car(7, 8, "LMP2", false),
             ]);
             assert_eq!(position_summary(&sample), "P5/20 C2/2  L1");
+        }
+
+        #[test]
+        fn formats_active_electronics_states() {
+            let mut sample = snapshot();
+            sample.vehicle.tc_active = Some(true);
+            sample.vehicle.abs_active = Some(false);
+            sample.vehicle.speed_limiter_active = Some(true);
+            assert_eq!(
+                electronics_summary(&sample),
+                "TC ACTIVE  ABS READY  LIMITER"
+            );
         }
 
         fn scoring_car(
