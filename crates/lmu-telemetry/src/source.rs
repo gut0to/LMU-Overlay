@@ -251,7 +251,7 @@ impl PlatformTelemetrySource {
 
         let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
         let refresh_scoring = self.last_scoring_read.elapsed() >= Duration::from_millis(100);
-        let cached_field = refresh_scoring.then_some(&self.cached_field);
+        let cached_field = (!refresh_scoring).then_some(&self.cached_field);
         let sample =
             read_consistent_sample_from_bytes(bytes, cached_field)?.map(TelemetrySample::sanitized);
         if refresh_scoring {
