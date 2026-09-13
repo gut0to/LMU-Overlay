@@ -1868,8 +1868,8 @@ mod windows_overlay {
     }
 
     fn standings_gap(car: &lmu_telemetry::VehicleScoringSnapshot) -> String {
-        if car.laps_behind_leader.unwrap_or_default() != 0 {
-            return format!("+{}L", car.laps_behind_leader.unwrap_or_default());
+        if let Some(laps) = car.laps_behind_leader.filter(|laps| *laps != 0) {
+            return format!("{}{}L", if laps > 0 { "+" } else { "-" }, laps.abs());
         }
         car.gap_to_leader_seconds
             .map_or_else(|| "--".to_string(), |gap| format!("+{gap:.3}"))
@@ -3249,6 +3249,36 @@ mod windows_overlay {
             assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 1.0), 0x00FFFFFF);
             assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 0.5), 0x00808080);
             assert_eq!(blend_color(0x00112233, 0x00445566, 0.0), 0x00445566);
+        }
+
+        #[test]
+        fn formats_standings_lap_gaps_without_double_signs() {
+            let mut car = lmu_telemetry::VehicleScoringSnapshot {
+                slot_id: 1,
+                driver_name: None,
+                vehicle_name: None,
+                vehicle_class: None,
+                place: None,
+                lap_number: 1,
+                lap_distance_m: None,
+                current_sector: None,
+                last_lap_seconds: None,
+                best_lap_seconds: None,
+                gap_to_next_seconds: None,
+                gap_to_leader_seconds: None,
+                laps_behind_next: None,
+                laps_behind_leader: Some(-1),
+                in_pits: false,
+                in_garage: false,
+                pit_state: None,
+                finish_status: None,
+                flag: None,
+                is_player: false,
+                world_position: None,
+            };
+            assert_eq!(standings_gap(&car), "-1L");
+            car.laps_behind_leader = Some(2);
+            assert_eq!(standings_gap(&car), "+2L");
         }
 
         fn snapshot() -> TelemetrySnapshot {
