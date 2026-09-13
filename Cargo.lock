@@ -255,6 +255,7 @@ dependencies = [
  "telemetry-engine",
  "toml",
  "windows",
+ "windows-numerics",
  "windows-sys 0.59.0",
 ]
 

@@ -22,6 +22,7 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
+use windows_numerics::Vector2;
 
 pub struct D2dBackend {
     #[allow(dead_code)]
@@ -41,15 +42,25 @@ pub struct TextCommand {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct ShapeCommand {
-    pub left: f32,
-    pub top: f32,
-    pub right: f32,
-    pub bottom: f32,
-    pub fill: Option<u32>,
-    pub stroke: Option<u32>,
-    pub stroke_width: f32,
-    pub radius: f32,
+pub enum ShapeCommand {
+    Rectangle {
+        left: f32,
+        top: f32,
+        right: f32,
+        bottom: f32,
+        fill: Option<u32>,
+        stroke: Option<u32>,
+        stroke_width: f32,
+        radius: f32,
+    },
+    Line {
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        color: u32,
+        width: f32,
+    },
 }
 
 impl D2dBackend {
@@ -106,33 +117,62 @@ impl D2dBackend {
     ) -> Result<()> {
         self.gdi.ReleaseDC(None)?;
         for command in shapes {
-            let rect = D2D_RECT_F {
-                left: command.left,
-                top: command.top,
-                right: command.right,
-                bottom: command.bottom,
-            };
-            let rounded = D2D1_ROUNDED_RECT {
-                rect,
-                radiusX: command.radius,
-                radiusY: command.radius,
-            };
-            if let Some(color) = command.fill {
-                let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
-                if command.radius > 0.0 {
-                    self.target.FillRoundedRectangle(&rounded, &brush);
-                } else {
-                    self.target.FillRectangle(&rect, &brush);
+            match *command {
+                ShapeCommand::Rectangle {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    fill,
+                    stroke,
+                    stroke_width,
+                    radius,
+                } => {
+                    let rect = D2D_RECT_F {
+                        left,
+                        top,
+                        right,
+                        bottom,
+                    };
+                    let rounded = D2D1_ROUNDED_RECT {
+                        rect,
+                        radiusX: radius,
+                        radiusY: radius,
+                    };
+                    if let Some(color) = fill {
+                        let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                        if radius > 0.0 {
+                            self.target.FillRoundedRectangle(&rounded, &brush);
+                        } else {
+                            self.target.FillRectangle(&rect, &brush);
+                        }
+                    }
+                    if let Some(color) = stroke {
+                        let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                        if radius > 0.0 {
+                            self.target
+                                .DrawRoundedRectangle(&rounded, &brush, stroke_width, None);
+                        } else {
+                            self.target.DrawRectangle(&rect, &brush, stroke_width, None);
+                        }
+                    }
                 }
-            }
-            if let Some(color) = command.stroke {
-                let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
-                if command.radius > 0.0 {
-                    self.target
-                        .DrawRoundedRectangle(&rounded, &brush, command.stroke_width, None);
-                } else {
-                    self.target
-                        .DrawRectangle(&rect, &brush, command.stroke_width, None);
+                ShapeCommand::Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color,
+                    width,
+                } => {
+                    let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                    self.target.DrawLine(
+                        Vector2 { X: x1, Y: y1 },
+                        Vector2 { X: x2, Y: y2 },
+                        &brush,
+                        width,
+                        None,
+                    );
                 }
             }
         }

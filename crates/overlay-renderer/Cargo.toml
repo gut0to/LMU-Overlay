@@ -13,3 +13,4 @@ lmu-telemetry = { path = "../lmu-telemetry" }
 toml.workspace = true
 windows-sys.workspace = true
 windows.workspace = true
+windows-numerics.workspace = true

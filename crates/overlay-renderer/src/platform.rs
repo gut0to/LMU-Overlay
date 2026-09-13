@@ -1064,7 +1064,7 @@ mod windows_overlay {
     unsafe fn draw_widget_panel(hdc: HDC, area: Area, config: &OverlayConfig) {
         let colors = colors(config);
         if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
-            queue_shape(d2d_backend::ShapeCommand {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
                 left: area.x as f32,
                 top: area.y as f32,
                 right: (area.x + area.width) as f32,
@@ -1904,7 +1904,7 @@ mod windows_overlay {
             )
         };
         if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
-            queue_shape(d2d_backend::ShapeCommand {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
                 left: area.x as f32,
                 top: area.y as f32,
                 right: area.right() as f32,
@@ -2120,6 +2120,48 @@ mod windows_overlay {
     ) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: (area.x + area.width) as f32,
+                bottom: (area.y + area.height) as f32,
+                fill: None,
+                stroke: Some(widget_color(0x00888888)),
+                stroke_width: style.line_width.max(1) as f32,
+                radius: 0.0,
+            });
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: (area.x + 2) as f32,
+                top: (area.y + area.height - filled + 2) as f32,
+                right: (area.x + area.width - 2) as f32,
+                bottom: (area.y + area.height - 2) as f32,
+                fill: Some(widget_color(style.fill)),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: 0.0,
+            });
+            draw_text(
+                hdc,
+                area.x - 1,
+                area.y + area.height + 8,
+                style.label,
+                label,
+            );
+            if let Some(reference_value) = reference_value {
+                let reference_y = area.y + area.height
+                    - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
+                queue_shape(d2d_backend::ShapeCommand::Line {
+                    x1: area.x as f32,
+                    y1: reference_y as f32,
+                    x2: (area.x + area.width) as f32,
+                    y2: reference_y as f32,
+                    color: widget_color(style.reference),
+                    width: style.line_width.max(1) as f32,
+                });
+            }
+            return;
+        }
         let outline = CreatePen(PS_SOLID, style.line_width.max(1), widget_color(0x00888888));
         let old_pen = SelectObject(hdc, outline);
         Rectangle(
@@ -2168,6 +2210,18 @@ mod windows_overlay {
     unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
         let center = area.x + area.width / 2;
         let end = center + (value.clamp(-1.0, 1.0) * (area.width / 2) as f64).round() as i32;
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Line {
+                x1: center as f32,
+                y1: area.y as f32,
+                x2: end as f32,
+                y2: area.y as f32,
+                color: widget_color(color),
+                width: area.height.max(1) as f32,
+            });
+            draw_text(hdc, area.x, area.y + 20, label_color, "STEERING");
+            return;
+        }
         let pen = CreatePen(PS_SOLID, area.height, widget_color(color));
         let old_pen = SelectObject(hdc, pen);
         MoveToEx(hdc, center, area.y, ptr::null_mut());
@@ -2734,6 +2788,32 @@ mod windows_overlay {
         line_width: i32,
         value: impl Fn(TelemetrySnapshot) -> f64,
     ) {
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            let segment_count = history.len().saturating_sub(1).max(1) as f64;
+            let mut previous = None;
+            for (index, sample) in history.iter().cloned().enumerate() {
+                let Some(before) = previous else {
+                    previous = Some(sample);
+                    continue;
+                };
+                let x1 = area.x + (((index - 1) as f64 / segment_count) * area.width as f64) as i32;
+                let x2 = area.x + ((index as f64 / segment_count) * area.width as f64) as i32;
+                let y1 = area.y + area.height
+                    - (value(before).clamp(0.0, 1.0) * area.height as f64) as i32;
+                let y2 = area.y + area.height
+                    - (value(sample.clone()).clamp(0.0, 1.0) * area.height as f64) as i32;
+                queue_shape(d2d_backend::ShapeCommand::Line {
+                    x1: x1 as f32,
+                    y1: y1 as f32,
+                    x2: x2 as f32,
+                    y2: y2 as f32,
+                    color: widget_color(color),
+                    width: line_width.max(1) as f32,
+                });
+                previous = Some(sample);
+            }
+            return;
+        }
         let pen = CreatePen(PS_SOLID, line_width.max(1), widget_color(color));
         let old_pen = SelectObject(hdc, pen);
         let segment_count = history.len().saturating_sub(1).max(1) as f64;
