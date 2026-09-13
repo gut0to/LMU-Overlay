@@ -41,7 +41,7 @@ impl From<config::ConfigError> for OverlayError {
 #[cfg(windows)]
 mod windows_overlay {
     use std::{
-        cell::Cell,
+        cell::{Cell, RefCell},
         ffi::c_void,
         fs,
         mem::zeroed,
@@ -99,6 +99,8 @@ mod windows_overlay {
 
     thread_local! {
         static WIDGET_RENDER_STATE: Cell<(f64, u32)> = const { Cell::new((1.0, COLOR_KEY)) };
+        static NATIVE_TEXT_ENABLED: Cell<bool> = const { Cell::new(false) };
+        static NATIVE_TEXT_COMMANDS: RefCell<Vec<d2d_backend::TextCommand>> = const { RefCell::new(Vec::new()) };
     }
 
     struct WidgetOpacityScope {
@@ -144,6 +146,16 @@ mod windows_overlay {
             (foreground * opacity + background * (1.0 - opacity)).round() as u32
         };
         channel(0) | (channel(8) << 8) | (channel(16) << 16)
+    }
+
+    fn begin_native_text(enabled: bool) {
+        NATIVE_TEXT_ENABLED.with(|state| state.set(enabled));
+        NATIVE_TEXT_COMMANDS.with(|commands| commands.borrow_mut().clear());
+    }
+
+    fn take_native_text_commands() -> Vec<d2d_backend::TextCommand> {
+        NATIVE_TEXT_ENABLED.with(|state| state.set(false));
+        NATIVE_TEXT_COMMANDS.with(|commands| std::mem::take(&mut *commands.borrow_mut()))
     }
 
     #[derive(Clone, Copy)]
@@ -938,6 +950,7 @@ mod windows_overlay {
             .as_ref()
             .and_then(|backend| backend.begin_gdi().ok());
         let using_d2d = d2d_hdc.is_some();
+        begin_native_text(using_d2d);
         let hdc = d2d_hdc.unwrap_or_else(|| BeginPaint(hwnd, &mut paint));
         let mut rect: RECT = zeroed();
         GetClientRect(hwnd, &mut rect);
@@ -992,7 +1005,15 @@ mod windows_overlay {
 
         if let Some(backend) = state.d2d.as_ref() {
             if using_d2d {
-                if let Err(error) = backend.end_gdi() {
+                let texts = take_native_text_commands();
+                if let Err(error) = backend.end_gdi(
+                    &texts,
+                    &config.style.font_family,
+                    config.style.font_size as f32 * config.style.scale as f32,
+                    config.style.font_weight,
+                    config.window.width,
+                    config.window.height,
+                ) {
                     log::warn!("Direct2D frame submission failed: {error}");
                 }
             } else {
@@ -2696,6 +2717,17 @@ mod windows_overlay {
     }
 
     unsafe fn draw_text(hdc: HDC, x: i32, y: i32, color: u32, text: &str) {
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            NATIVE_TEXT_COMMANDS.with(|commands| {
+                commands.borrow_mut().push(d2d_backend::TextCommand {
+                    x,
+                    y,
+                    color: widget_color(color),
+                    text: text.to_string(),
+                });
+            });
+            return;
+        }
         let wide: Vec<u16> = text.encode_utf16().collect();
         SetBkMode(hdc, TRANSPARENT as i32);
         SetTextColor(hdc, widget_color(color));

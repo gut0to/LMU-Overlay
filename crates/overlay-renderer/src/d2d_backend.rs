@@ -5,17 +5,20 @@
 //! existing widget geometry stable while making the window surface and text
 //! resources owned by Direct2D/DirectWrite.
 
-use windows::core::{Interface, Result};
+use windows::core::{Interface, Result, PCWSTR};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_PIXEL_FORMAT, D2D_SIZE_U};
+use windows::Win32::Graphics::Direct2D::Common::{
+    D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_RECT_F, D2D_SIZE_U,
+};
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1Factory, ID2D1GdiInteropRenderTarget, ID2D1HwndRenderTarget,
-    D2D1_DC_INITIALIZE_MODE_COPY, D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_DC_INITIALIZE_MODE_COPY, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
+    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED,
+    DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
+    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 
@@ -26,6 +29,14 @@ pub struct D2dBackend {
     text_factory: IDWriteFactory,
     target: ID2D1HwndRenderTarget,
     gdi: ID2D1GdiInteropRenderTarget,
+}
+
+#[derive(Debug, Clone)]
+pub struct TextCommand {
+    pub x: i32,
+    pub y: i32,
+    pub color: u32,
+    pub text: String,
 }
 
 impl D2dBackend {
@@ -69,8 +80,52 @@ impl D2dBackend {
         Ok(self.gdi.GetDC(D2D1_DC_INITIALIZE_MODE_COPY)?.0)
     }
 
-    pub unsafe fn end_gdi(&self) -> Result<()> {
+    pub unsafe fn end_gdi(
+        &self,
+        texts: &[TextCommand],
+        font_family: &str,
+        font_size: f32,
+        font_weight: i32,
+        width: i32,
+        height: i32,
+    ) -> Result<()> {
         self.gdi.ReleaseDC(None)?;
+        if !texts.is_empty() {
+            let family = wide_null(font_family);
+            let format = self.text_factory.CreateTextFormat(
+                PCWSTR(family.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT(font_weight.clamp(100, 900)),
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                font_size.max(1.0),
+                PCWSTR::null(),
+            )?;
+            for command in texts {
+                let color = D2D1_COLOR_F {
+                    r: (command.color & 0xff) as f32 / 255.0,
+                    g: ((command.color >> 8) & 0xff) as f32 / 255.0,
+                    b: ((command.color >> 16) & 0xff) as f32 / 255.0,
+                    a: 1.0,
+                };
+                let brush = self.target.CreateSolidColorBrush(&color, None)?;
+                let text = wide_null(&command.text);
+                let rect = D2D_RECT_F {
+                    left: command.x as f32,
+                    top: command.y as f32,
+                    right: width as f32,
+                    bottom: (command.y as f32 + font_size * 2.0).min(height as f32),
+                };
+                self.target.DrawText(
+                    &text[..text.len().saturating_sub(1)],
+                    &format,
+                    &rect as *const _,
+                    &brush,
+                    D2D1_DRAW_TEXT_OPTIONS_NONE,
+                    DWRITE_MEASURING_MODE_NATURAL,
+                );
+            }
+        }
         self.target.EndDraw(None, None)
     }
 
@@ -83,4 +138,8 @@ impl D2dBackend {
     pub fn factory(&self) -> &ID2D1Factory {
         &self.factory
     }
+}
+
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
