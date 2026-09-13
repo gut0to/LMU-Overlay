@@ -1177,10 +1177,16 @@ mod windows_overlay {
                 (Some(tc), Some(abs)) => format!("TC {tc}  ABS {abs}"),
                 _ => "TC / ABS --".to_string(),
             },
-            "energy" => snapshot.vehicle.battery_charge_percent.map_or_else(
-                || "ENERGY --".to_string(),
-                |charge| format!("ENERGY {charge:.0}%"),
-            ),
+            "energy" => match (
+                snapshot.vehicle.battery_charge_percent,
+                snapshot.vehicle.virtual_energy_percent,
+            ) {
+                (Some(charge), Some(energy)) => {
+                    format!("SOC {charge:.0}%  VE {energy:.0}%")
+                }
+                (Some(charge), None) => format!("SOC {charge:.0}%"),
+                _ => "ENERGY --".to_string(),
+            },
             "engine" => match (
                 snapshot.vehicle.engine_water_temp_c,
                 snapshot.vehicle.engine_oil_temp_c,
@@ -1339,6 +1345,36 @@ mod windows_overlay {
                     );
                 }
             }
+            "energy" => {
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    detail_color,
+                    &format!(
+                        "REGEN {}  MTR RPM {}",
+                        if snapshot.vehicle.hybrid_regen_active == Some(true) {
+                            "ON"
+                        } else if snapshot.vehicle.hybrid_regen_active == Some(false) {
+                            "OFF"
+                        } else {
+                            "--"
+                        },
+                        option_decimal(snapshot.vehicle.electric_motor_rpm)
+                    ),
+                );
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y + scale_px(config, 18),
+                    detail_color,
+                    &format!(
+                        "MTR TEMP {} C  STATE {}",
+                        option_decimal(snapshot.vehicle.electric_motor_temp_c),
+                        option_number(snapshot.vehicle.electric_motor_state)
+                    ),
+                );
+            }
             "weather" => draw_text(
                 hdc,
                 area.x + padding,
@@ -1350,6 +1386,36 @@ mod windows_overlay {
                     option_percent(snapshot.session.track_wetness)
                 ),
             ),
+            "damage" => {
+                let wheels = [
+                    ("FL", snapshot.wheels.front_left),
+                    ("FR", snapshot.wheels.front_right),
+                    ("RL", snapshot.wheels.rear_left),
+                    ("RR", snapshot.wheels.rear_right),
+                ];
+                let damaged = wheels
+                    .into_iter()
+                    .filter_map(|(label, wheel)| {
+                        (wheel.flat == Some(true) || wheel.detached == Some(true)).then_some(label)
+                    })
+                    .collect::<Vec<_>>();
+                let message = if damaged.is_empty() {
+                    "WHEELS OK".to_string()
+                } else {
+                    format!("WHEEL DAMAGE {}", damaged.join(" "))
+                };
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    if damaged.is_empty() {
+                        detail_color
+                    } else {
+                        colors(config).delta_loss
+                    },
+                    &message,
+                );
+            }
             _ => {}
         }
     }
