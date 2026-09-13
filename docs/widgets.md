@@ -5,7 +5,7 @@
 | Gear and RPM, Speed, Pedals, Steering | Fast LMU telemetry | Real |
 | Input trace, Delta, Lap timing, Mini sectors, Coaching | Local LapEngine history/reference | Computed from official data |
 | Sectors, Position, Flags | Official scoring | Real |
-| Relative, Standings | Official scoring field | Unavailable in current LMU interface |
+| Relative, Standings | Official scoring field | Real |
 | Fuel | Official vehicle data | Real |
 | Tyres, Brakes | Official wheel data | Real |
 | Electronics, Energy, Engine, Damage | Official vehicle data | Real |

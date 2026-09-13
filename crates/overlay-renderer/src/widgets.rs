@@ -67,7 +67,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Current, last, session and personal-best timing.",
         data_requirement: "lap engine",
-        status: "Computed from official data",
+        status: "Unavailable in current LMU interface",
     },
     WidgetDefinition {
         id: "timing",
@@ -115,7 +115,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Nearby cars from official scoring data.",
         data_requirement: "official scoring",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "standings",
@@ -123,7 +123,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Configurable classification table.",
         data_requirement: "official scoring",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "flags",
