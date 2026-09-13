@@ -83,7 +83,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "S1, S2 and S3 when officially exposed.",
         data_requirement: "official scoring",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "mini_sectors",
@@ -107,7 +107,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Player position and lap.",
         data_requirement: "official scoring",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "relative",
@@ -131,7 +131,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Session and local flag status.",
         data_requirement: "official scoring",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "fuel",
@@ -139,7 +139,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Fuel",
         description: "Fuel quantity, consumption and remaining estimate.",
         data_requirement: "official vehicle data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "tyres",
@@ -147,7 +147,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Tyres",
         description: "Pressure, temperature, wear and grip by wheel.",
         data_requirement: "official wheel data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "brakes",
@@ -155,7 +155,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Brakes",
         description: "Brake temperature, pressure and bias.",
         data_requirement: "official wheel data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "electronics",
@@ -163,7 +163,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Electronics",
         description: "Electronic-aid state and settings.",
         data_requirement: "official vehicle data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "energy",
@@ -171,7 +171,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Energy",
         description: "Battery, virtual energy and hybrid state.",
         data_requirement: "official vehicle data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "engine",
@@ -179,7 +179,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Car",
         description: "Temperatures, boost and limiter state.",
         data_requirement: "official vehicle data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "damage",
@@ -187,7 +187,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Car",
         description: "Damage, tyre and impact warnings.",
         data_requirement: "official vehicle data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "weather",
@@ -195,7 +195,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Utility",
         description: "Track and ambient conditions.",
         data_requirement: "official session data",
-        status: "Unavailable in current LMU interface",
+        status: "Real",
     },
     WidgetDefinition {
         id: "coaching",
