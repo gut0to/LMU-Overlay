@@ -57,9 +57,7 @@ fn run(cli: Cli) -> Result<()> {
     let mut source = SharedMemoryTelemetrySource::open()?;
 
     if !source.is_available() {
-        warn!(
-            "LMU telemetry buffer is not available. Start LMU with built-in shared memory enabled."
-        );
+        warn!("LMU telemetry buffer is not available. Start LMU and enter a driving session.");
         if !cli.wait {
             return Ok(());
         }
