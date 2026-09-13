@@ -350,6 +350,12 @@ fn read_sample_once(
         Some(field) => Arc::clone(field),
         None => Arc::from(read_field(bytes, scoring_vehicles)?),
     };
+    let mut session = read_session(bytes, scoring_offset)?;
+    let (gap_ahead_seconds, gap_behind_seconds) = field_gaps(&field, player_slot_id);
+    if gap_ahead_seconds.is_some() {
+        session.gap_ahead_seconds = gap_ahead_seconds;
+    }
+    session.gap_behind_seconds = gap_behind_seconds;
 
     let sample = TelemetrySample {
         timestamp_seconds: read_f64(bytes, OFFSET_SCORING_CURRENT_ET)
@@ -371,7 +377,7 @@ fn read_sample_once(
         sector_times: read_sector_times(bytes, scoring_offset)?,
         vehicle: read_vehicle_systems(bytes, vehicle_offset)?,
         wheels: read_wheels(bytes, vehicle_offset)?,
-        session: read_session(bytes, scoring_offset)?,
+        session,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
         field,
     };
@@ -711,6 +717,40 @@ fn read_field(
     Ok(field)
 }
 
+fn field_gaps(
+    field: &[crate::VehicleScoringSnapshot],
+    player_slot_id: i32,
+) -> (Option<f64>, Option<f64>) {
+    let Some(player) = field
+        .iter()
+        .find(|car| car.slot_id == player_slot_id || car.is_player)
+    else {
+        return (None, None);
+    };
+    let Some(player_place) = player.place else {
+        return (None, None);
+    };
+
+    let gap_from_player = |other: &crate::VehicleScoringSnapshot| {
+        if other.lap_number != player.lap_number {
+            return None;
+        }
+        other
+            .gap_to_leader_seconds
+            .zip(player.gap_to_leader_seconds)
+            .map(|(other_gap, player_gap)| (other_gap - player_gap).abs())
+    };
+    let ahead = field
+        .iter()
+        .filter(|car| car.place == Some(player_place - 1))
+        .find_map(gap_from_player);
+    let behind = field
+        .iter()
+        .filter(|car| car.place == Some(player_place + 1))
+        .find_map(gap_from_player);
+    (ahead, behind)
+}
+
 fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
 }
@@ -1026,6 +1066,42 @@ mod tests {
             ensure_same_frame(before, after),
             Err(TelemetryError::TornFrame)
         ));
+    }
+
+    #[test]
+    fn derives_gaps_from_adjacent_same_lap_scoring_rows() {
+        let make_car = |slot_id, place, lap, leader_gap, is_player| {
+            crate::VehicleScoringSnapshot {
+                slot_id,
+                driver_name: None,
+                vehicle_name: None,
+                vehicle_class: None,
+                place: Some(place),
+                lap_number: lap,
+                lap_distance_m: None,
+                current_sector: None,
+                last_lap_seconds: None,
+                best_lap_seconds: None,
+                gap_to_next_seconds: None,
+                gap_to_leader_seconds: Some(leader_gap),
+                laps_behind_next: None,
+                laps_behind_leader: None,
+                in_pits: false,
+                in_garage: false,
+                pit_state: None,
+                finish_status: None,
+                flag: None,
+                is_player,
+                world_position: None,
+            }
+        };
+        let field = vec![
+            make_car(10, 4, 12, 4.0, false),
+            make_car(42, 5, 12, 5.5, true),
+            make_car(11, 6, 12, 6.25, false),
+        ];
+
+        assert_eq!(field_gaps(&field, 42), (Some(1.5), Some(0.75)));
     }
 
     fn write_i32(bytes: &mut [u8], offset: usize, value: i32) {
