@@ -1999,6 +1999,9 @@ mod windows_overlay {
         if options.show_best_lap {
             header.push("BEST");
         }
+        if options.show_pit {
+            header.push("PIT");
+        }
         draw_text(
             hdc,
             area.x + padding,
@@ -2072,8 +2075,8 @@ mod windows_overlay {
             if options.show_best_lap {
                 columns.push(best);
             }
-            if options.show_pit && car.in_pits {
-                columns.push("PIT".to_string());
+            if options.show_pit {
+                columns.push(if car.in_pits { "PIT" } else { "--" }.to_string());
             }
             draw_text(
                 hdc,
