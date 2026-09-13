@@ -31,6 +31,7 @@ type StyleConfig = {
   opacity: number;
   scale: number;
   line_thickness: number;
+  border_radius: number;
   background: string;
   border: string;
   primary_text: string;
@@ -96,6 +97,7 @@ type WidgetStyleConfig = {
   show_border: boolean;
   border_color: string;
   border_width: number;
+  border_radius: number;
   padding: number;
   font_scale: number;
   primary_color: string;
@@ -1187,6 +1189,7 @@ function WidgetStyleFields(props: {
           <span>Show widget border</span>
         </label>
         <NumberField label="Border width" value={props.style.border_width} onChange={(value) => props.onChange("border_width", value)} />
+        <NumberField label="Border radius" value={props.style.border_radius} onChange={(value) => props.onChange("border_radius", value)} />
         <NumberField label="Inner padding" value={props.style.padding} onChange={(value) => props.onChange("padding", value)} />
         <div className="swatches">
           {colorFields.map(([key, label]) => (

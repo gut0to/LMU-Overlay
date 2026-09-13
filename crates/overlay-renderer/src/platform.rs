@@ -60,8 +60,8 @@ mod windows_overlay {
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
-            InvalidateRect, LineTo, MoveToEx, Rectangle, ScreenToClient, SelectObject, SetBkMode,
-            SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+            InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient, SelectObject,
+            SetBkMode, SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -1009,7 +1009,19 @@ mod windows_overlay {
         let border = CreatePen(PS_SOLID, config.style.line_thickness, colors.border);
         let old_brush = SelectObject(hdc, bg);
         let old_pen = SelectObject(hdc, border);
-        Rectangle(hdc, 0, 0, config.window.width, config.window.height);
+        if config.style.border_radius > 0 {
+            RoundRect(
+                hdc,
+                0,
+                0,
+                config.window.width,
+                config.window.height,
+                config.style.border_radius * 2,
+                config.style.border_radius * 2,
+            );
+        } else {
+            Rectangle(hdc, 0, 0, config.window.width, config.window.height);
+        }
         SelectObject(hdc, old_pen);
         SelectObject(hdc, old_brush);
         DeleteObject(border);
@@ -1024,13 +1036,25 @@ mod windows_overlay {
             widget_color(colors.border),
         );
         let old_pen = SelectObject(hdc, border);
-        Rectangle(
-            hdc,
-            area.x,
-            area.y,
-            area.x + area.width,
-            area.y + area.height,
-        );
+        if config.style.border_radius > 0 {
+            RoundRect(
+                hdc,
+                area.x,
+                area.y,
+                area.x + area.width,
+                area.y + area.height,
+                config.style.border_radius * 2,
+                config.style.border_radius * 2,
+            );
+        } else {
+            Rectangle(
+                hdc,
+                area.x,
+                area.y,
+                area.x + area.width,
+                area.y + area.height,
+            );
+        }
         SelectObject(hdc, old_pen);
         DeleteObject(border);
     }
@@ -1850,7 +1874,22 @@ mod windows_overlay {
                 .max(1);
             let pen = CreatePen(PS_SOLID, width, widget_color(border));
             let old_pen = SelectObject(hdc, pen);
-            Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
+            let radius = widget_style
+                .map_or(config.style.border_radius, |style| style.border_radius)
+                .max(0);
+            if radius > 0 {
+                RoundRect(
+                    hdc,
+                    area.x,
+                    area.y,
+                    area.right(),
+                    area.bottom(),
+                    radius * 2,
+                    radius * 2,
+                );
+            } else {
+                Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
+            }
             SelectObject(hdc, old_pen);
             DeleteObject(pen);
         }

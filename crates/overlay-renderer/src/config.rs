@@ -100,6 +100,7 @@ impl OverlayConfig {
         self.style.opacity = self.style.opacity.clamp(32, 255);
         self.style.scale = self.style.scale.clamp(0.65, 1.75);
         self.style.line_thickness = self.style.line_thickness.clamp(1, 8);
+        self.style.border_radius = self.style.border_radius.clamp(0, 32);
         self.style.font_size = self.style.font_size.clamp(8, 36);
         self.style.font_weight = self.style.font_weight.clamp(100, 900);
         self.style.large_number_size = self.style.large_number_size.clamp(12, 72);
@@ -308,6 +309,7 @@ pub struct StyleConfig {
     pub opacity: u8,
     pub scale: f64,
     pub line_thickness: i32,
+    pub border_radius: i32,
     pub background: String,
     pub border: String,
     pub primary_text: String,
@@ -336,6 +338,7 @@ impl Default for StyleConfig {
             opacity: 230,
             scale: 1.0,
             line_thickness: 2,
+            border_radius: 8,
             background: "#202020".to_string(),
             border: "#666666".to_string(),
             primary_text: "#ffffff".to_string(),
@@ -716,6 +719,7 @@ pub struct WidgetStyleConfig {
     pub show_border: bool,
     pub border_color: String,
     pub border_width: i32,
+    pub border_radius: i32,
     pub padding: i32,
     pub font_scale: f64,
     pub primary_color: String,
@@ -728,6 +732,7 @@ pub struct WidgetStyleConfig {
 impl WidgetStyleConfig {
     fn normalize(&mut self) {
         self.border_width = self.border_width.clamp(0, 8);
+        self.border_radius = self.border_radius.clamp(0, 32);
         self.padding = self.padding.clamp(0, 48);
         self.font_scale = self.font_scale.clamp(0.5, 2.0);
         self.title_text.truncate(80);
@@ -743,6 +748,7 @@ impl Default for WidgetStyleConfig {
             show_border: true,
             border_color: "#666666".to_string(),
             border_width: 1,
+            border_radius: 8,
             padding: 8,
             font_scale: 1.0,
             primary_color: "#ffffff".to_string(),
