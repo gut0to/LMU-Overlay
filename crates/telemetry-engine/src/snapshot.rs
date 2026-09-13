@@ -6,6 +6,14 @@ use lmu_telemetry::{
 };
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct LapHistoryEntry {
+    pub lap: i32,
+    pub time_seconds: Option<f64>,
+    pub valid: bool,
+    pub delta_to_best: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TelemetrySnapshot {
     pub throttle: f64,
     pub brake: f64,
@@ -59,6 +67,7 @@ pub struct TelemetrySnapshot {
     pub fuel_average_lap_used: Option<f64>,
     pub fuel_estimated_laps_remaining: Option<f64>,
     pub field: Arc<[VehicleScoringSnapshot]>,
+    pub lap_history: Arc<[LapHistoryEntry]>,
 }
 
 impl From<TelemetrySample> for TelemetrySnapshot {
@@ -118,6 +127,7 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             fuel_average_lap_used: None,
             fuel_estimated_laps_remaining: None,
             field: sample.field,
+            lap_history: Arc::from(Vec::new()),
         }
     }
 }

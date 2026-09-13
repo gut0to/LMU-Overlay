@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use telemetry_engine::TelemetrySnapshot;
+use telemetry_engine::{LapHistoryEntry, TelemetrySnapshot};
 
 const NORMALIZED_REFERENCE_POINTS: usize = 2_001;
 const MAX_MINI_SECTORS: usize = 200;
@@ -230,6 +230,7 @@ pub struct LapAnalysis {
     pub reference_throttle: Option<f64>,
     pub reference_brake: Option<f64>,
     pub reference_speed_kph: Option<f64>,
+    pub lap_history: std::sync::Arc<[LapHistoryEntry]>,
 }
 
 impl LapAnalysis {
@@ -249,6 +250,7 @@ impl LapAnalysis {
         snapshot.reference_throttle = self.reference_throttle;
         snapshot.reference_brake = self.reference_brake;
         snapshot.reference_speed_kph = self.reference_speed_kph;
+        snapshot.lap_history = self.lap_history;
     }
 }
 
@@ -306,6 +308,7 @@ pub struct LapEngine {
     previous_boundary_delta: Option<f64>,
     completed_mini_sector_delta: Option<f64>,
     completed_mini_sectors: Vec<MiniSectorResult>,
+    lap_history: std::collections::VecDeque<LapHistoryEntry>,
     current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
     last_valid_lap: Option<ReferenceLap>,
@@ -331,6 +334,7 @@ impl LapEngine {
             previous_boundary_delta: None,
             completed_mini_sector_delta: None,
             completed_mini_sectors: Vec::with_capacity(MAX_MINI_SECTORS),
+            lap_history: std::collections::VecDeque::with_capacity(10),
             current_lap_valid: false,
             last_lap: None,
             last_valid_lap: None,
@@ -431,6 +435,7 @@ impl LapEngine {
             reference_throttle: reference_point.map(|point| point.throttle),
             reference_brake: reference_point.map(|point| point.brake),
             reference_speed_kph: reference_point.map(|point| point.speed_kph),
+            lap_history: std::sync::Arc::from(self.lap_history.iter().cloned().collect::<Vec<_>>()),
         }
     }
 
@@ -452,6 +457,21 @@ impl LapEngine {
                 if let Some(mut lap) = ReferenceLap::new(lap_time, self.current_points.clone()) {
                     lap.events = self.current_events.clone();
                     self.last_lap = Some(lap.clone());
+                    if let Some(lap_number) = self.current_lap_number {
+                        if self.lap_history.len() == 10 {
+                            self.lap_history.pop_front();
+                        }
+                        let delta_to_best = self
+                            .session_best
+                            .as_ref()
+                            .map(|best| lap.total_time_seconds - best.total_time_seconds);
+                        self.lap_history.push_back(LapHistoryEntry {
+                            lap: lap_number,
+                            time_seconds: Some(lap.total_time_seconds),
+                            valid: self.current_lap_valid,
+                            delta_to_best,
+                        });
+                    }
                     if self.current_lap_valid {
                         self.last_valid_lap = Some(lap.clone());
                         if is_better(&self.best_valid_lap, &lap) {
@@ -480,6 +500,7 @@ impl LapEngine {
         self.previous_boundary_delta = None;
         self.completed_mini_sector_delta = None;
         self.completed_mini_sectors.clear();
+        self.lap_history.clear();
         self.current_lap_valid = is_lap_sample_valid(snapshot);
     }
 
@@ -1148,6 +1169,7 @@ mod tests {
             lap_invalidated: None,
             player_slot_id: 42,
             field: std::sync::Arc::from(Vec::new()),
+            lap_history: std::sync::Arc::from(Vec::new()),
             delta_seconds: None,
             predicted_lap_seconds: None,
             session_best_seconds: None,

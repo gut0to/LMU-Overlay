@@ -1050,6 +1050,18 @@ mod windows_overlay {
             );
             return;
         }
+        if id == "lap_history" {
+            draw_lap_history_widget(
+                hdc,
+                &snapshot,
+                config,
+                area,
+                padding,
+                widget_style,
+                widget_options,
+            );
+            return;
+        }
         let value = match id {
             "speed" => format!(
                 "{:.0} {}",
@@ -1370,6 +1382,65 @@ mod windows_overlay {
                         ""
                     }
                 ),
+            );
+        }
+    }
+
+    unsafe fn draw_lap_history_widget(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+        options: Option<&WidgetOptions>,
+    ) {
+        let title_color = widget_secondary_color(config, style);
+        let text_color = widget_primary_color(config, style);
+        let rows = options.map_or(8, |value| value.rows.clamp(1, 20) as usize);
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding,
+            title_color,
+            "LAP HISTORY",
+        );
+        if snapshot.lap_history.is_empty() {
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding + scale_px(config, 20),
+                text_color,
+                "NO COMPLETED LAPS",
+            );
+            return;
+        }
+        for (row, entry) in snapshot.lap_history.iter().rev().take(rows).enumerate() {
+            let y = area.y + padding + scale_px(config, 20 + row as i32 * 18);
+            let time = entry
+                .time_seconds
+                .map(lap_time)
+                .unwrap_or_else(|| "--:--.---".to_string());
+            let status = if !entry.valid {
+                " INVALID"
+            } else if entry
+                .delta_to_best
+                .is_some_and(|delta| delta.abs() < 0.0005)
+            {
+                " PB"
+            } else {
+                ""
+            };
+            let delta = entry
+                .delta_to_best
+                .map(|value| format!(" {value:+.3}"))
+                .unwrap_or_default();
+            draw_text(
+                hdc,
+                area.x + padding,
+                y,
+                text_color,
+                &format!("L{:>3}  {time}{delta}{status}", entry.lap),
             );
         }
     }
@@ -2634,6 +2705,7 @@ mod windows_overlay {
                 lap_invalidated: None,
                 player_slot_id: 42,
                 field: std::sync::Arc::from(Vec::new()),
+                lap_history: std::sync::Arc::from(Vec::new()),
                 delta_seconds: None,
                 predicted_lap_seconds: None,
                 session_best_seconds: None,
