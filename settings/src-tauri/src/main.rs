@@ -5,6 +5,7 @@ use overlay_renderer::{
     widget_catalog as overlay_widget_catalog, WidgetDefinition,
 };
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Debug, Serialize)]
 struct ConfigResponse {
@@ -62,11 +63,19 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 }
 
 #[tauri::command]
-fn start_overlay() -> Result<(), String> {
-    let executable = std::env::current_exe()
+fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    let executable = app
+        .path()
+        .resource_dir()
         .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("hashoverlay.exe")))
+        .map(|path| path.join("hashoverlay.exe"))
         .filter(|path| path.exists())
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| path.parent().map(|parent| parent.join("hashoverlay.exe")))
+                .filter(|path| path.exists())
+        })
         .unwrap_or_else(|| PathBuf::from("hashoverlay.exe"));
 
     Command::new(executable)

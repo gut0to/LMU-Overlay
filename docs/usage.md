@@ -24,6 +24,8 @@ All shortcuts can be changed in **Settings > Hotkeys**. Conflicting shortcuts ar
 
 The default layout is deliberately small: driving HUD, inputs, timing, relative/race information when available, fuel and flags. Turn on additional widgets one by one rather than placing everything on screen.
 
+If you are upgrading an older installation, select a preset and press **Save** once. Existing configuration is preserved during migration, so widgets that were previously disabled do not turn on automatically. The Settings installer includes the matching overlay executable; start the overlay from the same Settings installation so both use `%APPDATA%\\HashOverlay\\hashoverlay.toml`.
+
 Use the Widget Browser to search by name or filter by category. A widget can be enabled even if LMU does not currently expose its official data on your installed game version; it will show `--` until that data becomes available.
 
 ## Settings and Storage
