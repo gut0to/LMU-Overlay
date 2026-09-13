@@ -546,18 +546,18 @@ impl Default for LayoutConfig {
             },
             inputs: WidgetLayout {
                 x: 14,
-                y: 64,
+                y: 68,
                 width: 240,
-                height: 106,
+                height: 88,
                 locked: false,
                 scale: 1.0,
                 opacity: 1.0,
                 z_index: 20,
             },
             lap_timing: WidgetLayout {
-                x: 170,
-                y: 64,
-                width: 236,
+                x: 266,
+                y: 68,
+                width: 140,
                 height: 42,
                 locked: false,
                 scale: 1.0,
@@ -565,10 +565,10 @@ impl Default for LayoutConfig {
                 z_index: 30,
             },
             timing: WidgetLayout {
-                x: 170,
-                y: 108,
-                width: 236,
-                height: 66,
+                x: 266,
+                y: 114,
+                width: 140,
+                height: 42,
                 locked: false,
                 scale: 1.0,
                 opacity: 1.0,
@@ -576,7 +576,7 @@ impl Default for LayoutConfig {
             },
             sectors: WidgetLayout {
                 x: 14,
-                y: 174,
+                y: 164,
                 width: 190,
                 height: 42,
                 locked: false,
@@ -586,7 +586,7 @@ impl Default for LayoutConfig {
             },
             mini_sectors: WidgetLayout {
                 x: 210,
-                y: 174,
+                y: 164,
                 width: 196,
                 height: 42,
                 locked: false,
@@ -595,9 +595,9 @@ impl Default for LayoutConfig {
                 z_index: 60,
             },
             coaching: WidgetLayout {
-                x: 260,
-                y: 48,
-                width: 146,
+                x: 14,
+                y: 212,
+                width: 392,
                 height: 58,
                 locked: false,
                 scale: 1.0,
@@ -606,7 +606,7 @@ impl Default for LayoutConfig {
             },
             performance: WidgetLayout {
                 x: 14,
-                y: 170,
+                y: 278,
                 width: 392,
                 height: 20,
                 locked: false,
@@ -1198,7 +1198,7 @@ pub fn default_config_text() -> &'static str {
             .expect("the built-in HashOverlay configuration must be valid TOML");
         config.presets = PresetConfig::default();
         let race = config.presets.race.clone();
-        config.window.height = 300;
+        config.window.height = 450;
         config.performance.mode = race.performance_mode.clone();
         config.style = race.style.clone();
         config.units = race.units.clone();
@@ -1232,11 +1232,11 @@ pub fn default_config_text() -> &'static str {
 
 fn place_default_race_widget_layouts(extra_widgets: &mut BTreeMap<String, WidgetInstanceConfig>) {
     let placements = [
-        ("position", 210, 230, 196, 52),
-        ("relative", 14, 174, 196, 52),
-        ("standings", 14, 230, 392, 120),
-        ("fuel", 210, 174, 196, 52),
-        ("flags", 14, 230, 196, 52),
+        ("relative", 14, 326, 196, 52),
+        ("fuel", 210, 326, 196, 52),
+        ("position", 14, 386, 196, 52),
+        ("flags", 210, 386, 196, 52),
+        ("standings", 14, 326, 392, 120),
     ];
     for (id, x, y, width, height) in placements {
         if let Some(widget) = extra_widgets.get_mut(id) {
@@ -1511,7 +1511,7 @@ mod tests {
 
         assert_eq!(config.config_version, 7);
         assert_eq!(config.window.width, 420);
-        assert_eq!(config.window.height, 300);
+        assert_eq!(config.window.height, 450);
         assert!(!config.widgets.input_history);
         assert_eq!(config.timing.mini_sectors, 20);
         assert_eq!(config.hotkeys.toggle_overlay, "F9");
