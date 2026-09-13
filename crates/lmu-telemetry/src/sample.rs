@@ -201,6 +201,24 @@ pub struct VehicleSystems {
     pub battery_charge_percent: Option<f64>,
     pub virtual_energy_percent: Option<f64>,
     pub hybrid_regen_active: Option<bool>,
+    pub scheduled_stops: Option<u8>,
+    pub overheating: Option<bool>,
+    pub headlights: Option<bool>,
+    pub steering_torque_nm: Option<f64>,
+    pub electric_motor_torque_nm: Option<f64>,
+    pub electric_motor_rpm: Option<f64>,
+    pub electric_motor_temp_c: Option<f64>,
+    pub electric_motor_water_temp_c: Option<f64>,
+    pub electric_motor_state: Option<u8>,
+    pub tc_slip: Option<u8>,
+    pub tc_cut: Option<u8>,
+    pub abs_max: Option<u8>,
+    pub motor_map_max: Option<u8>,
+    pub migration: Option<u8>,
+    pub migration_max: Option<u8>,
+    pub regen_kw: Option<f64>,
+    pub gap_car_ahead_seconds: Option<f64>,
+    pub gap_car_behind_seconds: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -216,6 +234,16 @@ pub struct WheelData {
     pub grip_fraction: Option<f64>,
     pub detached: Option<bool>,
     pub flat: Option<bool>,
+    pub suspension_deflection_m: Option<f64>,
+    pub ride_height_m: Option<f64>,
+    pub suspension_force_n: Option<f64>,
+    pub rotation_rad_s: Option<f64>,
+    pub camber_rad: Option<f64>,
+    pub tyre_load_n: Option<f64>,
+    pub inner_temp_c: Option<f64>,
+    pub optimal_temp_c: Option<f64>,
+    pub compound_index: Option<u8>,
+    pub compound_type: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -240,6 +268,14 @@ pub struct SessionData {
     pub track_temp_c: Option<f64>,
     pub rain_density: Option<f64>,
     pub track_wetness: Option<f64>,
+    pub max_laps: Option<i32>,
+    pub end_time_seconds: Option<f64>,
+    pub yellow_flag_state: Option<i8>,
+    pub sector_flags: [Option<u8>; 3],
+    pub start_light: Option<u8>,
+    pub time_of_day: Option<f64>,
+    pub cloud_coverage: Option<u8>,
+    pub track_grip_level: Option<u8>,
 }
 
 impl TelemetrySample {

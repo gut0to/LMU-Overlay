@@ -1,3 +1,4 @@
+pub mod raw;
 mod sample;
 mod source;
 

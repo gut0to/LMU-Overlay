@@ -5,9 +5,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::raw;
 use crate::{
     GamePhase, Gear, SessionData, SessionKind, TelemetryMetadata, TelemetrySample, VehicleSystems,
-    Wheels,
+    WheelData, Wheels,
 };
 
 #[cfg(windows)]
@@ -99,6 +100,58 @@ const OFFSET_SCORING_IN_GARAGE_STALL: usize = 507;
 const MAX_TORN_FRAME_RETRIES: usize = 3;
 const EXPECTED_GAME_VERSION_MIN: i32 = 1;
 const EXPECTED_GAME_VERSION_MAX: i32 = 99_999;
+
+const OFFSET_SCORING_END_ET: usize = OFFSET_SCORING_DATA + raw::session::END_ET;
+const OFFSET_SCORING_MAX_LAPS: usize = OFFSET_SCORING_DATA + raw::session::MAX_LAPS;
+const OFFSET_SCORING_YELLOW_FLAG: usize = OFFSET_SCORING_DATA + raw::session::YELLOW_FLAG;
+const OFFSET_SCORING_SECTOR_FLAGS: usize = OFFSET_SCORING_DATA + raw::session::SECTOR_FLAGS;
+const OFFSET_SCORING_START_LIGHT: usize = OFFSET_SCORING_DATA + raw::session::START_LIGHT;
+const OFFSET_SCORING_AMBIENT_TEMP: usize = OFFSET_SCORING_DATA + raw::session::AMBIENT_TEMP;
+const OFFSET_SCORING_TRACK_TEMP: usize = OFFSET_SCORING_DATA + raw::session::TRACK_TEMP;
+const OFFSET_SCORING_RAINING: usize = OFFSET_SCORING_DATA + raw::session::RAINING;
+const OFFSET_SCORING_MAX_WETNESS: usize = OFFSET_SCORING_DATA + raw::session::MAX_WETNESS;
+const OFFSET_SCORING_SESSION_REMAINING: usize =
+    OFFSET_SCORING_DATA + raw::session::SESSION_REMAINING;
+const OFFSET_SCORING_TIME_OF_DAY: usize = OFFSET_SCORING_DATA + raw::session::TIME_OF_DAY;
+const OFFSET_SCORING_CLOUD_COVERAGE: usize = OFFSET_SCORING_DATA + raw::session::CLOUD_COVERAGE;
+const OFFSET_SCORING_TRACK_GRIP: usize = OFFSET_SCORING_DATA + raw::session::TRACK_GRIP;
+
+const OFFSET_ENGINE_WATER_TEMP: usize = raw::telemetry::WATER_TEMP;
+const OFFSET_ENGINE_OIL_TEMP: usize = raw::telemetry::OIL_TEMP;
+const OFFSET_STEERING_TORQUE: usize = raw::telemetry::STEERING_TORQUE;
+const OFFSET_FUEL: usize = raw::telemetry::FUEL;
+const OFFSET_MAX_RPM: usize = raw::telemetry::MAX_RPM;
+const OFFSET_SCHEDULED_STOPS: usize = raw::telemetry::SCHEDULED_STOPS;
+const OFFSET_OVERHEATING: usize = raw::telemetry::OVERHEATING;
+const OFFSET_HEADLIGHTS: usize = raw::telemetry::HEADLIGHTS;
+const OFFSET_ENGINE_TORQUE: usize = raw::telemetry::ENGINE_TORQUE;
+const OFFSET_FUEL_CAPACITY: usize = raw::telemetry::FUEL_CAPACITY;
+const OFFSET_REAR_BRAKE_BIAS: usize = raw::telemetry::REAR_BRAKE_BIAS;
+const OFFSET_TURBO_BOOST: usize = raw::telemetry::TURBO_BOOST;
+const OFFSET_BATTERY: usize = raw::telemetry::BATTERY_CHARGE_FRACTION;
+const OFFSET_ELECTRIC_TORQUE: usize = raw::telemetry::ELECTRIC_MOTOR_TORQUE;
+const OFFSET_ELECTRIC_RPM: usize = raw::telemetry::ELECTRIC_MOTOR_RPM;
+const OFFSET_ELECTRIC_TEMP: usize = raw::telemetry::ELECTRIC_MOTOR_TEMP;
+const OFFSET_ELECTRIC_WATER_TEMP: usize = raw::telemetry::ELECTRIC_WATER_TEMP;
+const OFFSET_ELECTRIC_STATE: usize = raw::telemetry::ELECTRIC_MOTOR_STATE;
+const OFFSET_LAP_INVALIDATED: usize = raw::telemetry::LAP_INVALIDATED;
+const OFFSET_ABS_ACTIVE: usize = raw::telemetry::ABS_ACTIVE;
+const OFFSET_TC_ACTIVE: usize = raw::telemetry::TC_ACTIVE;
+const OFFSET_SPEED_LIMITER_ACTIVE: usize = raw::telemetry::SPEED_LIMITER_ACTIVE;
+const OFFSET_TC: usize = raw::telemetry::TC;
+const OFFSET_TC_SLIP: usize = raw::telemetry::TC_SLIP;
+const OFFSET_TC_CUT: usize = raw::telemetry::TC_CUT;
+const OFFSET_ABS: usize = raw::telemetry::ABS;
+const OFFSET_ABS_MAX: usize = raw::telemetry::ABS_MAX;
+const OFFSET_MOTOR_MAP: usize = raw::telemetry::MOTOR_MAP;
+const OFFSET_MOTOR_MAP_MAX: usize = raw::telemetry::MOTOR_MAP_MAX;
+const OFFSET_MIGRATION: usize = raw::telemetry::MIGRATION;
+const OFFSET_MIGRATION_MAX: usize = raw::telemetry::MIGRATION_MAX;
+const OFFSET_REGEN: usize = raw::telemetry::REGEN;
+const OFFSET_VIRTUAL_ENERGY: usize = raw::telemetry::VIRTUAL_ENERGY;
+const OFFSET_GAP_CAR_AHEAD: usize = raw::telemetry::GAP_CAR_AHEAD;
+const OFFSET_GAP_CAR_BEHIND: usize = raw::telemetry::GAP_CAR_BEHIND;
+const OFFSET_WHEELS: usize = raw::telemetry::WHEELS;
 
 pub struct SharedMemoryTelemetrySource {
     inner: PlatformTelemetrySource,
@@ -288,10 +341,10 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         lap_number: read_i32(bytes, vehicle_offset + OFFSET_LAP_NUMBER)?,
         lap_start_seconds: read_f64(bytes, vehicle_offset + OFFSET_LAP_START_ET)?,
         sector: read_sector(bytes, scoring_offset, vehicle_offset)?,
-        sector_times: Default::default(),
-        vehicle: VehicleSystems::default(),
-        wheels: Wheels::default(),
-        session: SessionData::default(),
+        sector_times: read_sector_times(bytes, scoring_offset)?,
+        vehicle: read_vehicle_systems(bytes, vehicle_offset)?,
+        wheels: read_wheels(bytes, vehicle_offset)?,
+        session: read_session(bytes)?,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
     };
 
@@ -369,7 +422,7 @@ fn read_metadata(
             .map(|offset| read_bool(bytes, offset + OFFSET_SCORING_IN_GARAGE_STALL))
             .transpose()?
             .unwrap_or(false),
-        lap_invalidated: None,
+        lap_invalidated: read_bool(bytes, vehicle_offset + OFFSET_LAP_INVALIDATED).ok(),
         player_slot_id: scoring_offset
             .map(|offset| read_i32(bytes, offset + OFFSET_SCORING_SLOT_ID))
             .transpose()?
@@ -387,6 +440,187 @@ fn read_sector(
     }
 
     read_i32(bytes, vehicle_offset + OFFSET_SECTOR)
+}
+
+fn read_sector_times(
+    bytes: &[u8],
+    scoring_offset: Option<usize>,
+) -> Result<crate::SectorTimes, TelemetryError> {
+    let Some(offset) = scoring_offset else {
+        return Ok(crate::SectorTimes::default());
+    };
+    let current_s1 = valid_time(read_f64(bytes, offset + raw::scoring::CURRENT_SECTOR1)?);
+    let current_s2_cumulative =
+        valid_time(read_f64(bytes, offset + raw::scoring::CURRENT_SECTOR2)?);
+    let last_s1 = valid_time(read_f64(bytes, offset + raw::scoring::LAST_SECTOR1)?);
+    let last_s2 = valid_time(read_f64(bytes, offset + raw::scoring::LAST_SECTOR2)?);
+    let last_lap = valid_time(read_f64(bytes, offset + raw::scoring::LAST_LAP)?);
+    let best_s1 = valid_time(read_f64(bytes, offset + raw::scoring::BEST_SECTOR1)?);
+    let best_s2 = valid_time(read_f64(bytes, offset + raw::scoring::BEST_SECTOR2)?);
+    let best_lap = valid_time(read_f64(bytes, offset + raw::scoring::BEST_LAP)?);
+    Ok(crate::SectorTimes {
+        current_sector1_seconds: current_s1,
+        current_sector2_seconds: subtract_sector(current_s2_cumulative, current_s1),
+        last_sector1_seconds: last_s1,
+        last_sector2_seconds: subtract_sector(last_s2, last_s1),
+        last_sector3_seconds: subtract_sector(last_lap, last_s2),
+        best_sector1_seconds: best_s1,
+        best_sector2_seconds: subtract_sector(best_s2, best_s1),
+        best_sector3_seconds: subtract_sector(best_lap, best_s2),
+    })
+}
+
+fn read_vehicle_systems(bytes: &[u8], offset: usize) -> Result<VehicleSystems, TelemetryError> {
+    let hybrid_state = read_u8(bytes, offset + OFFSET_ELECTRIC_STATE)?;
+    let hybrid = (hybrid_state != 0).then_some(());
+    Ok(VehicleSystems {
+        max_rpm: positive(read_f64(bytes, offset + OFFSET_MAX_RPM)?),
+        fuel_liters: positive(read_f64(bytes, offset + OFFSET_FUEL)?),
+        fuel_capacity_liters: positive(read_f64(bytes, offset + OFFSET_FUEL_CAPACITY)?),
+        engine_water_temp_c: finite(read_f64(bytes, offset + OFFSET_ENGINE_WATER_TEMP)?),
+        engine_oil_temp_c: finite(read_f64(bytes, offset + OFFSET_ENGINE_OIL_TEMP)?),
+        engine_torque_nm: finite(read_f64(bytes, offset + OFFSET_ENGINE_TORQUE)?),
+        turbo_boost_kpa: finite(read_f64(bytes, offset + OFFSET_TURBO_BOOST)?),
+        brake_bias_front_percent: finite(read_f64(bytes, offset + OFFSET_REAR_BRAKE_BIAS)?)
+            .map(|rear| (1.0 - rear) * 100.0),
+        speed_limiter_active: Some(read_bool(bytes, offset + OFFSET_SPEED_LIMITER_ACTIVE)?),
+        drs_active: None,
+        tc_active: Some(read_bool(bytes, offset + OFFSET_TC_ACTIVE)?),
+        abs_active: Some(read_bool(bytes, offset + OFFSET_ABS_ACTIVE)?),
+        tc_setting: Some(read_u8(bytes, offset + OFFSET_TC)? as i32),
+        abs_setting: Some(read_u8(bytes, offset + OFFSET_ABS)? as i32),
+        motor_map: Some(read_u8(bytes, offset + OFFSET_MOTOR_MAP)? as i32),
+        battery_charge_percent: hybrid
+            .map(|_| read_f64(bytes, offset + OFFSET_BATTERY))
+            .transpose()?
+            .map(|v| v * 100.0),
+        virtual_energy_percent: hybrid
+            .map(|_| read_f32(bytes, offset + OFFSET_VIRTUAL_ENERGY))
+            .transpose()?
+            .map(|v| f64::from(v) * 100.0),
+        hybrid_regen_active: hybrid.map(|_| hybrid_state == 3),
+        scheduled_stops: Some(read_u8(bytes, offset + OFFSET_SCHEDULED_STOPS)?),
+        overheating: Some(read_bool(bytes, offset + OFFSET_OVERHEATING)?),
+        headlights: Some(read_bool(bytes, offset + OFFSET_HEADLIGHTS)?),
+        steering_torque_nm: finite(read_f64(bytes, offset + OFFSET_STEERING_TORQUE)?),
+        electric_motor_torque_nm: hybrid
+            .map(|_| read_f64(bytes, offset + OFFSET_ELECTRIC_TORQUE))
+            .transpose()?,
+        electric_motor_rpm: hybrid
+            .map(|_| read_f64(bytes, offset + OFFSET_ELECTRIC_RPM))
+            .transpose()?,
+        electric_motor_temp_c: hybrid
+            .map(|_| read_f64(bytes, offset + OFFSET_ELECTRIC_TEMP))
+            .transpose()?,
+        electric_motor_water_temp_c: hybrid
+            .map(|_| read_f64(bytes, offset + OFFSET_ELECTRIC_WATER_TEMP))
+            .transpose()?,
+        electric_motor_state: hybrid.map(|_| hybrid_state),
+        tc_slip: Some(read_u8(bytes, offset + OFFSET_TC_SLIP)?),
+        tc_cut: Some(read_u8(bytes, offset + OFFSET_TC_CUT)?),
+        abs_max: Some(read_u8(bytes, offset + OFFSET_ABS_MAX)?),
+        motor_map_max: Some(read_u8(bytes, offset + OFFSET_MOTOR_MAP_MAX)?),
+        migration: Some(read_u8(bytes, offset + OFFSET_MIGRATION)?),
+        migration_max: Some(read_u8(bytes, offset + OFFSET_MIGRATION_MAX)?),
+        regen_kw: hybrid
+            .map(|_| read_f32(bytes, offset + OFFSET_REGEN))
+            .transpose()?
+            .map(f64::from),
+        gap_car_ahead_seconds: finite(read_f32(bytes, offset + OFFSET_GAP_CAR_AHEAD)? as f64),
+        gap_car_behind_seconds: finite(read_f32(bytes, offset + OFFSET_GAP_CAR_BEHIND)? as f64),
+    })
+}
+
+fn read_wheels(bytes: &[u8], vehicle_offset: usize) -> Result<Wheels, TelemetryError> {
+    let mut wheels = [WheelData::default(); 4];
+    for (index, wheel) in wheels.iter_mut().enumerate() {
+        *wheel = read_wheel(
+            bytes,
+            vehicle_offset + OFFSET_WHEELS + index * raw::wheel::SIZE,
+        )?;
+    }
+    Ok(Wheels {
+        front_left: wheels[0],
+        front_right: wheels[1],
+        rear_left: wheels[2],
+        rear_right: wheels[3],
+    })
+}
+
+fn read_wheel(bytes: &[u8], offset: usize) -> Result<WheelData, TelemetryError> {
+    let temp = |index: usize| {
+        read_f64(bytes, offset + raw::wheel::TEMPERATURE + index * 8)
+            .ok()
+            .and_then(finite)
+    };
+    let inner = |index: usize| {
+        read_f64(bytes, offset + raw::wheel::INNER_TEMP + index * 8)
+            .ok()
+            .and_then(finite)
+            .map(|v| v - 273.15)
+    };
+    Ok(WheelData {
+        pressure_kpa: positive(read_f64(bytes, offset + raw::wheel::PRESSURE)?),
+        surface_temp_left_c: temp(0).map(|v| v - 273.15),
+        surface_temp_center_c: temp(1).map(|v| v - 273.15),
+        surface_temp_right_c: temp(2).map(|v| v - 273.15),
+        carcass_temp_c: finite(read_f64(bytes, offset + raw::wheel::CARCASS_TEMP)?)
+            .map(|v| v - 273.15),
+        wear_percent: finite(read_f64(bytes, offset + raw::wheel::WEAR)?).map(|v| v * 100.0),
+        brake_temp_c: finite(read_f64(bytes, offset + raw::wheel::BRAKE_TEMP)?),
+        brake_pressure_kpa: finite(read_f64(bytes, offset + raw::wheel::BRAKE_PRESSURE)?),
+        grip_fraction: finite(read_f64(bytes, offset + 112)?),
+        detached: Some(read_bool(bytes, offset + raw::wheel::DETACHED)?),
+        flat: Some(read_bool(bytes, offset + raw::wheel::FLAT)?),
+        inner_temp_c: [inner(0), inner(1), inner(2)]
+            .into_iter()
+            .flatten()
+            .reduce(|a, b| a + b)
+            .map(|v| v / 3.0),
+        optimal_temp_c: Some(read_f32(bytes, offset + raw::wheel::OPTIMAL_TEMP)? as f64),
+        compound_index: Some(read_u8(bytes, offset + raw::wheel::COMPOUND_INDEX)?),
+        compound_type: Some(read_u8(bytes, offset + raw::wheel::COMPOUND_TYPE)?),
+        ..WheelData::default()
+    })
+}
+
+fn read_session(bytes: &[u8]) -> Result<SessionData, TelemetryError> {
+    Ok(SessionData {
+        position: None,
+        total_vehicles: Some(read_i32(bytes, OFFSET_SCORING_NUM_VEHICLES)?),
+        flag: Some(read_i8(bytes, OFFSET_SCORING_YELLOW_FLAG)? as i32),
+        session_remaining_seconds: finite(read_f32(bytes, OFFSET_SCORING_SESSION_REMAINING)? as f64),
+        ambient_temp_c: finite(read_f64(bytes, OFFSET_SCORING_AMBIENT_TEMP)?),
+        track_temp_c: finite(read_f64(bytes, OFFSET_SCORING_TRACK_TEMP)?),
+        rain_density: finite(read_f64(bytes, OFFSET_SCORING_RAINING)?),
+        track_wetness: finite(read_f64(bytes, OFFSET_SCORING_MAX_WETNESS)?),
+        max_laps: Some(read_i32(bytes, OFFSET_SCORING_MAX_LAPS)?),
+        end_time_seconds: finite(read_f64(bytes, OFFSET_SCORING_END_ET)?),
+        yellow_flag_state: Some(read_i8(bytes, OFFSET_SCORING_YELLOW_FLAG)?),
+        sector_flags: [
+            Some(read_u8(bytes, OFFSET_SCORING_SECTOR_FLAGS)?),
+            Some(read_u8(bytes, OFFSET_SCORING_SECTOR_FLAGS + 1)?),
+            Some(read_u8(bytes, OFFSET_SCORING_SECTOR_FLAGS + 2)?),
+        ],
+        start_light: Some(read_u8(bytes, OFFSET_SCORING_START_LIGHT)?),
+        time_of_day: finite(read_f32(bytes, OFFSET_SCORING_TIME_OF_DAY)? as f64),
+        cloud_coverage: Some(read_u8(bytes, OFFSET_SCORING_CLOUD_COVERAGE)?),
+        track_grip_level: Some(read_u8(bytes, OFFSET_SCORING_TRACK_GRIP)?),
+        ..SessionData::default()
+    })
+}
+
+fn finite(value: f64) -> Option<f64> {
+    value.is_finite().then_some(value)
+}
+fn positive(value: f64) -> Option<f64> {
+    value.is_finite().then_some(value).filter(|v| *v > 0.0)
+}
+fn valid_time(value: f64) -> Option<f64> {
+    positive(value)
+}
+fn subtract_sector(total: Option<f64>, first: Option<f64>) -> Option<f64> {
+    Some(total? - first?).filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -436,6 +670,10 @@ fn read_bool(bytes: &[u8], offset: usize) -> Result<bool, TelemetryError> {
 
 fn read_f64(bytes: &[u8], offset: usize) -> Result<f64, TelemetryError> {
     read_array::<8>(bytes, offset).map(f64::from_le_bytes)
+}
+
+fn read_f32(bytes: &[u8], offset: usize) -> Result<f32, TelemetryError> {
+    read_array::<4>(bytes, offset).map(f32::from_le_bytes)
 }
 
 fn read_array<const N: usize>(bytes: &[u8], offset: usize) -> Result<[u8; N], TelemetryError> {
@@ -518,6 +756,36 @@ mod tests {
         write_f64(&mut bytes, telemetry_offset + OFFSET_STEERING, -0.2);
         write_f64(&mut bytes, telemetry_offset + OFFSET_CLUTCH, 0.0);
         write_i32(&mut bytes, telemetry_offset + OFFSET_SECTOR, 1);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_FUEL, 24.8);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_FUEL_CAPACITY, 110.0);
+        write_f64(
+            &mut bytes,
+            telemetry_offset + OFFSET_ENGINE_WATER_TEMP,
+            93.0,
+        );
+        write_f64(&mut bytes, telemetry_offset + OFFSET_ENGINE_OIL_TEMP, 108.0);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_REAR_BRAKE_BIAS, 0.4);
+        write_u8(&mut bytes, telemetry_offset + OFFSET_LAP_INVALIDATED, 1);
+        write_u8(&mut bytes, telemetry_offset + OFFSET_ELECTRIC_STATE, 2);
+        write_u8(&mut bytes, telemetry_offset + OFFSET_TC, 3);
+        write_u8(&mut bytes, telemetry_offset + OFFSET_ABS, 2);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_BATTERY, 0.75);
+
+        let wheel_offset = telemetry_offset + OFFSET_WHEELS;
+        write_f64(&mut bytes, wheel_offset + raw::wheel::PRESSURE, 182.0);
+        write_f64(&mut bytes, wheel_offset + raw::wheel::TEMPERATURE, 373.15);
+        write_f64(
+            &mut bytes,
+            wheel_offset + raw::wheel::TEMPERATURE + 8,
+            383.15,
+        );
+        write_f64(
+            &mut bytes,
+            wheel_offset + raw::wheel::TEMPERATURE + 16,
+            393.15,
+        );
+        write_f64(&mut bytes, wheel_offset + raw::wheel::BRAKE_TEMP, 620.0);
+        write_f64(&mut bytes, wheel_offset + raw::wheel::WEAR, 0.82);
 
         let scoring_offset = OFFSET_SCORING_VEHICLES;
         write_i32(&mut bytes, scoring_offset + OFFSET_SCORING_SLOT_ID, 42);
@@ -541,6 +809,38 @@ mod tests {
             scoring_offset + OFFSET_SCORING_LAP_DISTANCE,
             1_250.0,
         );
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::CURRENT_SECTOR1,
+            31.0,
+        );
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::CURRENT_SECTOR2,
+            63.0,
+        );
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::LAST_SECTOR1,
+            30.0,
+        );
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::LAST_SECTOR2,
+            61.0,
+        );
+        write_f64(&mut bytes, scoring_offset + raw::scoring::LAST_LAP, 92.0);
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::BEST_SECTOR1,
+            29.0,
+        );
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::BEST_SECTOR2,
+            60.0,
+        );
+        write_f64(&mut bytes, scoring_offset + raw::scoring::BEST_LAP, 90.0);
 
         let sample = read_sample_from_bytes(&bytes).unwrap().unwrap();
 
@@ -557,6 +857,22 @@ mod tests {
             Some("Porsche 963 Scoring")
         );
         assert_eq!(sample.metadata.vehicle_class.as_deref(), Some("Hypercar"));
+        assert_eq!(sample.vehicle.fuel_liters, Some(24.8));
+        assert_eq!(sample.vehicle.fuel_capacity_liters, Some(110.0));
+        assert_eq!(sample.vehicle.engine_water_temp_c, Some(93.0));
+        assert_eq!(sample.vehicle.brake_bias_front_percent, Some(60.0));
+        assert_eq!(sample.vehicle.tc_setting, Some(3));
+        assert_eq!(sample.vehicle.abs_setting, Some(2));
+        assert_eq!(sample.vehicle.battery_charge_percent, Some(75.0));
+        assert_eq!(sample.metadata.lap_invalidated, Some(true));
+        assert_eq!(sample.wheels.front_left.pressure_kpa, Some(182.0));
+        assert_eq!(sample.wheels.front_left.surface_temp_center_c, Some(110.0));
+        assert_eq!(sample.wheels.front_left.brake_temp_c, Some(620.0));
+        assert_eq!(sample.wheels.front_left.wear_percent, Some(82.0));
+        assert_eq!(sample.sector_times.current_sector1_seconds, Some(31.0));
+        assert_eq!(sample.sector_times.current_sector2_seconds, Some(32.0));
+        assert_eq!(sample.sector_times.last_sector3_seconds, Some(31.0));
+        assert_eq!(sample.sector_times.best_sector3_seconds, Some(30.0));
         assert_eq!(sample.metadata.session_kind, SessionKind::Qualifying);
         assert_eq!(sample.metadata.game_phase, GamePhase::GreenFlag);
         assert!(sample.metadata.in_pits);

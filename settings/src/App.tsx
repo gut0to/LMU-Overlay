@@ -703,7 +703,7 @@ function App() {
               const enabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
-                  <input type="checkbox" checked={enabled} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
+                  <input type="checkbox" checked={enabled} disabled={widget.status === "Unavailable in current LMU interface"} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
                   <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement} · {widget.status}</small></span>
                 </label>
               );
