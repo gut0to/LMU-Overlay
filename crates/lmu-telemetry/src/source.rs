@@ -190,6 +190,8 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
 struct PlatformTelemetrySource {
     handle: windows_sys::Win32::Foundation::HANDLE,
     view: windows_sys::Win32::System::Memory::MEMORY_MAPPED_VIEW_ADDRESS,
+    cached_field: Arc<[crate::VehicleScoringSnapshot]>,
+    last_scoring_read: Instant,
 }
 
 // The mapping is opened read-only and is owned by this wrapper. Moving the
@@ -218,6 +220,8 @@ impl PlatformTelemetrySource {
                 view: MEMORY_MAPPED_VIEW_ADDRESS {
                     Value: ptr::null_mut(),
                 },
+                cached_field: Arc::from(Vec::new()),
+                last_scoring_read: Instant::now() - Duration::from_secs(1),
             });
         }
 
@@ -229,7 +233,12 @@ impl PlatformTelemetrySource {
             return Err(TelemetryError::MappingFailed);
         }
 
-        Ok(Self { handle, view })
+        Ok(Self {
+            handle,
+            view,
+            cached_field: Arc::from(Vec::new()),
+            last_scoring_read: Instant::now() - Duration::from_secs(1),
+        })
     }
 
     fn is_available(&self) -> bool {
@@ -242,8 +251,17 @@ impl PlatformTelemetrySource {
         }
 
         let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
-        read_consistent_sample_from_bytes(bytes)
-            .map(|sample| sample.map(TelemetrySample::sanitized))
+        let refresh_scoring = self.last_scoring_read.elapsed() >= Duration::from_millis(100);
+        let cached_field = refresh_scoring.then_some(&self.cached_field);
+        let sample =
+            read_consistent_sample_from_bytes(bytes, cached_field)?.map(TelemetrySample::sanitized);
+        if refresh_scoring {
+            if let Some(sample) = &sample {
+                self.cached_field = sample.field.clone();
+                self.last_scoring_read = Instant::now();
+            }
+        }
+        Ok(sample)
     }
 }
 
@@ -283,10 +301,11 @@ impl PlatformTelemetrySource {
 
 fn read_consistent_sample_from_bytes(
     bytes: &[u8],
+    cached_field: Option<&Arc<[crate::VehicleScoringSnapshot]>>,
 ) -> Result<Option<TelemetrySample>, TelemetryError> {
     let mut last_error = None;
     for _ in 0..MAX_TORN_FRAME_RETRIES {
-        match read_sample_once(bytes) {
+        match read_sample_once(bytes, cached_field) {
             Ok(sample) => return Ok(sample),
             Err(TelemetryError::TornFrame) => last_error = Some(TelemetryError::TornFrame),
             Err(error) => return Err(error),
@@ -298,10 +317,13 @@ fn read_consistent_sample_from_bytes(
 
 #[cfg(test)]
 fn read_sample_from_bytes(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryError> {
-    read_consistent_sample_from_bytes(bytes)
+    read_consistent_sample_from_bytes(bytes, None)
 }
 
-fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryError> {
+fn read_sample_once(
+    bytes: &[u8],
+    cached_field: Option<&Arc<[crate::VehicleScoringSnapshot]>>,
+) -> Result<Option<TelemetrySample>, TelemetryError> {
     if bytes.len() < BUFFER_SIZE {
         return Err(TelemetryError::BufferTooSmall);
     }
@@ -324,6 +346,10 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
     let vehicle_offset = OFFSET_TELEMETRY_VEHICLES + player_index * VEHICLE_TELEMETRY_SIZE;
     let player_slot_id = read_i32(bytes, vehicle_offset + OFFSET_TELEMETRY_SLOT_ID)?;
     let scoring_offset = find_player_scoring_offset(bytes, scoring_vehicles, player_slot_id)?;
+    let field = match cached_field {
+        Some(field) => Arc::clone(field),
+        None => Arc::from(read_field(bytes, scoring_vehicles)?),
+    };
 
     let sample = TelemetrySample {
         timestamp_seconds: read_f64(bytes, OFFSET_SCORING_CURRENT_ET)
@@ -347,7 +373,7 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         wheels: read_wheels(bytes, vehicle_offset)?,
         session: read_session(bytes, scoring_offset)?,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
-        field: Arc::from(read_field(bytes, scoring_vehicles)?),
+        field,
     };
 
     ensure_same_frame(marker_before, read_frame_marker(bytes)?)?;
