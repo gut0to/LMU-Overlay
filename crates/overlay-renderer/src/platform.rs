@@ -1024,6 +1024,7 @@ mod windows_overlay {
     ) {
         let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
         let widget_options = config.extra_widgets.get(id).map(|widget| &widget.options);
+        let options = widget_options.cloned().unwrap_or_default();
         draw_extra_widget_panel(hdc, area, config, widget_style);
         let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
         if id == "relative" {
@@ -1089,12 +1090,20 @@ mod windows_overlay {
                 .map_or_else(|| "FLAG --".to_string(), semantic_flag),
             "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
                 (Some(fuel), Some(capacity)) if capacity > 0.0 => {
-                    let average = snapshot
-                        .fuel_average_lap_used
-                        .map_or_else(String::new, |value| format!("  AVG {value:.2}/lap"));
-                    let remaining = snapshot
-                        .fuel_estimated_laps_remaining
-                        .map_or_else(String::new, |value| format!("  {value:.1} laps"));
+                    let average = if options.show_average {
+                        snapshot
+                            .fuel_average_lap_used
+                            .map_or_else(String::new, |value| format!("  AVG {value:.2}/lap"))
+                    } else {
+                        String::new()
+                    };
+                    let remaining = if options.show_estimated_laps {
+                        snapshot
+                            .fuel_estimated_laps_remaining
+                            .map_or_else(String::new, |value| format!("  {value:.1} laps"))
+                    } else {
+                        String::new()
+                    };
                     format!(
                         "FUEL {fuel:.1} L  {:.0}%{average}{remaining}",
                         fuel / capacity * 100.0
@@ -1160,7 +1169,7 @@ mod windows_overlay {
                     "DAMAGE --".to_string()
                 }
             }
-            "lap_history" => "LAP HISTORY UNAVAILABLE".to_string(),
+            "lap_history" => "LAP HISTORY".to_string(),
             _ => "--".to_string(),
         };
         let title_height = if widget_style.is_some_and(|style| style.show_title) {
@@ -1191,23 +1200,27 @@ mod windows_overlay {
         let detail_color = widget_secondary_color(config, widget_style);
         match id {
             "fuel" => {
-                if let Some(last) = snapshot.fuel_last_lap_used {
-                    draw_text(
-                        hdc,
-                        area.x + padding,
-                        detail_y,
-                        detail_color,
-                        &format!("LAST {last:.2} L/lap"),
-                    );
+                if options.show_last_lap {
+                    if let Some(last) = snapshot.fuel_last_lap_used {
+                        draw_text(
+                            hdc,
+                            area.x + padding,
+                            detail_y,
+                            detail_color,
+                            &format!("LAST {last:.2} L/lap"),
+                        );
+                    }
                 }
-                if let Some(remaining) = snapshot.fuel_estimated_laps_remaining {
-                    draw_text(
-                        hdc,
-                        area.x + padding,
-                        detail_y + scale_px(config, 18),
-                        detail_color,
-                        &format!("REMAIN {remaining:.1} laps"),
-                    );
+                if options.show_estimated_laps {
+                    if let Some(remaining) = snapshot.fuel_estimated_laps_remaining {
+                        draw_text(
+                            hdc,
+                            area.x + padding,
+                            detail_y + scale_px(config, 18),
+                            detail_color,
+                            &format!("REMAIN {remaining:.1} laps"),
+                        );
+                    }
                 }
             }
             "tyres" => draw_four_wheel_detail(

@@ -672,6 +672,14 @@ impl Default for WidgetOptions {
     }
 }
 
+impl WidgetOptions {
+    fn normalize(&mut self) {
+        self.cars_ahead = self.cars_ahead.min(8);
+        self.cars_behind = self.cars_behind.min(8);
+        self.rows = self.rows.clamp(1, 20);
+    }
+}
+
 impl WidgetInstanceConfig {
     fn disabled(index: usize) -> Self {
         let column = (index % 3) as i32;
@@ -1081,6 +1089,7 @@ impl PresetProfileConfig {
         for widget in self.extra_widgets.values_mut() {
             widget.layout.normalize();
             widget.style.normalize();
+            widget.options.normalize();
         }
     }
 }
