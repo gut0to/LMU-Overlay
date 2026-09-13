@@ -2632,7 +2632,7 @@ mod windows_overlay {
         line_width: i32,
         value: impl Fn(TelemetrySnapshot) -> f64,
     ) {
-        let pen = CreatePen(PS_SOLID, line_width.max(1), color);
+        let pen = CreatePen(PS_SOLID, line_width.max(1), widget_color(color));
         let old_pen = SelectObject(hdc, pen);
         let segment_count = history.len().saturating_sub(1).max(1) as f64;
         let mut previous = None;
