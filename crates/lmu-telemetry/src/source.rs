@@ -1070,30 +1070,28 @@ mod tests {
 
     #[test]
     fn derives_gaps_from_adjacent_same_lap_scoring_rows() {
-        let make_car = |slot_id, place, lap, leader_gap, is_player| {
-            crate::VehicleScoringSnapshot {
-                slot_id,
-                driver_name: None,
-                vehicle_name: None,
-                vehicle_class: None,
-                place: Some(place),
-                lap_number: lap,
-                lap_distance_m: None,
-                current_sector: None,
-                last_lap_seconds: None,
-                best_lap_seconds: None,
-                gap_to_next_seconds: None,
-                gap_to_leader_seconds: Some(leader_gap),
-                laps_behind_next: None,
-                laps_behind_leader: None,
-                in_pits: false,
-                in_garage: false,
-                pit_state: None,
-                finish_status: None,
-                flag: None,
-                is_player,
-                world_position: None,
-            }
+        let make_car = |slot_id, place, lap, leader_gap, is_player| crate::VehicleScoringSnapshot {
+            slot_id,
+            driver_name: None,
+            vehicle_name: None,
+            vehicle_class: None,
+            place: Some(place),
+            lap_number: lap,
+            lap_distance_m: None,
+            current_sector: None,
+            last_lap_seconds: None,
+            best_lap_seconds: None,
+            gap_to_next_seconds: None,
+            gap_to_leader_seconds: Some(leader_gap),
+            laps_behind_next: None,
+            laps_behind_leader: None,
+            in_pits: false,
+            in_garage: false,
+            pit_state: None,
+            finish_status: None,
+            flag: None,
+            is_player,
+            world_position: None,
         };
         let field = vec![
             make_car(10, 4, 12, 4.0, false),
