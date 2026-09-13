@@ -853,18 +853,20 @@ impl PresetConfig {
 
 impl Default for PresetConfig {
     fn default() -> Self {
+        let mut race = PresetProfileConfig::race().with_extra_widgets(&[
+            "position",
+            "relative",
+            "standings",
+            "fuel",
+            "flags",
+        ]);
+        place_default_race_widget_layouts(&mut race.extra_widgets);
         Self {
             practice: PresetProfileConfig::practice()
                 .with_extra_widgets(&["tyres", "brakes", "fuel", "engine", "weather"]),
             qualifying: PresetProfileConfig::qualifying()
                 .with_extra_widgets(&["tyres", "brakes", "engine"]),
-            race: PresetProfileConfig::race().with_extra_widgets(&[
-                "position",
-                "relative",
-                "standings",
-                "fuel",
-                "flags",
-            ]),
+            race,
             endurance: PresetProfileConfig::endurance().with_extra_widgets(&[
                 "position",
                 "relative",
@@ -1182,13 +1184,13 @@ pub fn default_config_text() -> &'static str {
         if let Some(standings) = config.extra_widgets.get_mut("standings") {
             standings.enabled = false;
         }
-        place_default_race_widgets(&mut config);
+        place_default_race_widget_layouts(&mut config.extra_widgets);
         toml::to_string_pretty(&config)
             .expect("the built-in HashOverlay configuration must serialize")
     })
 }
 
-fn place_default_race_widgets(config: &mut OverlayConfig) {
+fn place_default_race_widget_layouts(extra_widgets: &mut BTreeMap<String, WidgetInstanceConfig>) {
     let placements = [
         ("position", 210, 230, 196, 52),
         ("relative", 14, 174, 196, 52),
@@ -1197,7 +1199,7 @@ fn place_default_race_widgets(config: &mut OverlayConfig) {
         ("flags", 14, 230, 196, 52),
     ];
     for (id, x, y, width, height) in placements {
-        if let Some(widget) = config.extra_widgets.get_mut(id) {
+        if let Some(widget) = extra_widgets.get_mut(id) {
             widget.layout.x = x;
             widget.layout.y = y;
             widget.layout.width = width;
