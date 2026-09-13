@@ -1,8 +1,11 @@
+use std::sync::Arc;
+
 use lmu_telemetry::{
-    GamePhase, Gear, SessionData, SessionKind, TelemetrySample, VehicleSystems, Wheels,
+    GamePhase, Gear, SessionData, SessionKind, TelemetrySample, VehicleScoringSnapshot,
+    VehicleSystems, Wheels,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TelemetrySnapshot {
     pub throttle: f64,
     pub brake: f64,
@@ -55,6 +58,7 @@ pub struct TelemetrySnapshot {
     pub fuel_last_lap_used: Option<f64>,
     pub fuel_average_lap_used: Option<f64>,
     pub fuel_estimated_laps_remaining: Option<f64>,
+    pub field: Arc<[VehicleScoringSnapshot]>,
 }
 
 impl From<TelemetrySample> for TelemetrySnapshot {
@@ -113,6 +117,7 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             fuel_last_lap_used: None,
             fuel_average_lap_used: None,
             fuel_estimated_laps_remaining: None,
+            field: sample.field,
         }
     }
 }

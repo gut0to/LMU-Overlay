@@ -347,19 +347,19 @@ impl LapEngine {
     }
 
     pub fn update(&mut self, snapshot: TelemetrySnapshot) -> LapAnalysis {
-        self.reset_if_new_session(snapshot);
+        self.reset_if_new_session(&snapshot);
 
         if self.current_lap_number != Some(snapshot.lap_number) {
-            self.finish_current_lap(snapshot);
+            self.finish_current_lap(&snapshot);
         }
 
-        let sample_is_valid = is_lap_sample_valid(snapshot);
+        let sample_is_valid = is_lap_sample_valid(&snapshot);
         if !sample_is_valid {
             self.current_lap_valid = false;
         }
 
         if sample_is_valid {
-            self.record_driving_events(snapshot);
+            self.record_driving_events(&snapshot);
         }
 
         let progress = snapshot.lap_progress;
@@ -446,7 +446,7 @@ impl LapEngine {
         self.pending_personal_best.take()
     }
 
-    fn finish_current_lap(&mut self, snapshot: TelemetrySnapshot) {
+    fn finish_current_lap(&mut self, snapshot: &TelemetrySnapshot) {
         if let Some(lap_time) = self.current_points.last().map(|point| point.time_seconds) {
             if self.current_points.len() >= self.config.min_reference_points {
                 if let Some(mut lap) = ReferenceLap::new(lap_time, self.current_points.clone()) {
@@ -495,7 +495,7 @@ impl LapEngine {
         }
     }
 
-    fn record_driving_events(&mut self, snapshot: TelemetrySnapshot) {
+    fn record_driving_events(&mut self, snapshot: &TelemetrySnapshot) {
         if crossed_up(
             self.previous_brake,
             snapshot.brake,
@@ -536,7 +536,7 @@ impl LapEngine {
 
     fn push_event(
         &mut self,
-        snapshot: TelemetrySnapshot,
+        snapshot: &TelemetrySnapshot,
         kind: DrivingEventKind,
         input_value: f64,
     ) {
@@ -651,8 +651,8 @@ impl LapEngine {
         Some(delta_meters)
     }
 
-    fn reset_if_new_session(&mut self, snapshot: TelemetrySnapshot) {
-        let marker = SessionMarker::from_snapshot(snapshot);
+    fn reset_if_new_session(&mut self, snapshot: &TelemetrySnapshot) {
+        let marker = SessionMarker::from_snapshot(snapshot.clone());
         if self
             .session_marker
             .is_some_and(|previous| marker.starts_new_session(previous))
@@ -842,7 +842,7 @@ fn interpolate_points(points: &[ReferencePoint], progress: f64) -> ReferencePoin
     }
 }
 
-fn is_lap_sample_valid(snapshot: TelemetrySnapshot) -> bool {
+fn is_lap_sample_valid(snapshot: &TelemetrySnapshot) -> bool {
     snapshot.game_phase == lmu_telemetry::GamePhase::GreenFlag
         && !snapshot.in_pits
         && !snapshot.in_garage
@@ -1147,6 +1147,7 @@ mod tests {
             in_garage: false,
             lap_invalidated: None,
             player_slot_id: 42,
+            field: std::sync::Arc::from(Vec::new()),
             delta_seconds: None,
             predicted_lap_seconds: None,
             session_best_seconds: None,

@@ -220,7 +220,7 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
                 snapshot.fuel_last_lap_used = fuel.last_lap_used;
                 snapshot.fuel_average_lap_used = fuel.average_lap_used;
                 snapshot.fuel_estimated_laps_remaining = fuel.estimated_laps_remaining;
-                lap_engine.update(snapshot).apply_to(&mut snapshot);
+                lap_engine.update(snapshot.clone()).apply_to(&mut snapshot);
                 if let Some(lap) = lap_engine.take_new_personal_best() {
                     if let Some(lap_key) = &current_lap_key {
                         let _ = runtime_lap_writer.send((lap_key.clone(), lap));

@@ -279,7 +279,7 @@ mod windows_overlay {
                     let acquisition_started = Instant::now();
                     if let Some(snapshot) = next_snapshot() {
                         if let Ok(mut latest) = telemetry_state.latest.lock() {
-                            *latest = Some(snapshot);
+                            *latest = Some(snapshot.clone());
                         }
                         if let Ok(mut history) = telemetry_state.history.lock() {
                             history.push(snapshot);
@@ -874,7 +874,7 @@ mod windows_overlay {
         if let Ok(mut stats) = state.stats.lock() {
             stats.render_frames += 1;
         }
-        let latest = state.latest.lock().ok().and_then(|value| *value);
+        let latest = state.latest.lock().ok().and_then(|value| value.clone());
 
         draw_panel(hdc, &config);
 
@@ -944,11 +944,11 @@ mod windows_overlay {
             match widget {
                 WidgetId::Telemetry if config.widgets.title || config.widgets.speed_gear_rpm => {
                     draw_widget_panel(hdc, area, config);
-                    draw_telemetry_widget(hdc, snapshot, config, area);
+                    draw_telemetry_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::LapTiming if config.widgets.lap_info || config.widgets.lap_timing => {
                     draw_widget_panel(hdc, area, config);
-                    draw_lap_timing_widget(hdc, snapshot, config, area);
+                    draw_lap_timing_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Inputs
                     if config.widgets.pedals
@@ -956,26 +956,26 @@ mod windows_overlay {
                         || config.widgets.input_history =>
                 {
                     draw_widget_panel(hdc, area, config);
-                    draw_input_widget(hdc, snapshot, config, area);
+                    draw_input_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Timing if config.widgets.delta_timing => {
                     draw_widget_panel(hdc, area, config);
-                    draw_delta_widget(hdc, snapshot, config, area);
+                    draw_delta_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Sectors if config.widgets.sectors => {
                     draw_widget_panel(hdc, area, config);
-                    draw_sectors_widget(hdc, snapshot, config, area);
+                    draw_sectors_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::MiniSectors if config.widgets.mini_sector_widget => {
                     draw_widget_panel(hdc, area, config);
-                    draw_mini_sectors_widget(hdc, snapshot, config, area);
+                    draw_mini_sectors_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Coaching if config.widgets.coaching && config.coaching.mode != "off" => {
                     draw_widget_panel(hdc, area, config);
-                    draw_coaching_widget(hdc, snapshot, config, area);
+                    draw_coaching_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Extra(id) => {
-                    draw_extra_widget(hdc, snapshot, config, area, id);
+                    draw_extra_widget(hdc, snapshot.clone(), config, area, id);
                 }
                 _ => {}
             }
@@ -1025,6 +1025,14 @@ mod windows_overlay {
         let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
         draw_extra_widget_panel(hdc, area, config, widget_style);
         let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
+        if id == "relative" {
+            draw_relative_widget(hdc, &snapshot, config, area, padding, widget_style);
+            return;
+        }
+        if id == "standings" {
+            draw_standings_widget(hdc, &snapshot, config, area, padding, widget_style);
+            return;
+        }
         let value = match id {
             "speed" => format!(
                 "{:.0} {}",
@@ -1123,7 +1131,7 @@ mod windows_overlay {
                     "DAMAGE --".to_string()
                 }
             }
-            "relative" | "standings" | "lap_history" => "WAITING FOR OFFICIAL SCORING".to_string(),
+            "lap_history" => "LAP HISTORY UNAVAILABLE".to_string(),
             _ => "--".to_string(),
         };
         let title_height = if widget_style.is_some_and(|style| style.show_title) {
@@ -1258,6 +1266,125 @@ mod windows_overlay {
                 ),
             ),
             _ => {}
+        }
+    }
+
+    unsafe fn draw_relative_widget(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+    ) {
+        let title_color = widget_secondary_color(config, style);
+        let text_color = widget_primary_color(config, style);
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding,
+            title_color,
+            "RELATIVE",
+        );
+        let player_index = snapshot
+            .field
+            .iter()
+            .position(|car| car.is_player || car.slot_id == snapshot.player_slot_id);
+        let Some(player_index) = player_index else {
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding + scale_px(config, 20),
+                text_color,
+                "SCORING DATA --",
+            );
+            return;
+        };
+        let mut cars: Vec<&_> = snapshot.field.iter().collect();
+        cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        let Some(player_position) = cars
+            .iter()
+            .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
+        else {
+            return;
+        };
+        let start = player_position.saturating_sub(2);
+        let end = (player_position + 3).min(cars.len());
+        for (row, car) in cars[start..end].iter().enumerate() {
+            let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
+            let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
+                ">"
+            } else {
+                " "
+            };
+            let name = car.driver_name.as_deref().unwrap_or("UNKNOWN");
+            let gap = if car.is_player || car.slot_id == snapshot.player_slot_id {
+                "0.000".to_string()
+            } else {
+                car.gap_to_leader_seconds
+                    .zip(snapshot.field[player_index].gap_to_leader_seconds)
+                    .map(|(other, player)| format!("{:+.3}", other - player))
+                    .unwrap_or_else(|| "--".to_string())
+            };
+            draw_text(
+                hdc,
+                area.x + padding,
+                y,
+                text_color,
+                &format!("{marker} P{} {:<16} {}s", car.place.unwrap_or(0), name, gap),
+            );
+        }
+    }
+
+    unsafe fn draw_standings_widget(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+    ) {
+        let title_color = widget_secondary_color(config, style);
+        let text_color = widget_primary_color(config, style);
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding,
+            title_color,
+            "STANDINGS",
+        );
+        let mut cars: Vec<&_> = snapshot.field.iter().collect();
+        cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        if cars.is_empty() {
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding + scale_px(config, 20),
+                text_color,
+                "SCORING DATA --",
+            );
+            return;
+        }
+        for (row, car) in cars.iter().take(8).enumerate() {
+            let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
+            let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
+                ">"
+            } else {
+                " "
+            };
+            let name = car.driver_name.as_deref().unwrap_or("UNKNOWN");
+            let lap = if car.lap_number > 0 {
+                format!("L{}", car.lap_number)
+            } else {
+                "--".to_string()
+            };
+            draw_text(
+                hdc,
+                area.x + padding,
+                y,
+                text_color,
+                &format!("{marker} {:>2} {:<16} {lap}", car.place.unwrap_or(0), name),
+            );
         }
     }
 
@@ -1807,7 +1934,7 @@ mod windows_overlay {
             }
         }
         if config.coaching.input_match && hints < max_hints {
-            if let Some(message) = input_coaching_message(snapshot) {
+            if let Some(message) = input_coaching_message(snapshot.clone()) {
                 draw_text(hdc, x, y, colors.reference, message);
                 hints += 1;
                 y += scale_size(config, 18);
@@ -2140,7 +2267,7 @@ mod windows_overlay {
         let old_pen = SelectObject(hdc, pen);
         let segment_count = history.len().saturating_sub(1).max(1) as f64;
         let mut previous = None;
-        for (index, sample) in history.iter().copied().enumerate() {
+        for (index, sample) in history.iter().cloned().enumerate() {
             let Some(before) = previous else {
                 previous = Some(sample);
                 continue;
@@ -2150,8 +2277,8 @@ mod windows_overlay {
             let x2 = area.x + ((index as f64 / segment_count) * area.width as f64) as i32;
             let y1 =
                 area.y + area.height - (value(before).clamp(0.0, 1.0) * area.height as f64) as i32;
-            let y2 =
-                area.y + area.height - (value(sample).clamp(0.0, 1.0) * area.height as f64) as i32;
+            let y2 = area.y + area.height
+                - (value(sample.clone()).clamp(0.0, 1.0) * area.height as f64) as i32;
             MoveToEx(hdc, x1, y1, ptr::null_mut());
             LineTo(hdc, x2, y2);
             previous = Some(sample);
@@ -2416,6 +2543,7 @@ mod windows_overlay {
                 in_garage: false,
                 lap_invalidated: None,
                 player_slot_id: 42,
+                field: std::sync::Arc::from(Vec::new()),
                 delta_seconds: None,
                 predicted_lap_seconds: None,
                 session_best_seconds: None,
