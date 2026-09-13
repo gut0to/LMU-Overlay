@@ -419,6 +419,15 @@ mod windows_overlay {
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
                 apply_window_config(hwnd, &config);
+                if let Some(backend) = state.d2d.as_ref() {
+                    unsafe {
+                        if let Err(error) =
+                            backend.resize(config.window.width as u32, config.window.height as u32)
+                        {
+                            log::warn!("Could not resize Direct2D render target: {error}");
+                        }
+                    }
+                }
                 unsafe {
                     reload_hotkeys(hwnd, &config);
                 }

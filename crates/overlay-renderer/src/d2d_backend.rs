@@ -74,6 +74,11 @@ impl D2dBackend {
         self.target.EndDraw(None, None)
     }
 
+    pub unsafe fn resize(&self, width: u32, height: u32) -> Result<()> {
+        let size = D2D_SIZE_U { width, height };
+        self.target.Resize(&size)
+    }
+
     #[allow(dead_code)]
     pub fn factory(&self) -> &ID2D1Factory {
         &self.factory
