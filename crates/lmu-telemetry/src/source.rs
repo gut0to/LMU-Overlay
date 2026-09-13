@@ -344,7 +344,7 @@ fn read_sample_once(bytes: &[u8]) -> Result<Option<TelemetrySample>, TelemetryEr
         sector_times: read_sector_times(bytes, scoring_offset)?,
         vehicle: read_vehicle_systems(bytes, vehicle_offset)?,
         wheels: read_wheels(bytes, vehicle_offset)?,
-        session: read_session(bytes)?,
+        session: read_session(bytes, scoring_offset)?,
         metadata: read_metadata(bytes, scoring_offset, vehicle_offset, player_slot_id)?,
     };
 
@@ -584,11 +584,30 @@ fn read_wheel(bytes: &[u8], offset: usize) -> Result<WheelData, TelemetryError> 
     })
 }
 
-fn read_session(bytes: &[u8]) -> Result<SessionData, TelemetryError> {
+fn read_session(
+    bytes: &[u8],
+    scoring_offset: Option<usize>,
+) -> Result<SessionData, TelemetryError> {
+    let position = scoring_offset
+        .map(|offset| read_u8(bytes, offset + raw::scoring::PLACE))
+        .transpose()?;
+    let gap_ahead = scoring_offset
+        .map(|offset| read_f64(bytes, offset + raw::scoring::TIME_BEHIND_NEXT))
+        .transpose()?
+        .and_then(finite);
+    let penalties = scoring_offset
+        .map(|offset| read_i16(bytes, offset + raw::scoring::NUM_PENALTIES))
+        .transpose()?
+        .map(i32::from);
     Ok(SessionData {
-        position: None,
+        position: position.map(i32::from).filter(|value| *value > 0),
         total_vehicles: Some(read_i32(bytes, OFFSET_SCORING_NUM_VEHICLES)?),
-        flag: Some(read_i8(bytes, OFFSET_SCORING_YELLOW_FLAG)? as i32),
+        flag: scoring_offset
+            .map(|offset| read_u8(bytes, offset + raw::scoring::FLAG))
+            .transpose()?
+            .map(i32::from),
+        gap_ahead_seconds: gap_ahead,
+        gap_behind_seconds: None,
         session_remaining_seconds: finite(read_f32(bytes, OFFSET_SCORING_SESSION_REMAINING)? as f64),
         ambient_temp_c: finite(read_f64(bytes, OFFSET_SCORING_AMBIENT_TEMP)?),
         track_temp_c: finite(read_f64(bytes, OFFSET_SCORING_TRACK_TEMP)?),
@@ -606,7 +625,14 @@ fn read_session(bytes: &[u8]) -> Result<SessionData, TelemetryError> {
         time_of_day: finite(read_f32(bytes, OFFSET_SCORING_TIME_OF_DAY)? as f64),
         cloud_coverage: Some(read_u8(bytes, OFFSET_SCORING_CLOUD_COVERAGE)?),
         track_grip_level: Some(read_u8(bytes, OFFSET_SCORING_TRACK_GRIP)?),
-        ..SessionData::default()
+        count_lap_flag: scoring_offset
+            .map(|offset| read_u8(bytes, offset + raw::scoring::COUNT_LAP_FLAG))
+            .transpose()?
+            .map(i32::from),
+        pit_state: scoring_offset
+            .map(|offset| read_u8(bytes, offset + raw::scoring::PIT_STATE))
+            .transpose()?,
+        penalties,
     })
 }
 
@@ -650,6 +676,10 @@ fn is_supported_game_version(version: i32) -> bool {
 
 fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
     read_array::<4>(bytes, offset).map(i32::from_le_bytes)
+}
+
+fn read_i16(bytes: &[u8], offset: usize) -> Result<i16, TelemetryError> {
+    read_array::<2>(bytes, offset).map(i16::from_le_bytes)
 }
 
 fn read_u8(bytes: &[u8], offset: usize) -> Result<u8, TelemetryError> {
@@ -792,6 +822,15 @@ mod tests {
         write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_SECTOR, 2);
         write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_IS_PLAYER, 1);
         write_u8(&mut bytes, scoring_offset + OFFSET_SCORING_IN_PITS, 1);
+        write_u8(&mut bytes, scoring_offset + raw::scoring::PLACE, 5);
+        write_u8(&mut bytes, scoring_offset + raw::scoring::FLAG, 6);
+        write_u8(&mut bytes, scoring_offset + raw::scoring::COUNT_LAP_FLAG, 2);
+        write_u8(&mut bytes, scoring_offset + raw::scoring::PIT_STATE, 3);
+        write_f64(
+            &mut bytes,
+            scoring_offset + raw::scoring::TIME_BEHIND_NEXT,
+            1.25,
+        );
         write_string(
             &mut bytes,
             scoring_offset + OFFSET_SCORING_VEHICLE_NAME,
@@ -857,6 +896,11 @@ mod tests {
             Some("Porsche 963 Scoring")
         );
         assert_eq!(sample.metadata.vehicle_class.as_deref(), Some("Hypercar"));
+        assert_eq!(sample.session.position, Some(5));
+        assert_eq!(sample.session.flag, Some(6));
+        assert_eq!(sample.session.count_lap_flag, Some(2));
+        assert_eq!(sample.session.pit_state, Some(3));
+        assert_eq!(sample.session.gap_ahead_seconds, Some(1.25));
         assert_eq!(sample.vehicle.fuel_liters, Some(24.8));
         assert_eq!(sample.vehicle.fuel_capacity_liters, Some(110.0));
         assert_eq!(sample.vehicle.engine_water_temp_c, Some(93.0));

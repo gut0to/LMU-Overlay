@@ -276,6 +276,7 @@ pub struct SessionData {
     pub time_of_day: Option<f64>,
     pub cloud_coverage: Option<u8>,
     pub track_grip_level: Option<u8>,
+    pub pit_state: Option<u8>,
 }
 
 impl TelemetrySample {

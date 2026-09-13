@@ -1049,7 +1049,7 @@ mod windows_overlay {
             "flags" => snapshot
                 .session
                 .flag
-                .map_or_else(|| "FLAG --".to_string(), |flag| format!("FLAG {flag}")),
+                .map_or_else(|| "FLAG --".to_string(), semantic_flag),
             "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
                 (Some(fuel), Some(capacity)) if capacity > 0.0 => {
                     let average = snapshot
@@ -1150,6 +1150,20 @@ mod windows_overlay {
             widget_primary_color(config, widget_style),
             &value,
         );
+    }
+
+    fn semantic_flag(flag: i32) -> String {
+        let label = match flag {
+            0 => "GREEN",
+            1 => "BLUE",
+            2 => "YELLOW",
+            3 => "RED",
+            4 => "BLACK",
+            5 => "WHITE",
+            6 => "BLUE",
+            other => return format!("FLAG UNKNOWN ({other})"),
+        };
+        format!("FLAG {label}")
     }
 
     unsafe fn draw_extra_widget_panel(
