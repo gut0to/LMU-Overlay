@@ -5,6 +5,7 @@ use overlay_renderer::{
     widget_catalog as overlay_widget_catalog, WidgetDefinition,
 };
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Debug, Serialize)]
 struct ConfigResponse {
@@ -62,12 +63,26 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 }
 
 #[tauri::command]
-fn start_overlay() -> Result<(), String> {
-    let executable = std::env::current_exe()
-        .ok()
-        .and_then(|path| path.parent().map(|parent| parent.join("hashoverlay.exe")))
-        .filter(|path| path.exists())
-        .unwrap_or_else(|| PathBuf::from("hashoverlay.exe"));
+fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    let mut candidates = Vec::new();
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("hashoverlay.exe"));
+    }
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(parent) = current_exe.parent() {
+            candidates.push(parent.join("hashoverlay.exe"));
+            // `cargo tauri dev` keeps the Settings binary below the workspace
+            // while the overlay binary remains in the workspace target folder.
+            candidates.push(parent.join("..\\..\\..\\target\\debug\\hashoverlay.exe"));
+            candidates.push(parent.join("..\\..\\..\\target\\release\\hashoverlay.exe"));
+        }
+    }
+    let executable = candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| {
+            "Could not find the bundled HashOverlay executable. Reinstall HashOverlay Settings or build the overlay first.".to_string()
+        })?;
 
     Command::new(executable)
         .arg("--overlay")

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Gear {
@@ -165,6 +165,7 @@ pub struct TelemetrySample {
     pub wheels: Wheels,
     pub session: SessionData,
     pub metadata: TelemetryMetadata,
+    pub field: Arc<[VehicleScoringSnapshot]>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -193,14 +194,48 @@ pub struct VehicleSystems {
     pub brake_bias_front_percent: Option<f64>,
     pub speed_limiter_active: Option<bool>,
     pub drs_active: Option<bool>,
+    pub wiper_state: Option<u8>,
+    pub lift_and_coast_progress: Option<f64>,
+    pub track_limit_steps: Option<u8>,
     pub tc_active: Option<bool>,
     pub abs_active: Option<bool>,
     pub tc_setting: Option<i32>,
     pub abs_setting: Option<i32>,
     pub motor_map: Option<i32>,
     pub battery_charge_percent: Option<f64>,
+    pub state_of_charge_percent: Option<f64>,
     pub virtual_energy_percent: Option<f64>,
     pub hybrid_regen_active: Option<bool>,
+    pub scheduled_stops: Option<u8>,
+    pub overheating: Option<bool>,
+    pub headlights: Option<bool>,
+    pub body_detached: Option<bool>,
+    pub dent_severity: [Option<u8>; 8],
+    pub last_impact_et: Option<f64>,
+    pub last_impact_magnitude: Option<f64>,
+    pub last_impact_position: Option<[f64; 3]>,
+    pub steering_torque_nm: Option<f64>,
+    pub electric_motor_torque_nm: Option<f64>,
+    pub electric_motor_rpm: Option<f64>,
+    pub electric_motor_temp_c: Option<f64>,
+    pub electric_motor_water_temp_c: Option<f64>,
+    pub electric_motor_state: Option<u8>,
+    pub tc_slip: Option<u8>,
+    pub tc_max: Option<u8>,
+    pub tc_slip_max: Option<u8>,
+    pub tc_cut: Option<u8>,
+    pub tc_cut_max: Option<u8>,
+    pub abs_max: Option<u8>,
+    pub motor_map_max: Option<u8>,
+    pub migration: Option<u8>,
+    pub migration_max: Option<u8>,
+    pub front_anti_sway: Option<u8>,
+    pub front_anti_sway_max: Option<u8>,
+    pub rear_anti_sway: Option<u8>,
+    pub rear_anti_sway_max: Option<u8>,
+    pub regen_kw: Option<f64>,
+    pub gap_car_ahead_seconds: Option<f64>,
+    pub gap_car_behind_seconds: Option<f64>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -212,10 +247,22 @@ pub struct WheelData {
     pub carcass_temp_c: Option<f64>,
     pub wear_percent: Option<f64>,
     pub brake_temp_c: Option<f64>,
-    pub brake_pressure_kpa: Option<f64>,
+    /// LMU exposes this field as a normalized brake-pressure fraction.
+    pub brake_pressure_fraction: Option<f64>,
     pub grip_fraction: Option<f64>,
     pub detached: Option<bool>,
     pub flat: Option<bool>,
+    pub suspension_deflection_m: Option<f64>,
+    pub ride_height_m: Option<f64>,
+    pub suspension_force_n: Option<f64>,
+    pub rotation_rad_s: Option<f64>,
+    pub camber_rad: Option<f64>,
+    pub tyre_load_n: Option<f64>,
+    pub inner_temp_c: Option<f64>,
+    pub optimal_temp_c: Option<f64>,
+    pub compound_index: Option<u8>,
+    pub compound_type: Option<u8>,
+    pub surface_type: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -240,6 +287,40 @@ pub struct SessionData {
     pub track_temp_c: Option<f64>,
     pub rain_density: Option<f64>,
     pub track_wetness: Option<f64>,
+    pub max_laps: Option<i32>,
+    pub end_time_seconds: Option<f64>,
+    pub yellow_flag_state: Option<i8>,
+    pub sector_flags: [Option<u8>; 3],
+    pub start_light: Option<u8>,
+    pub time_of_day: Option<f64>,
+    pub cloud_coverage: Option<u8>,
+    pub track_grip_level: Option<u8>,
+    pub pit_state: Option<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VehicleScoringSnapshot {
+    pub slot_id: i32,
+    pub driver_name: Option<String>,
+    pub vehicle_name: Option<String>,
+    pub vehicle_class: Option<String>,
+    pub place: Option<i32>,
+    pub lap_number: i32,
+    pub lap_distance_m: Option<f64>,
+    pub current_sector: Option<i32>,
+    pub last_lap_seconds: Option<f64>,
+    pub best_lap_seconds: Option<f64>,
+    pub gap_to_next_seconds: Option<f64>,
+    pub gap_to_leader_seconds: Option<f64>,
+    pub laps_behind_next: Option<i32>,
+    pub laps_behind_leader: Option<i32>,
+    pub in_pits: bool,
+    pub in_garage: bool,
+    pub pit_state: Option<i32>,
+    pub finish_status: Option<i32>,
+    pub flag: Option<i32>,
+    pub is_player: bool,
+    pub world_position: Option<[f64; 3]>,
 }
 
 impl TelemetrySample {
@@ -337,6 +418,7 @@ mod tests {
             wheels: Wheels::default(),
             session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
+            field: Arc::from(Vec::new()),
         };
 
         assert_eq!(
@@ -366,6 +448,7 @@ mod tests {
             wheels: Wheels::default(),
             session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
+            field: Arc::from(Vec::new()),
         }
         .sanitized();
 
@@ -401,6 +484,7 @@ mod tests {
             wheels: Wheels::default(),
             session: SessionData::default(),
             metadata: TelemetryMetadata::default(),
+            field: Arc::from(Vec::new()),
         };
 
         assert_eq!(sample.lap_progress(), Some(0.5));

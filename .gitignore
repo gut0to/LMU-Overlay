@@ -2,6 +2,7 @@
 /settings/node_modules/
 /settings/dist/
 /settings/src-tauri/target/
+/settings/src-tauri/gen/
 /.idea/
 /.vscode/
 *.pdb

@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 #[cfg(windows)]
@@ -14,7 +15,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use serde::{Deserialize, Serialize};
 
-const CURRENT_CONFIG_VERSION: u32 = 6;
+const CURRENT_CONFIG_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -99,6 +100,7 @@ impl OverlayConfig {
         self.style.opacity = self.style.opacity.clamp(32, 255);
         self.style.scale = self.style.scale.clamp(0.65, 1.75);
         self.style.line_thickness = self.style.line_thickness.clamp(1, 8);
+        self.style.border_radius = self.style.border_radius.clamp(0, 32);
         self.style.font_size = self.style.font_size.clamp(8, 36);
         self.style.font_weight = self.style.font_weight.clamp(100, 900);
         self.style.large_number_size = self.style.large_number_size.clamp(12, 72);
@@ -134,23 +136,31 @@ fn migrate_config(config: &mut OverlayConfig, from_version: u32) {
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
         2 => {
             migrate_v2_to_v3(config);
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
         3 => {
             migrate_v3_to_v4(config);
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
         4 => {
             migrate_v4_to_v5(config);
             migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
         }
-        5 => migrate_v5_to_v6(config),
+        5 => {
+            migrate_v5_to_v6(config);
+            migrate_v6_to_v7(config);
+        }
+        6 => migrate_v6_to_v7(config),
         _ => config.config_version = CURRENT_CONFIG_VERSION,
     }
 }
@@ -210,6 +220,12 @@ fn migrate_v5_to_v6(config: &mut OverlayConfig) {
         preset.profile.normalize();
     }
     config.config_version = CURRENT_CONFIG_VERSION;
+}
+
+fn migrate_v6_to_v7(config: &mut OverlayConfig) {
+    // WidgetOptions uses serde defaults, so existing widget instances remain
+    // compatible while gaining the new per-widget controls.
+    config.config_version = 7;
 }
 
 fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<()> {
@@ -293,6 +309,7 @@ pub struct StyleConfig {
     pub opacity: u8,
     pub scale: f64,
     pub line_thickness: i32,
+    pub border_radius: i32,
     pub background: String,
     pub border: String,
     pub primary_text: String,
@@ -321,6 +338,7 @@ impl Default for StyleConfig {
             opacity: 230,
             scale: 1.0,
             line_thickness: 2,
+            border_radius: 8,
             background: "#202020".to_string(),
             border: "#666666".to_string(),
             primary_text: "#ffffff".to_string(),
@@ -619,6 +637,85 @@ pub struct WidgetInstanceConfig {
     pub enabled: bool,
     pub layout: WidgetLayout,
     pub style: WidgetStyleConfig,
+    pub options: WidgetOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WidgetOptions {
+    pub cars_ahead: u8,
+    pub cars_behind: u8,
+    pub rows: u8,
+    pub same_class_only: bool,
+    pub show_position: bool,
+    pub show_laps: bool,
+    pub show_driver: bool,
+    pub show_car: bool,
+    pub show_class: bool,
+    pub show_gap: bool,
+    pub show_pit: bool,
+    pub show_average: bool,
+    pub show_last_lap: bool,
+    pub show_best_lap: bool,
+    pub show_estimated_laps: bool,
+    pub show_wear: bool,
+    pub show_brake_temperature: bool,
+    pub show_brake_pressure: bool,
+    pub shift_start_percent: u8,
+    pub shift_warning_percent: u8,
+    pub limiter_percent: u8,
+    pub shift_segments: u8,
+    pub tyre_temperature_mode: String,
+}
+
+impl Default for WidgetOptions {
+    fn default() -> Self {
+        Self {
+            cars_ahead: 2,
+            cars_behind: 2,
+            rows: 8,
+            same_class_only: false,
+            show_position: true,
+            show_laps: true,
+            show_driver: true,
+            show_car: false,
+            show_class: false,
+            show_gap: true,
+            show_pit: true,
+            show_average: true,
+            show_last_lap: true,
+            show_best_lap: true,
+            show_estimated_laps: true,
+            show_wear: true,
+            show_brake_temperature: true,
+            show_brake_pressure: true,
+            shift_start_percent: 70,
+            shift_warning_percent: 85,
+            limiter_percent: 95,
+            shift_segments: 10,
+            tyre_temperature_mode: "surface_average".to_string(),
+        }
+    }
+}
+
+impl WidgetOptions {
+    fn normalize(&mut self) {
+        self.cars_ahead = self.cars_ahead.min(8);
+        self.cars_behind = self.cars_behind.min(8);
+        self.rows = self.rows.clamp(1, 20);
+        self.shift_start_percent = self.shift_start_percent.min(100);
+        self.shift_warning_percent = self
+            .shift_warning_percent
+            .clamp(self.shift_start_percent, 100);
+        self.limiter_percent = self.limiter_percent.clamp(self.shift_warning_percent, 100);
+        self.shift_segments = self.shift_segments.clamp(4, 20);
+        if !matches!(
+            self.tyre_temperature_mode.as_str(),
+            "surface_average" | "surface_lcr" | "carcass" | "inner_layer"
+        ) {
+            self.tyre_temperature_mode = "surface_average".to_string();
+        }
+    }
 }
 
 impl WidgetInstanceConfig {
@@ -638,6 +735,7 @@ impl WidgetInstanceConfig {
                 z_index: 100 + index as i32,
             },
             style: WidgetStyleConfig::default(),
+            options: WidgetOptions::default(),
         }
     }
 }
@@ -651,6 +749,7 @@ pub struct WidgetStyleConfig {
     pub show_border: bool,
     pub border_color: String,
     pub border_width: i32,
+    pub border_radius: i32,
     pub padding: i32,
     pub font_scale: f64,
     pub primary_color: String,
@@ -663,6 +762,7 @@ pub struct WidgetStyleConfig {
 impl WidgetStyleConfig {
     fn normalize(&mut self) {
         self.border_width = self.border_width.clamp(0, 8);
+        self.border_radius = self.border_radius.clamp(0, 32);
         self.padding = self.padding.clamp(0, 48);
         self.font_scale = self.font_scale.clamp(0.5, 2.0);
         self.title_text.truncate(80);
@@ -678,6 +778,7 @@ impl Default for WidgetStyleConfig {
             show_border: true,
             border_color: "#666666".to_string(),
             border_width: 1,
+            border_radius: 8,
             padding: 8,
             font_scale: 1.0,
             primary_color: "#ffffff".to_string(),
@@ -792,11 +893,32 @@ impl PresetConfig {
 
 impl Default for PresetConfig {
     fn default() -> Self {
+        let mut race = PresetProfileConfig::race().with_extra_widgets(&[
+            "position",
+            "relative",
+            "standings",
+            "fuel",
+            "flags",
+        ]);
+        place_default_race_widget_layouts(&mut race.extra_widgets);
         Self {
-            practice: PresetProfileConfig::practice(),
-            qualifying: PresetProfileConfig::qualifying(),
-            race: PresetProfileConfig::race(),
-            endurance: PresetProfileConfig::endurance(),
+            practice: PresetProfileConfig::practice()
+                .with_extra_widgets(&["tyres", "brakes", "fuel", "engine", "weather"]),
+            qualifying: PresetProfileConfig::qualifying()
+                .with_extra_widgets(&["tyres", "brakes", "engine"]),
+            race,
+            endurance: PresetProfileConfig::endurance().with_extra_widgets(&[
+                "position",
+                "relative",
+                "standings",
+                "fuel",
+                "energy",
+                "tyres",
+                "brakes",
+                "engine",
+                "weather",
+                "damage",
+            ]),
             minimal: PresetProfileConfig::minimal(),
             custom: Vec::new(),
         }
@@ -846,6 +968,15 @@ pub struct PresetProfileConfig {
 }
 
 impl PresetProfileConfig {
+    fn with_extra_widgets(mut self, ids: &[&str]) -> Self {
+        for id in ids {
+            if let Some(widget) = self.extra_widgets.get_mut(*id) {
+                widget.enabled = true;
+            }
+        }
+        self
+    }
+
     fn base() -> Self {
         Self {
             performance_mode: "normal".to_string(),
@@ -1001,6 +1132,7 @@ impl PresetProfileConfig {
         for widget in self.extra_widgets.values_mut() {
             widget.layout.normalize();
             widget.style.normalize();
+            widget.options.normalize();
         }
     }
 }
@@ -1060,10 +1192,66 @@ impl std::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 pub fn default_config_text() -> &'static str {
-    r##"# HashOverlay configuration
+    static TEXT: OnceLock<String> = OnceLock::new();
+    TEXT.get_or_init(|| {
+        let mut config: OverlayConfig = toml::from_str(DEFAULT_CONFIG_TEMPLATE)
+            .expect("the built-in HashOverlay configuration must be valid TOML");
+        config.presets = PresetConfig::default();
+        let race = config.presets.race.clone();
+        config.window.height = 300;
+        config.performance.mode = race.performance_mode.clone();
+        config.style = race.style.clone();
+        config.units = race.units.clone();
+        config.coaching = race.coaching_config.clone();
+        config.timing.reference_mode = race.reference_mode.clone();
+        config.timing.mini_sectors = race.mini_sectors;
+        config.widgets = WidgetConfig {
+            title: race.title,
+            speed_gear_rpm: race.speed_gear_rpm,
+            pedals: race.pedals,
+            steering: race.steering,
+            lap_info: race.lap_info,
+            lap_timing: race.lap_timing,
+            sectors: false,
+            mini_sector_widget: false,
+            input_history: race.input_history,
+            delta_timing: race.delta_timing,
+            ghost_inputs: race.ghost_inputs,
+            coaching: race.coaching,
+            performance_monitor: race.performance_monitor,
+        };
+        config.extra_widgets = race.extra_widgets;
+        if let Some(standings) = config.extra_widgets.get_mut("standings") {
+            standings.enabled = false;
+        }
+        place_default_race_widget_layouts(&mut config.extra_widgets);
+        toml::to_string_pretty(&config)
+            .expect("the built-in HashOverlay configuration must serialize")
+    })
+}
+
+fn place_default_race_widget_layouts(extra_widgets: &mut BTreeMap<String, WidgetInstanceConfig>) {
+    let placements = [
+        ("position", 210, 230, 196, 52),
+        ("relative", 14, 174, 196, 52),
+        ("standings", 14, 230, 392, 120),
+        ("fuel", 210, 174, 196, 52),
+        ("flags", 14, 230, 196, 52),
+    ];
+    for (id, x, y, width, height) in placements {
+        if let Some(widget) = extra_widgets.get_mut(id) {
+            widget.layout.x = x;
+            widget.layout.y = y;
+            widget.layout.width = width;
+            widget.layout.height = height;
+        }
+    }
+}
+
+const DEFAULT_CONFIG_TEMPLATE: &str = r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
-config_version = 6
+config_version = 7
 
 [window]
 x = 40
@@ -1295,8 +1483,7 @@ delta_timing = true
 ghost_inputs = false
 coaching = false
 performance_monitor = false
-"##
-}
+"##;
 
 pub fn parse_color(value: &str, fallback: u32) -> u32 {
     let trimmed = value.trim().trim_start_matches('#');
@@ -1322,13 +1509,14 @@ mod tests {
     fn default_config_is_valid_toml() {
         let config: OverlayConfig = toml::from_str(default_config_text()).unwrap();
 
-        assert_eq!(config.config_version, 6);
+        assert_eq!(config.config_version, 7);
         assert_eq!(config.window.width, 420);
-        assert!(config.widgets.input_history);
-        assert_eq!(config.timing.mini_sectors, 40);
+        assert_eq!(config.window.height, 300);
+        assert!(!config.widgets.input_history);
+        assert_eq!(config.timing.mini_sectors, 20);
         assert_eq!(config.hotkeys.toggle_overlay, "F9");
         assert_eq!(config.hotkeys.toggle_coaching, "Shift+F10");
-        assert_eq!(config.performance.mode, "normal");
+        assert_eq!(config.performance.mode, "eco");
         assert_eq!(config.style.scale, 1.0);
         assert_eq!(config.style.line_thickness, 2);
         assert_eq!(config.style.font_size, 14);
@@ -1343,8 +1531,21 @@ mod tests {
         assert_eq!(config.layout.telemetry.z_index, 10);
         assert_eq!(config.layout.telemetry.opacity, 1.0);
         assert_eq!(config.layout.inputs.width, 240);
+        assert!(config.extra_widgets["relative"].enabled);
+        assert!(config.extra_widgets["fuel"].enabled);
+        assert!(config.extra_widgets["flags"].enabled);
+        assert!(!config.extra_widgets["standings"].enabled);
         assert!(config.presets.custom.is_empty());
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
+        assert!(config.presets.race.extra_widgets["relative"].enabled);
+        assert!(config.presets.endurance.extra_widgets["damage"].enabled);
+        assert_eq!(config.extra_widgets["rpm"].options.shift_start_percent, 70);
+        assert_eq!(
+            config.extra_widgets["rpm"].options.shift_warning_percent,
+            85
+        );
+        assert_eq!(config.extra_widgets["rpm"].options.limiter_percent, 95);
+        assert_eq!(config.extra_widgets["rpm"].options.shift_segments, 10);
     }
 
     #[test]
@@ -1410,7 +1611,7 @@ mod tests {
 
         config.normalize();
 
-        assert_eq!(config.config_version, 6);
+        assert_eq!(config.config_version, 7);
         assert_eq!(config.window.width, 280);
         assert_eq!(config.window.height, 800);
         assert_eq!(config.window.refresh_hz, 15);
@@ -1437,6 +1638,11 @@ mod tests {
         assert_eq!(config.layout.telemetry.opacity, 0.1);
         assert_eq!(config.layout.telemetry.z_index, 1000);
         assert_eq!(config.timing.mini_sectors, 40);
+        let rpm_options = &config.extra_widgets["rpm"].options;
+        assert_eq!(rpm_options.shift_start_percent, 70);
+        assert_eq!(rpm_options.shift_warning_percent, 85);
+        assert_eq!(rpm_options.limiter_percent, 95);
+        assert_eq!(rpm_options.shift_segments, 10);
     }
 
     #[test]
@@ -1486,5 +1692,16 @@ mod tests {
         assert!(profile.coaching_config.brake_timing);
         assert!(profile.extra_widgets.contains_key("fuel"));
         assert_eq!(profile.layout.telemetry.z_index, 10);
+    }
+
+    #[test]
+    fn shipped_presets_enable_their_real_widget_sets() {
+        let presets = PresetConfig::default();
+        assert!(presets.race.extra_widgets["relative"].enabled);
+        assert!(presets.race.extra_widgets["standings"].enabled);
+        assert!(presets.race.extra_widgets["fuel"].enabled);
+        assert!(presets.endurance.extra_widgets["energy"].enabled);
+        assert!(presets.practice.extra_widgets["tyres"].enabled);
+        assert!(!presets.minimal.extra_widgets["relative"].enabled);
     }
 }

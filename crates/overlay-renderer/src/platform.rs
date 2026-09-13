@@ -5,6 +5,10 @@ use crate::config::OverlayConfig;
 #[cfg(not(windows))]
 use telemetry_engine::TelemetrySnapshot;
 
+#[cfg(windows)]
+#[path = "d2d_backend.rs"]
+mod d2d_backend;
+
 #[derive(Debug)]
 pub enum OverlayError {
     UnsupportedPlatform,
@@ -37,6 +41,7 @@ impl From<config::ConfigError> for OverlayError {
 #[cfg(windows)]
 mod windows_overlay {
     use std::{
+        cell::{Cell, RefCell},
         ffi::c_void,
         fs,
         mem::zeroed,
@@ -55,8 +60,8 @@ mod windows_overlay {
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
-            InvalidateRect, LineTo, MoveToEx, Rectangle, ScreenToClient, SelectObject, SetBkMode,
-            SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+            InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient, SelectObject,
+            SetBkMode, SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -76,7 +81,8 @@ mod windows_overlay {
         },
     };
 
-    use crate::config::{WidgetLayout, WidgetStyleConfig};
+    use super::d2d_backend;
+    use crate::config::{WidgetLayout, WidgetOptions, WidgetStyleConfig};
 
     use super::{config::parse_color, OverlayConfig, OverlayError};
 
@@ -90,6 +96,77 @@ mod windows_overlay {
     const HOTKEY_TOGGLE_COACHING: i32 = 3;
     const HOTKEY_CYCLE_PRESET: i32 = 4;
     const EDIT_HIT_MARGIN: i32 = 16;
+
+    thread_local! {
+        static WIDGET_RENDER_STATE: Cell<(f64, u32)> = const { Cell::new((1.0, COLOR_KEY)) };
+        static NATIVE_TEXT_ENABLED: Cell<bool> = const { Cell::new(false) };
+        static NATIVE_SHAPE_COMMANDS: RefCell<Vec<d2d_backend::ShapeCommand>> = const { RefCell::new(Vec::new()) };
+        static NATIVE_TEXT_COMMANDS: RefCell<Vec<d2d_backend::TextCommand>> = const { RefCell::new(Vec::new()) };
+    }
+
+    struct WidgetOpacityScope {
+        previous: (f64, u32),
+    }
+
+    impl WidgetOpacityScope {
+        fn new(opacity: f64) -> Self {
+            let previous = WIDGET_RENDER_STATE.with(|state| {
+                let previous = state.get();
+                state.set((opacity.clamp(0.1, 1.0), previous.1));
+                previous
+            });
+            Self { previous }
+        }
+    }
+
+    impl Drop for WidgetOpacityScope {
+        fn drop(&mut self) {
+            WIDGET_RENDER_STATE.with(|state| state.set(self.previous));
+        }
+    }
+
+    fn set_render_background(color: u32) {
+        WIDGET_RENDER_STATE.with(|state| {
+            let (opacity, _) = state.get();
+            state.set((opacity, color));
+        });
+    }
+
+    fn widget_color(color: u32) -> u32 {
+        WIDGET_RENDER_STATE.with(|state| {
+            let (opacity, background) = state.get();
+            blend_color(color, background, opacity)
+        })
+    }
+
+    fn blend_color(color: u32, background: u32, opacity: f64) -> u32 {
+        let opacity = opacity.clamp(0.0, 1.0);
+        let channel = |shift: u32| {
+            let foreground = ((color >> shift) & 0xff) as f64;
+            let background = ((background >> shift) & 0xff) as f64;
+            (foreground * opacity + background * (1.0 - opacity)).round() as u32
+        };
+        channel(0) | (channel(8) << 8) | (channel(16) << 16)
+    }
+
+    fn begin_native_text(enabled: bool) {
+        NATIVE_TEXT_ENABLED.with(|state| state.set(enabled));
+        NATIVE_SHAPE_COMMANDS.with(|commands| commands.borrow_mut().clear());
+        NATIVE_TEXT_COMMANDS.with(|commands| commands.borrow_mut().clear());
+    }
+
+    fn queue_shape(command: d2d_backend::ShapeCommand) {
+        NATIVE_SHAPE_COMMANDS.with(|commands| commands.borrow_mut().push(command));
+    }
+
+    fn take_native_shape_commands() -> Vec<d2d_backend::ShapeCommand> {
+        NATIVE_SHAPE_COMMANDS.with(|commands| std::mem::take(&mut *commands.borrow_mut()))
+    }
+
+    fn take_native_text_commands() -> Vec<d2d_backend::TextCommand> {
+        NATIVE_TEXT_ENABLED.with(|state| state.set(false));
+        NATIVE_TEXT_COMMANDS.with(|commands| std::mem::take(&mut *commands.borrow_mut()))
+    }
 
     #[derive(Clone, Copy)]
     struct Area {
@@ -176,6 +253,7 @@ mod windows_overlay {
         config_path: Option<Arc<PathBuf>>,
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
+        d2d: Option<Arc<d2d_backend::D2dBackend>>,
     }
 
     #[derive(Debug, Default)]
@@ -250,6 +328,7 @@ mod windows_overlay {
                     config_path: config_path.map(Arc::new),
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
+                    d2d: None,
                 },
             })
         }
@@ -279,7 +358,7 @@ mod windows_overlay {
                     let acquisition_started = Instant::now();
                     if let Some(snapshot) = next_snapshot() {
                         if let Ok(mut latest) = telemetry_state.latest.lock() {
-                            *latest = Some(snapshot);
+                            *latest = Some(snapshot.clone());
                         }
                         if let Ok(mut history) = telemetry_state.history.lock() {
                             history.push(snapshot);
@@ -412,6 +491,15 @@ mod windows_overlay {
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
                 apply_window_config(hwnd, &config);
+                if let Some(backend) = state.d2d.as_ref() {
+                    unsafe {
+                        if let Err(error) =
+                            backend.resize(config.window.width as u32, config.window.height as u32)
+                        {
+                            log::warn!("Could not resize Direct2D render target: {error}");
+                        }
+                    }
+                }
                 unsafe {
                     reload_hotkeys(hwnd, &config);
                 }
@@ -551,6 +639,23 @@ mod windows_overlay {
             if hwnd.is_null() {
                 drop(Box::from_raw(state_ptr));
                 return Err(OverlayError::WindowCreationFailed);
+            }
+
+            match d2d_backend::D2dBackend::new(
+                windows::Win32::Foundation::HWND(hwnd),
+                width as u32,
+                height as u32,
+            ) {
+                Ok(backend) => {
+                    // The D2D device is created and consumed on the overlay UI thread.
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    {
+                        (*state_ptr).d2d = Some(Arc::new(backend));
+                    }
+                }
+                Err(error) => {
+                    log::warn!("Direct2D initialization failed; using GDI fallback: {error}")
+                }
             }
 
             SetLayeredWindowAttributes(hwnd, COLOR_KEY, opacity, LWA_COLORKEY | LWA_ALPHA);
@@ -846,35 +951,54 @@ mod windows_overlay {
     unsafe fn paint(hwnd: HWND) {
         let render_started = Instant::now();
         let mut paint: PAINTSTRUCT = zeroed();
-        let hdc = BeginPaint(hwnd, &mut paint);
-        let mut rect: RECT = zeroed();
-        GetClientRect(hwnd, &mut rect);
-
-        let black = CreateSolidBrush(COLOR_KEY);
-        FillRect(hdc, &rect, black);
-        DeleteObject(black);
-
         let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
             hwnd,
             windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
         ) as *mut SharedState;
 
         if state_ptr.is_null() {
-            EndPaint(hwnd, &paint);
             return;
         }
 
         let state = &*state_ptr;
+        let d2d_hdc = state
+            .d2d
+            .as_ref()
+            .and_then(|backend| backend.begin_gdi().ok());
+        let using_d2d = d2d_hdc.is_some();
+        begin_native_text(using_d2d);
+        let hdc = d2d_hdc.unwrap_or_else(|| BeginPaint(hwnd, &mut paint));
+        let mut rect: RECT = zeroed();
+        GetClientRect(hwnd, &mut rect);
+
+        if using_d2d {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: 0.0,
+                top: 0.0,
+                right: rect.right as f32,
+                bottom: rect.bottom as f32,
+                fill: Some(COLOR_KEY),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: 0.0,
+            });
+        } else {
+            let black = CreateSolidBrush(COLOR_KEY);
+            FillRect(hdc, &rect, black);
+            DeleteObject(black);
+        }
+
         let config = state
             .config
             .lock()
             .ok()
             .map(|config| config.clone())
             .unwrap_or_default();
+        set_render_background(colors(&config).background);
         if let Ok(mut stats) = state.stats.lock() {
             stats.render_frames += 1;
         }
-        let latest = state.latest.lock().ok().and_then(|value| *value);
+        let latest = state.latest.lock().ok().and_then(|value| value.clone());
 
         draw_panel(hdc, &config);
 
@@ -908,16 +1032,61 @@ mod windows_overlay {
             stats.render_micros += render_started.elapsed().as_micros() as u64;
         }
 
-        EndPaint(hwnd, &paint);
+        if let Some(backend) = state.d2d.as_ref() {
+            if using_d2d {
+                let texts = take_native_text_commands();
+                let shapes = take_native_shape_commands();
+                if let Err(error) = backend.end_gdi(
+                    &shapes,
+                    &texts,
+                    &config.style.font_family,
+                    config.style.font_size as f32 * config.style.scale as f32,
+                    config.style.font_weight,
+                    config.window.width,
+                    config.window.height,
+                ) {
+                    log::warn!("Direct2D frame submission failed: {error}");
+                }
+            } else {
+                EndPaint(hwnd, &paint);
+            }
+        } else {
+            EndPaint(hwnd, &paint);
+        }
     }
 
     unsafe fn draw_panel(hdc: HDC, config: &OverlayConfig) {
         let colors = colors(config);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: 0.0,
+                top: 0.0,
+                right: config.window.width as f32,
+                bottom: config.window.height as f32,
+                fill: Some(colors.background),
+                stroke: Some(colors.border),
+                stroke_width: config.style.line_thickness.max(1) as f32,
+                radius: config.style.border_radius.max(0) as f32,
+            });
+            return;
+        }
         let bg = CreateSolidBrush(colors.background);
         let border = CreatePen(PS_SOLID, config.style.line_thickness, colors.border);
         let old_brush = SelectObject(hdc, bg);
         let old_pen = SelectObject(hdc, border);
-        Rectangle(hdc, 0, 0, config.window.width, config.window.height);
+        if config.style.border_radius > 0 {
+            RoundRect(
+                hdc,
+                0,
+                0,
+                config.window.width,
+                config.window.height,
+                config.style.border_radius * 2,
+                config.style.border_radius * 2,
+            );
+        } else {
+            Rectangle(hdc, 0, 0, config.window.width, config.window.height);
+        }
         SelectObject(hdc, old_pen);
         SelectObject(hdc, old_brush);
         DeleteObject(border);
@@ -926,29 +1095,59 @@ mod windows_overlay {
 
     unsafe fn draw_widget_panel(hdc: HDC, area: Area, config: &OverlayConfig) {
         let colors = colors(config);
-        let border = CreatePen(PS_SOLID, config.style.line_thickness.max(1), colors.border);
-        let old_pen = SelectObject(hdc, border);
-        Rectangle(
-            hdc,
-            area.x,
-            area.y,
-            area.x + area.width,
-            area.y + area.height,
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: (area.x + area.width) as f32,
+                bottom: (area.y + area.height) as f32,
+                fill: None,
+                stroke: Some(widget_color(colors.border)),
+                stroke_width: config.style.line_thickness.max(1) as f32,
+                radius: config.style.border_radius.max(0) as f32,
+            });
+            return;
+        }
+        let border = CreatePen(
+            PS_SOLID,
+            config.style.line_thickness.max(1),
+            widget_color(colors.border),
         );
+        let old_pen = SelectObject(hdc, border);
+        if config.style.border_radius > 0 {
+            RoundRect(
+                hdc,
+                area.x,
+                area.y,
+                area.x + area.width,
+                area.y + area.height,
+                config.style.border_radius * 2,
+                config.style.border_radius * 2,
+            );
+        } else {
+            Rectangle(
+                hdc,
+                area.x,
+                area.y,
+                area.x + area.width,
+                area.y + area.height,
+            );
+        }
         SelectObject(hdc, old_pen);
         DeleteObject(border);
     }
 
     unsafe fn draw_snapshot(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
         for (widget, area) in widget_areas(config) {
+            let _opacity = WidgetOpacityScope::new(widget_layout(config, widget).opacity);
             match widget {
                 WidgetId::Telemetry if config.widgets.title || config.widgets.speed_gear_rpm => {
                     draw_widget_panel(hdc, area, config);
-                    draw_telemetry_widget(hdc, snapshot, config, area);
+                    draw_telemetry_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::LapTiming if config.widgets.lap_info || config.widgets.lap_timing => {
                     draw_widget_panel(hdc, area, config);
-                    draw_lap_timing_widget(hdc, snapshot, config, area);
+                    draw_lap_timing_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Inputs
                     if config.widgets.pedals
@@ -956,26 +1155,26 @@ mod windows_overlay {
                         || config.widgets.input_history =>
                 {
                     draw_widget_panel(hdc, area, config);
-                    draw_input_widget(hdc, snapshot, config, area);
+                    draw_input_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Timing if config.widgets.delta_timing => {
                     draw_widget_panel(hdc, area, config);
-                    draw_delta_widget(hdc, snapshot, config, area);
+                    draw_delta_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Sectors if config.widgets.sectors => {
                     draw_widget_panel(hdc, area, config);
-                    draw_sectors_widget(hdc, snapshot, config, area);
+                    draw_sectors_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::MiniSectors if config.widgets.mini_sector_widget => {
                     draw_widget_panel(hdc, area, config);
-                    draw_mini_sectors_widget(hdc, snapshot, config, area);
+                    draw_mini_sectors_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Coaching if config.widgets.coaching && config.coaching.mode != "off" => {
                     draw_widget_panel(hdc, area, config);
-                    draw_coaching_widget(hdc, snapshot, config, area);
+                    draw_coaching_widget(hdc, snapshot.clone(), config, area);
                 }
                 WidgetId::Extra(id) => {
-                    draw_extra_widget(hdc, snapshot, config, area, id);
+                    draw_extra_widget(hdc, snapshot.clone(), config, area, id);
                 }
                 _ => {}
             }
@@ -1023,8 +1222,46 @@ mod windows_overlay {
         id: &str,
     ) {
         let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
+        let widget_options = config.extra_widgets.get(id).map(|widget| &widget.options);
+        let options = widget_options.cloned().unwrap_or_default();
         draw_extra_widget_panel(hdc, area, config, widget_style);
         let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
+        if id == "relative" {
+            draw_relative_widget(
+                hdc,
+                &snapshot,
+                config,
+                area,
+                padding,
+                widget_style,
+                widget_options,
+            );
+            return;
+        }
+        if id == "standings" {
+            draw_standings_widget(
+                hdc,
+                &snapshot,
+                config,
+                area,
+                padding,
+                widget_style,
+                widget_options,
+            );
+            return;
+        }
+        if id == "lap_history" {
+            draw_lap_history_widget(
+                hdc,
+                &snapshot,
+                config,
+                area,
+                padding,
+                widget_style,
+                widget_options,
+            );
+            return;
+        }
         let value = match id {
             "speed" => format!(
                 "{:.0} {}",
@@ -1041,84 +1278,131 @@ mod windows_overlay {
                     )
                 },
             ),
-            "position" => match (snapshot.session.position, snapshot.session.total_vehicles) {
-                (Some(position), Some(total)) => format!("P{position}/{total}"),
-                (Some(position), None) => format!("P{position}"),
-                _ => "POSITION --".to_string(),
-            },
+            "position" => position_summary(&snapshot),
             "flags" => snapshot
                 .session
                 .flag
-                .map_or_else(|| "FLAG --".to_string(), |flag| format!("FLAG {flag}")),
-            "fuel" => match (
-                snapshot.vehicle.fuel_liters,
-                snapshot.vehicle.fuel_capacity_liters,
-            ) {
+                .map_or_else(|| "FLAG --".to_string(), semantic_flag),
+            "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
                 (Some(fuel), Some(capacity)) if capacity > 0.0 => {
-                    format!("FUEL {fuel:.1} L  {:.0}%", fuel / capacity * 100.0)
+                    format!(
+                        "{}  {:.0}%",
+                        display_fuel(fuel, config),
+                        fuel / capacity * 100.0
+                    )
                 }
-                (Some(fuel), _) => format!("FUEL {fuel:.1} L"),
+                (Some(fuel), _) => display_fuel(fuel, config),
                 _ => "FUEL --".to_string(),
             },
             "tyres" => wheel_summary(
                 "TYRES",
                 [
-                    snapshot.wheels.front_left.pressure_kpa,
-                    snapshot.wheels.front_right.pressure_kpa,
-                    snapshot.wheels.rear_left.pressure_kpa,
-                    snapshot.wheels.rear_right.pressure_kpa,
+                    display_pressure_value(snapshot.wheels.front_left.pressure_kpa, config),
+                    display_pressure_value(snapshot.wheels.front_right.pressure_kpa, config),
+                    display_pressure_value(snapshot.wheels.rear_left.pressure_kpa, config),
+                    display_pressure_value(snapshot.wheels.rear_right.pressure_kpa, config),
                 ],
-                "kPa",
+                pressure_unit_label(config),
             ),
             "brakes" => wheel_summary(
                 "BRAKES",
                 [
-                    snapshot.wheels.front_left.brake_temp_c,
-                    snapshot.wheels.front_right.brake_temp_c,
-                    snapshot.wheels.rear_left.brake_temp_c,
-                    snapshot.wheels.rear_right.brake_temp_c,
+                    display_temperature_value(snapshot.wheels.front_left.brake_temp_c, config),
+                    display_temperature_value(snapshot.wheels.front_right.brake_temp_c, config),
+                    display_temperature_value(snapshot.wheels.rear_left.brake_temp_c, config),
+                    display_temperature_value(snapshot.wheels.rear_right.brake_temp_c, config),
                 ],
-                "C",
+                temperature_unit_label(config),
             ),
-            "electronics" => match (snapshot.vehicle.tc_setting, snapshot.vehicle.abs_setting) {
-                (Some(tc), Some(abs)) => format!("TC {tc}  ABS {abs}"),
-                _ => "TC / ABS --".to_string(),
+            "electronics" => electronics_summary(&snapshot),
+            "energy" => match (
+                snapshot
+                    .vehicle
+                    .state_of_charge_percent
+                    .or(snapshot.vehicle.battery_charge_percent),
+                snapshot.vehicle.virtual_energy_percent,
+            ) {
+                (Some(charge), Some(energy)) => {
+                    format!("SOC {charge:.0}%  VE {energy:.0}%")
+                }
+                (Some(charge), None) => format!("SOC {charge:.0}%"),
+                _ => "ENERGY --".to_string(),
             },
-            "energy" => snapshot.vehicle.battery_charge_percent.map_or_else(
-                || "ENERGY --".to_string(),
-                |charge| format!("ENERGY {charge:.0}%"),
-            ),
             "engine" => match (
                 snapshot.vehicle.engine_water_temp_c,
                 snapshot.vehicle.engine_oil_temp_c,
             ) {
-                (Some(water), Some(oil)) => format!("W {water:.0}C  O {oil:.0}C"),
+                (Some(water), Some(oil)) => format!(
+                    "W {}{}  O {}{}",
+                    display_temperature_value(Some(water), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config),
+                    display_temperature_value(Some(oil), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config)
+                ),
                 _ => "ENGINE --".to_string(),
             },
             "weather" => match (
                 snapshot.session.ambient_temp_c,
                 snapshot.session.track_temp_c,
             ) {
-                (Some(ambient), Some(track)) => format!("AIR {ambient:.0}C  TRACK {track:.0}C"),
+                (Some(ambient), Some(track)) => format!(
+                    "AIR {}{}  TRACK {}{}",
+                    display_temperature_value(Some(ambient), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config),
+                    display_temperature_value(Some(track), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config)
+                ),
                 _ => "WEATHER --".to_string(),
             },
             "damage" => {
-                if [
+                let wheel_damage = [
                     snapshot.wheels.front_left,
                     snapshot.wheels.front_right,
                     snapshot.wheels.rear_left,
                     snapshot.wheels.rear_right,
                 ]
                 .into_iter()
-                .any(|wheel| wheel.flat == Some(true) || wheel.detached == Some(true))
-                {
+                .any(|wheel| wheel.flat == Some(true) || wheel.detached == Some(true));
+                let dent_damage = snapshot
+                    .vehicle
+                    .dent_severity
+                    .into_iter()
+                    .flatten()
+                    .any(|severity| severity > 0);
+                if wheel_damage || snapshot.vehicle.body_detached == Some(true) || dent_damage {
                     "DAMAGE WARNING".to_string()
+                } else if snapshot.vehicle.body_detached == Some(false)
+                    || snapshot
+                        .vehicle
+                        .dent_severity
+                        .iter()
+                        .all(|value| *value == Some(0))
+                {
+                    "DAMAGE CLEAR".to_string()
                 } else {
                     "DAMAGE --".to_string()
                 }
             }
-            "relative" | "standings" | "lap_history" => "WAITING FOR OFFICIAL SCORING".to_string(),
+            "lap_history" => "LAP HISTORY".to_string(),
             _ => "--".to_string(),
+        };
+        let value_color = if id == "flags" {
+            snapshot.session.flag.map_or_else(
+                || widget_primary_color(config, widget_style),
+                |flag| flag_color(config, flag),
+            )
+        } else if id == "electronics" && electronics_intervention_active(&snapshot) {
+            colors(config).delta_loss
+        } else {
+            widget_primary_color(config, widget_style)
         };
         let title_height = if widget_style.is_some_and(|style| style.show_title) {
             let title = widget_style
@@ -1141,9 +1425,927 @@ mod windows_overlay {
             hdc,
             area.x + padding,
             area.y + padding + title_height,
-            widget_primary_color(config, widget_style),
+            value_color,
             &value,
         );
+        let detail_y = area.y + padding + title_height + scale_px(config, 22);
+        let detail_color = widget_secondary_color(config, widget_style);
+        match id {
+            "position" => {
+                if let Some(gap) = snapshot.session.gap_ahead_seconds {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y,
+                        detail_color,
+                        &format!("AHEAD {gap:+.3}s"),
+                    );
+                }
+                if let Some(gap) = snapshot.session.gap_behind_seconds {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        detail_color,
+                        &format!("BEHIND {gap:+.3}s"),
+                    );
+                }
+            }
+            "fuel" => {
+                if let (Some(fuel), Some(capacity)) =
+                    (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters)
+                {
+                    draw_horizontal_meter(
+                        hdc,
+                        Area {
+                            x: area.x + padding,
+                            y: detail_y,
+                            width: (area.width - padding * 2).max(scale_size(config, 40)),
+                            height: scale_size(config, 8),
+                        },
+                        fuel / capacity,
+                        colors(config).throttle,
+                        detail_color,
+                    );
+                }
+                let stats_y = detail_y + scale_size(config, 14);
+                if options.show_average {
+                    if let Some(average) = snapshot.fuel_average_lap_used {
+                        draw_text(
+                            hdc,
+                            area.x + padding,
+                            stats_y,
+                            detail_color,
+                            &format!("AVG {} /lap", display_fuel(average, config)),
+                        );
+                    }
+                }
+                if options.show_last_lap {
+                    if let Some(last) = snapshot.fuel_last_lap_used {
+                        draw_text(
+                            hdc,
+                            area.x + padding,
+                            stats_y + scale_px(config, 18),
+                            detail_color,
+                            &format!("LAST {} /lap", display_fuel(last, config)),
+                        );
+                    }
+                }
+                if options.show_estimated_laps {
+                    if let Some(remaining) = snapshot.fuel_estimated_laps_remaining {
+                        draw_text(
+                            hdc,
+                            area.x + padding,
+                            stats_y + scale_px(config, 36),
+                            detail_color,
+                            &format!("REMAIN {remaining:.1} laps"),
+                        );
+                    }
+                }
+            }
+            "rpm" => {
+                if let Some(max_rpm) = snapshot.vehicle.max_rpm {
+                    draw_rpm_segments(
+                        hdc,
+                        Area {
+                            x: area.x + padding,
+                            y: detail_y,
+                            width: (area.width - padding * 2).max(scale_size(config, 60)),
+                            height: scale_size(config, 8),
+                        },
+                        snapshot.rpm,
+                        max_rpm,
+                        colors(config).reference,
+                        detail_color,
+                        options.shift_start_percent,
+                        options.shift_warning_percent,
+                        options.limiter_percent,
+                        options.shift_segments,
+                    );
+                }
+            }
+            "tyres" => draw_four_wheel_detail(
+                hdc,
+                area,
+                config,
+                detail_y,
+                detail_color,
+                [
+                    snapshot.wheels.front_left,
+                    snapshot.wheels.front_right,
+                    snapshot.wheels.rear_left,
+                    snapshot.wheels.rear_right,
+                ],
+                false,
+                options.show_wear,
+                true,
+                true,
+                &options.tyre_temperature_mode,
+            ),
+            "brakes" => draw_four_wheel_detail(
+                hdc,
+                area,
+                config,
+                detail_y,
+                detail_color,
+                [
+                    snapshot.wheels.front_left,
+                    snapshot.wheels.front_right,
+                    snapshot.wheels.rear_left,
+                    snapshot.wheels.rear_right,
+                ],
+                true,
+                false,
+                options.show_brake_temperature,
+                options.show_brake_pressure,
+                "surface_average",
+            ),
+            "electronics" => {
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    detail_color,
+                    &format!(
+                        "TC SLIP {}/{}  CUT {}/{}",
+                        option_number(snapshot.vehicle.tc_slip),
+                        option_number(snapshot.vehicle.tc_slip_max),
+                        option_number(snapshot.vehicle.tc_cut),
+                        option_number(snapshot.vehicle.tc_cut_max)
+                    ),
+                );
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y + scale_px(config, 18),
+                    detail_color,
+                    &format!(
+                        "MIG {} / {}  ARB F {}/{} R {}/{}",
+                        option_number(snapshot.vehicle.migration),
+                        option_number(snapshot.vehicle.migration_max),
+                        option_number(snapshot.vehicle.front_anti_sway),
+                        option_number(snapshot.vehicle.front_anti_sway_max),
+                        option_number(snapshot.vehicle.rear_anti_sway),
+                        option_number(snapshot.vehicle.rear_anti_sway_max)
+                    ),
+                );
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y + scale_px(config, 36),
+                    detail_color,
+                    &format!(
+                        "WIPER {}  LIMITS {}",
+                        option_number(snapshot.vehicle.wiper_state),
+                        option_number(snapshot.vehicle.track_limit_steps)
+                    ),
+                );
+            }
+            "engine" => {
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    detail_color,
+                    &format!(
+                        "BOOST {} kPa",
+                        option_decimal(snapshot.vehicle.turbo_boost_kpa)
+                    ),
+                );
+                if snapshot.vehicle.overheating == Some(true) {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        colors(config).delta_loss,
+                        "OVERHEAT",
+                    );
+                }
+            }
+            "energy" => {
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    detail_color,
+                    &format!(
+                        "REGEN {}  MTR RPM {}",
+                        if snapshot.vehicle.hybrid_regen_active == Some(true) {
+                            "ON"
+                        } else if snapshot.vehicle.hybrid_regen_active == Some(false) {
+                            "OFF"
+                        } else {
+                            "--"
+                        },
+                        option_decimal(snapshot.vehicle.electric_motor_rpm)
+                    ),
+                );
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y + scale_px(config, 18),
+                    detail_color,
+                    &format!(
+                        "MTR TEMP {} C  STATE {}",
+                        option_decimal(snapshot.vehicle.electric_motor_temp_c),
+                        option_number(snapshot.vehicle.electric_motor_state)
+                    ),
+                );
+            }
+            "weather" => draw_text(
+                hdc,
+                area.x + padding,
+                detail_y,
+                detail_color,
+                &format!(
+                    "RAIN {}%  WET {}%",
+                    option_percent(snapshot.session.rain_density),
+                    option_percent(snapshot.session.track_wetness)
+                ),
+            ),
+            "damage" => {
+                let wheels = [
+                    ("FL", snapshot.wheels.front_left),
+                    ("FR", snapshot.wheels.front_right),
+                    ("RL", snapshot.wheels.rear_left),
+                    ("RR", snapshot.wheels.rear_right),
+                ];
+                let damaged = wheels
+                    .into_iter()
+                    .filter_map(|(label, wheel)| {
+                        (wheel.flat == Some(true) || wheel.detached == Some(true)).then_some(label)
+                    })
+                    .collect::<Vec<_>>();
+                let body = if snapshot.vehicle.body_detached == Some(true) {
+                    " BODY"
+                } else {
+                    ""
+                };
+                let max_dent = snapshot.vehicle.dent_severity.into_iter().flatten().max();
+                let message = if damaged.is_empty() && body.is_empty() {
+                    max_dent.map_or_else(
+                        || "WHEELS OK".to_string(),
+                        |severity| format!("WHEELS OK DENT {severity}"),
+                    )
+                } else {
+                    format!(
+                        "DAMAGE{}{}{}",
+                        body,
+                        if damaged.is_empty() { "" } else { " WHEELS " },
+                        damaged.join(" ")
+                    )
+                };
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    if damaged.is_empty() {
+                        detail_color
+                    } else {
+                        colors(config).delta_loss
+                    },
+                    &message,
+                );
+                if let Some(magnitude) = snapshot.vehicle.last_impact_magnitude {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        detail_color,
+                        &format!("IMPACT {magnitude:.1}"),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn position_summary(snapshot: &TelemetrySnapshot) -> String {
+        let Some(position) = snapshot.session.position else {
+            return "POSITION --".to_string();
+        };
+        let overall = snapshot.session.total_vehicles.map_or_else(
+            || format!("P{position}"),
+            |total| format!("P{position}/{total}"),
+        );
+        let class_position = snapshot
+            .field
+            .iter()
+            .find(|car| car.is_player || car.slot_id == snapshot.player_slot_id)
+            .and_then(|player| {
+                let class = player.vehicle_class.as_deref()?;
+                let class_cars = snapshot
+                    .field
+                    .iter()
+                    .filter(|car| car.vehicle_class.as_deref() == Some(class))
+                    .collect::<Vec<_>>();
+                let place = class_cars
+                    .iter()
+                    .filter_map(|car| car.place)
+                    .filter(|place| *place <= position)
+                    .count();
+                (place > 0).then_some(format!(" C{place}/{}", class_cars.len()))
+            })
+            .unwrap_or_default();
+        format!("{overall}{class_position}  L{}", snapshot.lap_number)
+    }
+
+    unsafe fn draw_relative_widget(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+        options: Option<&WidgetOptions>,
+    ) {
+        let title_color = widget_secondary_color(config, style);
+        let text_color = widget_primary_color(config, style);
+        let options = options.cloned().unwrap_or_default();
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding,
+            title_color,
+            "RELATIVE",
+        );
+        let player_index = snapshot
+            .field
+            .iter()
+            .position(|car| car.is_player || car.slot_id == snapshot.player_slot_id);
+        let Some(player_index) = player_index else {
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding + scale_px(config, 20),
+                text_color,
+                "SCORING DATA --",
+            );
+            return;
+        };
+        let player_class = snapshot.field[player_index].vehicle_class.as_deref();
+        let mut cars: Vec<&_> = snapshot
+            .field
+            .iter()
+            .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
+            .collect();
+        cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        let Some(player_position) = cars
+            .iter()
+            .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
+        else {
+            return;
+        };
+        let start = player_position.saturating_sub(options.cars_ahead as usize);
+        let end = (player_position + options.cars_behind as usize + 1).min(cars.len());
+        for (row, car) in cars[start..end].iter().enumerate() {
+            let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
+            let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
+                ">"
+            } else {
+                " "
+            };
+            let name = if options.show_driver {
+                car.driver_name.as_deref().unwrap_or("UNKNOWN")
+            } else {
+                "CAR"
+            };
+            let car_name = if options.show_car {
+                car.vehicle_name.as_deref().unwrap_or("--")
+            } else {
+                ""
+            };
+            let gap = if !options.show_gap {
+                String::new()
+            } else if car.is_player || car.slot_id == snapshot.player_slot_id {
+                "0.000".to_string()
+            } else {
+                relative_gap(car, &snapshot.field[player_index])
+            };
+            draw_text(
+                hdc,
+                area.x + padding,
+                y,
+                text_color,
+                &format!(
+                    "{marker} {}{} {}{}{}{}{}",
+                    if options.show_position {
+                        format!("P{}", car.place.unwrap_or(0))
+                    } else {
+                        String::new()
+                    },
+                    name,
+                    if options.show_car {
+                        format!(" [{car_name}]")
+                    } else {
+                        String::new()
+                    },
+                    if options.show_class {
+                        format!(" {}", car.vehicle_class.as_deref().unwrap_or("--"))
+                    } else {
+                        String::new()
+                    },
+                    gap,
+                    if options.show_gap { "s" } else { "" },
+                    if options.show_pit && car.in_pits {
+                        " PIT"
+                    } else {
+                        ""
+                    }
+                ),
+            );
+        }
+    }
+
+    unsafe fn draw_lap_history_widget(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+        options: Option<&WidgetOptions>,
+    ) {
+        let title_color = widget_secondary_color(config, style);
+        let text_color = widget_primary_color(config, style);
+        let rows = options.map_or(8, |value| value.rows.clamp(1, 20) as usize);
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding,
+            title_color,
+            "LAP HISTORY",
+        );
+        if snapshot.lap_history.is_empty() {
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding + scale_px(config, 20),
+                text_color,
+                "NO COMPLETED LAPS",
+            );
+            return;
+        }
+        for (row, entry) in snapshot.lap_history.iter().rev().take(rows).enumerate() {
+            let y = area.y + padding + scale_px(config, 20 + row as i32 * 18);
+            let time = entry
+                .time_seconds
+                .map(lap_time)
+                .unwrap_or_else(|| "--:--.---".to_string());
+            let status = if !entry.valid {
+                " INVALID"
+            } else if entry
+                .delta_to_best
+                .is_some_and(|delta| delta.abs() < 0.0005)
+            {
+                " PB"
+            } else {
+                ""
+            };
+            let delta = entry
+                .delta_to_best
+                .map(|value| format!(" {value:+.3}"))
+                .unwrap_or_default();
+            draw_text(
+                hdc,
+                area.x + padding,
+                y,
+                text_color,
+                &format!("L{:>3}  {time}{delta}{status}", entry.lap),
+            );
+        }
+    }
+
+    fn relative_gap(
+        car: &lmu_telemetry::VehicleScoringSnapshot,
+        player: &lmu_telemetry::VehicleScoringSnapshot,
+    ) -> String {
+        let lap_delta = car.lap_number - player.lap_number;
+        if lap_delta != 0 {
+            return format!(
+                "{}{}L",
+                if lap_delta > 0 { "+" } else { "-" },
+                lap_delta.abs()
+            );
+        }
+        car.gap_to_leader_seconds
+            .zip(player.gap_to_leader_seconds)
+            .map(|(other, own)| format!("{:+.3}", other - own))
+            .unwrap_or_else(|| "--".to_string())
+    }
+
+    unsafe fn draw_standings_widget(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+        options: Option<&WidgetOptions>,
+    ) {
+        let title_color = widget_secondary_color(config, style);
+        let text_color = widget_primary_color(config, style);
+        let options = options.cloned().unwrap_or_default();
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding,
+            title_color,
+            "STANDINGS",
+        );
+        let player_class = snapshot
+            .field
+            .iter()
+            .find(|car| car.is_player || car.slot_id == snapshot.player_slot_id)
+            .and_then(|car| car.vehicle_class.as_deref());
+        let mut cars: Vec<&_> = snapshot
+            .field
+            .iter()
+            .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
+            .collect();
+        cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        if cars.is_empty() {
+            draw_text(
+                hdc,
+                area.x + padding,
+                area.y + padding + scale_px(config, 20),
+                text_color,
+                "SCORING DATA --",
+            );
+            return;
+        }
+        let mut header = Vec::new();
+        if options.show_position {
+            header.push("POS");
+        }
+        if options.show_driver {
+            header.push("DRIVER");
+        }
+        if options.show_car {
+            header.push("CAR");
+        }
+        if options.show_class {
+            header.push("CLASS");
+        }
+        if options.show_laps {
+            header.push("LAPS");
+        }
+        if options.show_gap {
+            header.push("GAP");
+        }
+        if options.show_last_lap {
+            header.push("LAST");
+        }
+        if options.show_best_lap {
+            header.push("BEST");
+        }
+        if options.show_pit {
+            header.push("PIT");
+        }
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding + scale_px(config, 18),
+            title_color,
+            &header.join("  "),
+        );
+        for (row, car) in cars
+            .iter()
+            .take(options.rows.clamp(1, 20) as usize)
+            .enumerate()
+        {
+            let y = area.y + padding + scale_px(config, 36 + (row as i32 * 18));
+            let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
+                ">"
+            } else {
+                " "
+            };
+            let name = if options.show_driver {
+                car.driver_name.as_deref().unwrap_or("UNKNOWN")
+            } else {
+                "CAR"
+            };
+            let car_name = if options.show_car {
+                car.vehicle_name.as_deref().unwrap_or("--")
+            } else {
+                ""
+            };
+            let lap = if options.show_laps && car.lap_number > 0 {
+                format!("L{}", car.lap_number)
+            } else if options.show_laps {
+                "--".to_string()
+            } else {
+                String::new()
+            };
+            let gap = if options.show_gap {
+                standings_gap(car)
+            } else {
+                String::new()
+            };
+            let last = car
+                .last_lap_seconds
+                .map(lap_time)
+                .unwrap_or_else(|| "--:--.---".to_string());
+            let best = car
+                .best_lap_seconds
+                .map(lap_time)
+                .unwrap_or_else(|| "--:--.---".to_string());
+            let mut columns = Vec::new();
+            if options.show_position {
+                columns.push(format!("P{}", car.place.unwrap_or(0)));
+            }
+            if options.show_driver {
+                columns.push(name.to_string());
+            }
+            if options.show_car {
+                columns.push(car_name.to_string());
+            }
+            if options.show_class {
+                columns.push(car.vehicle_class.as_deref().unwrap_or("--").to_string());
+            }
+            if options.show_laps {
+                columns.push(lap);
+            }
+            if options.show_gap {
+                columns.push(gap);
+            }
+            if options.show_last_lap {
+                columns.push(last);
+            }
+            if options.show_best_lap {
+                columns.push(best);
+            }
+            if options.show_pit {
+                columns.push(if car.in_pits { "PIT" } else { "--" }.to_string());
+            }
+            draw_text(
+                hdc,
+                area.x + padding,
+                y,
+                text_color,
+                &format!("{marker} {}", columns.join("  ")),
+            );
+        }
+    }
+
+    fn standings_gap(car: &lmu_telemetry::VehicleScoringSnapshot) -> String {
+        if let Some(laps) = car.laps_behind_leader.filter(|laps| *laps != 0) {
+            return format!("{}{}L", if laps > 0 { "+" } else { "-" }, laps.abs());
+        }
+        car.gap_to_leader_seconds
+            .map_or_else(|| "--".to_string(), |gap| format!("+{gap:.3}"))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn draw_four_wheel_detail(
+        hdc: HDC,
+        area: Area,
+        config: &OverlayConfig,
+        y: i32,
+        color: u32,
+        wheels: [lmu_telemetry::WheelData; 4],
+        brake: bool,
+        show_wear: bool,
+        show_brake_temperature: bool,
+        show_brake_pressure: bool,
+        temperature_mode: &str,
+    ) {
+        let labels = ["FL", "FR", "RL", "RR"];
+        for (index, wheel) in wheels.into_iter().enumerate() {
+            let card_width = (area.width / 2 - scale_size(config, 12)).max(scale_size(config, 54));
+            let x = area.x + scale_px(config, 6) + (index as i32 % 2) * (area.width / 2);
+            let row = index as i32 / 2;
+            let card = Area {
+                x,
+                y: y + row * scale_size(config, 30),
+                width: card_width,
+                height: scale_size(config, 26),
+            };
+            draw_widget_panel(hdc, card, config);
+            let value = if brake {
+                let mut values = vec![labels[index].to_string()];
+                if show_brake_temperature {
+                    values.push(format!(
+                        "T {} {}",
+                        option_decimal(display_temperature_value(wheel.brake_temp_c, config)),
+                        temperature_unit_label(config)
+                    ));
+                }
+                if show_brake_pressure {
+                    values.push(format!(
+                        "P {}%",
+                        option_percent(wheel.brake_pressure_fraction)
+                    ));
+                }
+                if values.len() == 1 {
+                    values.push("--".to_string());
+                }
+                values.join("  ")
+            } else if show_wear {
+                format!(
+                    "{}  {} {}  REM{}%",
+                    labels[index],
+                    option_decimal(display_pressure_value(wheel.pressure_kpa, config)),
+                    pressure_unit_label(config),
+                    wheel
+                        .wear_percent
+                        .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
+                )
+            } else {
+                format!(
+                    "{}  {} {}  T{} {}",
+                    labels[index],
+                    option_decimal(display_pressure_value(wheel.pressure_kpa, config)),
+                    pressure_unit_label(config),
+                    wheel_temperature_text(wheel, config, temperature_mode),
+                    temperature_unit_label(config)
+                )
+            };
+            draw_text(
+                hdc,
+                card.x + scale_px(config, 4),
+                card.y + scale_px(config, 5),
+                color,
+                &value,
+            );
+        }
+    }
+
+    fn wheel_surface_temperature(wheel: lmu_telemetry::WheelData) -> Option<f64> {
+        let values = [
+            wheel.surface_temp_left_c,
+            wheel.surface_temp_center_c,
+            wheel.surface_temp_right_c,
+        ];
+        let mut total = 0.0;
+        let mut count = 0;
+        for value in values.into_iter().flatten() {
+            total += value;
+            count += 1;
+        }
+        (count > 0).then_some(total / f64::from(count))
+    }
+
+    fn wheel_temperature_text(
+        wheel: lmu_telemetry::WheelData,
+        config: &OverlayConfig,
+        mode: &str,
+    ) -> String {
+        let value = match mode {
+            "carcass" => display_temperature_value(wheel.carcass_temp_c, config)
+                .map(|value| format!("{value:.0}")),
+            "inner_layer" => display_temperature_value(wheel.inner_temp_c, config)
+                .map(|value| format!("{value:.0}")),
+            "surface_lcr" => {
+                let values = [
+                    wheel.surface_temp_left_c,
+                    wheel.surface_temp_center_c,
+                    wheel.surface_temp_right_c,
+                ];
+                values.into_iter().flatten().next().is_some().then(|| {
+                    values
+                        .into_iter()
+                        .map(|value| {
+                            display_temperature_value(value, config)
+                                .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("/")
+                })
+            }
+            _ => wheel_surface_temperature(wheel)
+                .and_then(|value| display_temperature_value(Some(value), config))
+                .map(|value| format!("{value:.0}")),
+        };
+        value.unwrap_or_else(|| "--".to_string())
+    }
+
+    fn option_number(value: Option<u8>) -> String {
+        value.map_or_else(|| "--".to_string(), |value| value.to_string())
+    }
+
+    fn electronics_summary(snapshot: &TelemetrySnapshot) -> String {
+        let vehicle = snapshot.vehicle;
+        let tc = vehicle.tc_active.map_or_else(
+            || {
+                vehicle
+                    .tc_setting
+                    .map_or_else(|| "TC --".to_string(), |value| format!("TC {value}"))
+            },
+            |active| {
+                if active {
+                    "TC ACTIVE".to_string()
+                } else {
+                    "TC READY".to_string()
+                }
+            },
+        );
+        let abs = vehicle.abs_active.map_or_else(
+            || {
+                vehicle
+                    .abs_setting
+                    .map_or_else(|| "ABS --".to_string(), |value| format!("ABS {value}"))
+            },
+            |active| {
+                if active {
+                    "ABS ACTIVE".to_string()
+                } else {
+                    "ABS READY".to_string()
+                }
+            },
+        );
+        let limiter = vehicle
+            .speed_limiter_active
+            .filter(|active| *active)
+            .map(|_| "LIMITER".to_string());
+        let mut parts = vec![tc, abs];
+        if let Some(limiter) = limiter {
+            parts.push(limiter);
+        }
+        parts.join("  ")
+    }
+
+    fn electronics_intervention_active(snapshot: &TelemetrySnapshot) -> bool {
+        snapshot.vehicle.tc_active == Some(true)
+            || snapshot.vehicle.abs_active == Some(true)
+            || snapshot.vehicle.speed_limiter_active == Some(true)
+    }
+
+    fn option_decimal(value: Option<f64>) -> String {
+        value.map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
+    }
+    fn option_percent(value: Option<f64>) -> String {
+        value.map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
+    }
+
+    fn display_fuel(value_liters: f64, config: &OverlayConfig) -> String {
+        if config.units.fuel == "gallons" {
+            format!("{:.2} gal", value_liters * 0.2641720524)
+        } else {
+            format!("{value_liters:.1} L")
+        }
+    }
+
+    fn display_pressure_value(value_kpa: Option<f64>, config: &OverlayConfig) -> Option<f64> {
+        value_kpa.map(|value| {
+            if config.units.pressure == "psi" {
+                value * 0.1450377377
+            } else {
+                value
+            }
+        })
+    }
+
+    fn pressure_unit_label(config: &OverlayConfig) -> &'static str {
+        if config.units.pressure == "psi" {
+            "psi"
+        } else {
+            "kPa"
+        }
+    }
+
+    fn display_temperature_value(value_c: Option<f64>, config: &OverlayConfig) -> Option<f64> {
+        value_c.map(|value| {
+            if config.units.temperature == "fahrenheit" {
+                value * 9.0 / 5.0 + 32.0
+            } else {
+                value
+            }
+        })
+    }
+
+    fn temperature_unit_label(config: &OverlayConfig) -> &'static str {
+        if config.units.temperature == "fahrenheit" {
+            "F"
+        } else {
+            "C"
+        }
+    }
+
+    fn semantic_flag(flag: i32) -> String {
+        let label = match flag {
+            0 => "GREEN",
+            1 => "BLUE",
+            2 => "YELLOW",
+            3 => "RED",
+            4 => "BLACK",
+            5 => "WHITE",
+            6 => "BLUE",
+            other => return format!("FLAG UNKNOWN ({other})"),
+        };
+        format!("FLAG {label}")
+    }
+
+    fn flag_color(config: &OverlayConfig, flag: i32) -> u32 {
+        let colors = colors(config);
+        match flag {
+            0 => colors.coaching_positive,
+            1 | 6 => colors.reference,
+            2 => colors.coaching_warning,
+            3 | 4 => colors.delta_loss,
+            5 => colors.secondary_text,
+            _ => colors.primary_text,
+        }
     }
 
     unsafe fn draw_extra_widget_panel(
@@ -1172,6 +2374,23 @@ mod windows_overlay {
                 theme_colors.border,
             )
         };
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: area.right() as f32,
+                bottom: area.bottom() as f32,
+                fill: show_background.then(|| widget_color(background)),
+                stroke: show_border.then(|| widget_color(border)),
+                stroke_width: widget_style
+                    .map_or(config.style.line_thickness, |style| style.border_width)
+                    .max(1) as f32,
+                radius: widget_style
+                    .map_or(config.style.border_radius, |style| style.border_radius)
+                    .max(0) as f32,
+            });
+            return;
+        }
         let rect = RECT {
             left: area.x,
             top: area.y,
@@ -1179,7 +2398,7 @@ mod windows_overlay {
             bottom: area.bottom(),
         };
         if show_background {
-            let brush = CreateSolidBrush(background);
+            let brush = CreateSolidBrush(widget_color(background));
             FillRect(hdc, &rect, brush);
             DeleteObject(brush);
         }
@@ -1187,9 +2406,24 @@ mod windows_overlay {
             let width = widget_style
                 .map_or(config.style.line_thickness, |style| style.border_width)
                 .max(1);
-            let pen = CreatePen(PS_SOLID, width, border);
+            let pen = CreatePen(PS_SOLID, width, widget_color(border));
             let old_pen = SelectObject(hdc, pen);
-            Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
+            let radius = widget_style
+                .map_or(config.style.border_radius, |style| style.border_radius)
+                .max(0);
+            if radius > 0 {
+                RoundRect(
+                    hdc,
+                    area.x,
+                    area.y,
+                    area.right(),
+                    area.bottom(),
+                    radius * 2,
+                    radius * 2,
+                );
+            } else {
+                Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
+            }
             SelectObject(hdc, old_pen);
             DeleteObject(pen);
         }
@@ -1357,7 +2591,49 @@ mod windows_overlay {
     ) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
-        let outline = CreatePen(PS_SOLID, style.line_width.max(1), 0x00888888);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: (area.x + area.width) as f32,
+                bottom: (area.y + area.height) as f32,
+                fill: None,
+                stroke: Some(widget_color(0x00888888)),
+                stroke_width: style.line_width.max(1) as f32,
+                radius: 0.0,
+            });
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: (area.x + 2) as f32,
+                top: (area.y + area.height - filled + 2) as f32,
+                right: (area.x + area.width - 2) as f32,
+                bottom: (area.y + area.height - 2) as f32,
+                fill: Some(widget_color(style.fill)),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: 0.0,
+            });
+            draw_text(
+                hdc,
+                area.x - 1,
+                area.y + area.height + 8,
+                style.label,
+                label,
+            );
+            if let Some(reference_value) = reference_value {
+                let reference_y = area.y + area.height
+                    - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
+                queue_shape(d2d_backend::ShapeCommand::Line {
+                    x1: area.x as f32,
+                    y1: reference_y as f32,
+                    x2: (area.x + area.width) as f32,
+                    y2: reference_y as f32,
+                    color: widget_color(style.reference),
+                    width: style.line_width.max(1) as f32,
+                });
+            }
+            return;
+        }
+        let outline = CreatePen(PS_SOLID, style.line_width.max(1), widget_color(0x00888888));
         let old_pen = SelectObject(hdc, outline);
         Rectangle(
             hdc,
@@ -1369,7 +2645,7 @@ mod windows_overlay {
         SelectObject(hdc, old_pen);
         DeleteObject(outline);
 
-        let brush = CreateSolidBrush(style.fill);
+        let brush = CreateSolidBrush(widget_color(style.fill));
         let fill_rect = RECT {
             left: area.x + 2,
             top: area.y + area.height - filled + 2,
@@ -1389,7 +2665,11 @@ mod windows_overlay {
         if let Some(reference_value) = reference_value {
             let reference_y = area.y + area.height
                 - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
-            let reference_pen = CreatePen(PS_SOLID, style.line_width.max(1), style.reference);
+            let reference_pen = CreatePen(
+                PS_SOLID,
+                style.line_width.max(1),
+                widget_color(style.reference),
+            );
             let old_pen = SelectObject(hdc, reference_pen);
             MoveToEx(hdc, area.x, reference_y, ptr::null_mut());
             LineTo(hdc, area.x + area.width, reference_y);
@@ -1398,10 +2678,130 @@ mod windows_overlay {
         }
     }
 
+    unsafe fn draw_horizontal_meter(hdc: HDC, area: Area, value: f64, fill: u32, background: u32) {
+        let ratio = value.clamp(0.0, 1.0);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: area.right() as f32,
+                bottom: area.bottom() as f32,
+                fill: Some(widget_color(background)),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: (area.height / 2) as f32,
+            });
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: (area.x + (area.width as f64 * ratio) as i32) as f32,
+                bottom: area.bottom() as f32,
+                fill: Some(widget_color(fill)),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: (area.height / 2) as f32,
+            });
+            return;
+        }
+        let background_brush = CreateSolidBrush(widget_color(background));
+        let rect = RECT {
+            left: area.x,
+            top: area.y,
+            right: area.right(),
+            bottom: area.bottom(),
+        };
+        FillRect(hdc, &rect, background_brush);
+        DeleteObject(background_brush);
+        let filled = RECT {
+            right: area.x + (area.width as f64 * ratio) as i32,
+            ..rect
+        };
+        let fill_brush = CreateSolidBrush(widget_color(fill));
+        FillRect(hdc, &filled, fill_brush);
+        DeleteObject(fill_brush);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn draw_rpm_segments(
+        hdc: HDC,
+        area: Area,
+        rpm: f64,
+        max_rpm: f64,
+        active_color: u32,
+        inactive_color: u32,
+        shift_start_percent: u8,
+        shift_warning_percent: u8,
+        limiter_percent: u8,
+        segment_count: u8,
+    ) {
+        let ratio = if max_rpm > 0.0 {
+            (rpm / max_rpm).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let segments = i32::from(segment_count.clamp(4, 20));
+        let gap = 2;
+        let segment_width = ((area.width - gap * (segments - 1)) / segments).max(2);
+        let active = (ratio * segments as f64).ceil() as i32;
+        for index in 0..segments {
+            let left = area.x + index * (segment_width + gap);
+            let right = (left + segment_width).min(area.right());
+            let segment_ratio = (index + 1) as f64 / segments as f64;
+            let start_ratio = f64::from(shift_start_percent) / 100.0;
+            let warning_ratio = f64::from(shift_warning_percent) / 100.0;
+            let limiter_ratio = f64::from(limiter_percent) / 100.0;
+            let color = if index < active && segment_ratio >= start_ratio {
+                if segment_ratio >= limiter_ratio {
+                    0x000000FF
+                } else if segment_ratio >= warning_ratio {
+                    0x0000FFFF
+                } else {
+                    active_color
+                }
+            } else {
+                inactive_color
+            };
+            if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+                queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                    left: left as f32,
+                    top: area.y as f32,
+                    right: right as f32,
+                    bottom: area.bottom() as f32,
+                    fill: Some(widget_color(color)),
+                    stroke: None,
+                    stroke_width: 0.0,
+                    radius: 1.0,
+                });
+            } else {
+                let brush = CreateSolidBrush(widget_color(color));
+                let rect = RECT {
+                    left,
+                    top: area.y,
+                    right,
+                    bottom: area.bottom(),
+                };
+                FillRect(hdc, &rect, brush);
+                DeleteObject(brush);
+            }
+        }
+    }
+
     unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
         let center = area.x + area.width / 2;
         let end = center + (value.clamp(-1.0, 1.0) * (area.width / 2) as f64).round() as i32;
-        let pen = CreatePen(PS_SOLID, area.height, color);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Line {
+                x1: center as f32,
+                y1: area.y as f32,
+                x2: end as f32,
+                y2: area.y as f32,
+                color: widget_color(color),
+                width: area.height.max(1) as f32,
+            });
+            draw_text(hdc, area.x, area.y + 20, label_color, "STEERING");
+            return;
+        }
+        let pen = CreatePen(PS_SOLID, area.height, widget_color(color));
         let old_pen = SelectObject(hdc, pen);
         MoveToEx(hdc, center, area.y, ptr::null_mut());
         LineTo(hdc, end, area.y);
@@ -1638,7 +3038,7 @@ mod windows_overlay {
             }
         }
         if config.coaching.input_match && hints < max_hints {
-            if let Some(message) = input_coaching_message(snapshot) {
+            if let Some(message) = input_coaching_message(snapshot.clone()) {
                 draw_text(hdc, x, y, colors.reference, message);
                 hints += 1;
                 y += scale_size(config, 18);
@@ -1926,6 +3326,40 @@ mod windows_overlay {
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {
         let colors = colors(config);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            for (widget, area) in widget_areas(config) {
+                if widget_layout(config, widget).locked {
+                    continue;
+                }
+                queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                    left: area.x as f32,
+                    top: area.y as f32,
+                    right: area.right() as f32,
+                    bottom: area.bottom() as f32,
+                    fill: None,
+                    stroke: Some(widget_color(colors.reference)),
+                    stroke_width: config.style.line_thickness.max(2) as f32,
+                    radius: 0.0,
+                });
+                if selected == Some(widget) {
+                    let right = area.right().saturating_sub(scale_size(config, 6));
+                    let bottom = area.bottom().saturating_sub(scale_size(config, 6));
+                    let step = scale_size(config, 5);
+                    for index in 0..3 {
+                        let inset = step * index;
+                        queue_shape(d2d_backend::ShapeCommand::Line {
+                            x1: (right - scale_size(config, 22) + inset) as f32,
+                            y1: bottom as f32,
+                            x2: right as f32,
+                            y2: (bottom - scale_size(config, 22) + inset) as f32,
+                            color: widget_color(colors.reference),
+                            width: config.style.line_thickness.max(2) as f32,
+                        });
+                    }
+                }
+            }
+            return;
+        }
         let pen = CreatePen(
             PS_SOLID,
             config.style.line_thickness.max(2),
@@ -1967,11 +3401,37 @@ mod windows_overlay {
         line_width: i32,
         value: impl Fn(TelemetrySnapshot) -> f64,
     ) {
-        let pen = CreatePen(PS_SOLID, line_width.max(1), color);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            let segment_count = history.len().saturating_sub(1).max(1) as f64;
+            let mut previous = None;
+            for (index, sample) in history.iter().cloned().enumerate() {
+                let Some(before) = previous else {
+                    previous = Some(sample);
+                    continue;
+                };
+                let x1 = area.x + (((index - 1) as f64 / segment_count) * area.width as f64) as i32;
+                let x2 = area.x + ((index as f64 / segment_count) * area.width as f64) as i32;
+                let y1 = area.y + area.height
+                    - (value(before).clamp(0.0, 1.0) * area.height as f64) as i32;
+                let y2 = area.y + area.height
+                    - (value(sample.clone()).clamp(0.0, 1.0) * area.height as f64) as i32;
+                queue_shape(d2d_backend::ShapeCommand::Line {
+                    x1: x1 as f32,
+                    y1: y1 as f32,
+                    x2: x2 as f32,
+                    y2: y2 as f32,
+                    color: widget_color(color),
+                    width: line_width.max(1) as f32,
+                });
+                previous = Some(sample);
+            }
+            return;
+        }
+        let pen = CreatePen(PS_SOLID, line_width.max(1), widget_color(color));
         let old_pen = SelectObject(hdc, pen);
         let segment_count = history.len().saturating_sub(1).max(1) as f64;
         let mut previous = None;
-        for (index, sample) in history.iter().copied().enumerate() {
+        for (index, sample) in history.iter().cloned().enumerate() {
             let Some(before) = previous else {
                 previous = Some(sample);
                 continue;
@@ -1981,8 +3441,8 @@ mod windows_overlay {
             let x2 = area.x + ((index as f64 / segment_count) * area.width as f64) as i32;
             let y1 =
                 area.y + area.height - (value(before).clamp(0.0, 1.0) * area.height as f64) as i32;
-            let y2 =
-                area.y + area.height - (value(sample).clamp(0.0, 1.0) * area.height as f64) as i32;
+            let y2 = area.y + area.height
+                - (value(sample.clone()).clamp(0.0, 1.0) * area.height as f64) as i32;
             MoveToEx(hdc, x1, y1, ptr::null_mut());
             LineTo(hdc, x2, y2);
             previous = Some(sample);
@@ -1992,9 +3452,20 @@ mod windows_overlay {
     }
 
     unsafe fn draw_text(hdc: HDC, x: i32, y: i32, color: u32, text: &str) {
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            NATIVE_TEXT_COMMANDS.with(|commands| {
+                commands.borrow_mut().push(d2d_backend::TextCommand {
+                    x,
+                    y,
+                    color: widget_color(color),
+                    text: text.to_string(),
+                });
+            });
+            return;
+        }
         let wide: Vec<u16> = text.encode_utf16().collect();
         SetBkMode(hdc, TRANSPARENT as i32);
-        SetTextColor(hdc, color);
+        SetTextColor(hdc, widget_color(color));
         TextOutW(hdc, x, y, wide.as_ptr(), wide.len() as i32);
     }
 
@@ -2214,6 +3685,126 @@ mod windows_overlay {
             assert_eq!(input_coaching_message(speed), Some("carry speed"));
         }
 
+        #[test]
+        fn blends_widget_colors_with_configured_opacity() {
+            assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 1.0), 0x00FFFFFF);
+            assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 0.5), 0x00808080);
+            assert_eq!(blend_color(0x00112233, 0x00445566, 0.0), 0x00445566);
+        }
+
+        #[test]
+        fn maps_flags_to_semantic_colors() {
+            let config = OverlayConfig::default();
+            assert_eq!(flag_color(&config, 0), colors(&config).coaching_positive);
+            assert_eq!(flag_color(&config, 2), colors(&config).coaching_warning);
+            assert_eq!(flag_color(&config, 3), colors(&config).delta_loss);
+            assert_eq!(flag_color(&config, 255), colors(&config).primary_text);
+        }
+
+        #[test]
+        fn converts_configured_display_units_from_normalized_si() {
+            let mut config = OverlayConfig::default();
+            assert_eq!(display_fuel(10.0, &config), "10.0 L");
+            assert_eq!(display_pressure_value(Some(100.0), &config), Some(100.0));
+            assert_eq!(display_temperature_value(Some(100.0), &config), Some(100.0));
+
+            config.units.fuel = "gallons".to_string();
+            config.units.pressure = "psi".to_string();
+            config.units.temperature = "fahrenheit".to_string();
+            assert_eq!(display_fuel(10.0, &config), "2.64 gal");
+            assert!(
+                (display_pressure_value(Some(100.0), &config).unwrap() - 14.5038).abs() < 0.001
+            );
+            assert_eq!(display_temperature_value(Some(100.0), &config), Some(212.0));
+        }
+
+        #[test]
+        fn formats_standings_lap_gaps_without_double_signs() {
+            let mut car = lmu_telemetry::VehicleScoringSnapshot {
+                slot_id: 1,
+                driver_name: None,
+                vehicle_name: None,
+                vehicle_class: None,
+                place: None,
+                lap_number: 1,
+                lap_distance_m: None,
+                current_sector: None,
+                last_lap_seconds: None,
+                best_lap_seconds: None,
+                gap_to_next_seconds: None,
+                gap_to_leader_seconds: None,
+                laps_behind_next: None,
+                laps_behind_leader: Some(-1),
+                in_pits: false,
+                in_garage: false,
+                pit_state: None,
+                finish_status: None,
+                flag: None,
+                is_player: false,
+                world_position: None,
+            };
+            assert_eq!(standings_gap(&car), "-1L");
+            car.laps_behind_leader = Some(2);
+            assert_eq!(standings_gap(&car), "+2L");
+        }
+
+        #[test]
+        fn formats_overall_and_class_position() {
+            let mut sample = snapshot();
+            sample.session.position = Some(5);
+            sample.session.total_vehicles = Some(20);
+            sample.field = std::sync::Arc::from(vec![
+                scoring_car(1, 2, "Hypercar", false),
+                scoring_car(42, 5, "Hypercar", true),
+                scoring_car(7, 8, "LMP2", false),
+            ]);
+            assert_eq!(position_summary(&sample), "P5/20 C2/2  L1");
+        }
+
+        #[test]
+        fn formats_active_electronics_states() {
+            let mut sample = snapshot();
+            sample.vehicle.tc_active = Some(true);
+            sample.vehicle.abs_active = Some(false);
+            sample.vehicle.speed_limiter_active = Some(true);
+            assert_eq!(
+                electronics_summary(&sample),
+                "TC ACTIVE  ABS READY  LIMITER"
+            );
+            assert!(electronics_intervention_active(&sample));
+        }
+
+        fn scoring_car(
+            slot_id: i32,
+            place: i32,
+            class: &str,
+            is_player: bool,
+        ) -> lmu_telemetry::VehicleScoringSnapshot {
+            lmu_telemetry::VehicleScoringSnapshot {
+                slot_id,
+                driver_name: None,
+                vehicle_name: None,
+                vehicle_class: Some(class.to_string()),
+                place: Some(place),
+                lap_number: 1,
+                lap_distance_m: None,
+                current_sector: None,
+                last_lap_seconds: None,
+                best_lap_seconds: None,
+                gap_to_next_seconds: None,
+                gap_to_leader_seconds: None,
+                laps_behind_next: None,
+                laps_behind_leader: None,
+                in_pits: false,
+                in_garage: false,
+                pit_state: None,
+                finish_status: None,
+                flag: None,
+                is_player,
+                world_position: None,
+            }
+        }
+
         fn snapshot() -> TelemetrySnapshot {
             TelemetrySnapshot {
                 throttle: 1.0,
@@ -2247,6 +3838,8 @@ mod windows_overlay {
                 in_garage: false,
                 lap_invalidated: None,
                 player_slot_id: 42,
+                field: std::sync::Arc::from(Vec::new()),
+                lap_history: std::sync::Arc::from(Vec::new()),
                 delta_seconds: None,
                 predicted_lap_seconds: None,
                 session_best_seconds: None,
@@ -2262,6 +3855,11 @@ mod windows_overlay {
                 reference_throttle: None,
                 reference_brake: None,
                 reference_speed_kph: None,
+                fuel_current_liters: None,
+                fuel_capacity_liters: None,
+                fuel_last_lap_used: None,
+                fuel_average_lap_used: None,
+                fuel_estimated_laps_remaining: None,
             }
         }
     }
