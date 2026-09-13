@@ -1564,6 +1564,7 @@ mod windows_overlay {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     unsafe fn draw_four_wheel_detail(
         hdc: HDC,
         area: Area,
