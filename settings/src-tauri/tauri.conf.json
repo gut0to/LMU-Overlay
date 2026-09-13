@@ -27,6 +27,13 @@
     "active": true,
     "targets": ["msi", "nsis"],
     "icon": ["icons/icon.ico"],
-    "resources": ["../../target/release/hashoverlay.exe"]
+    "resources": [
+      "../../target/release/hashoverlay.exe",
+      "../../README.md",
+      "../../LICENSE",
+      "../../THIRD_PARTY_LICENSES.md",
+      "../../docs/usage.md",
+      "../../docs/widgets.md"
+    ]
   }
 }
