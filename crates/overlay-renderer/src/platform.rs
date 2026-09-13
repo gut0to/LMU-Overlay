@@ -1289,30 +1289,34 @@ mod windows_overlay {
                 .map_or_else(|| "FLAG --".to_string(), semantic_flag),
             "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
                 (Some(fuel), Some(capacity)) if capacity > 0.0 => {
-                    format!("{fuel:.1} L  {:.0}%", fuel / capacity * 100.0)
+                    format!(
+                        "{}  {:.0}%",
+                        display_fuel(fuel, config),
+                        fuel / capacity * 100.0
+                    )
                 }
-                (Some(fuel), _) => format!("FUEL {fuel:.1} L"),
+                (Some(fuel), _) => display_fuel(fuel, config),
                 _ => "FUEL --".to_string(),
             },
             "tyres" => wheel_summary(
                 "TYRES",
                 [
-                    snapshot.wheels.front_left.pressure_kpa,
-                    snapshot.wheels.front_right.pressure_kpa,
-                    snapshot.wheels.rear_left.pressure_kpa,
-                    snapshot.wheels.rear_right.pressure_kpa,
+                    display_pressure_value(snapshot.wheels.front_left.pressure_kpa, config),
+                    display_pressure_value(snapshot.wheels.front_right.pressure_kpa, config),
+                    display_pressure_value(snapshot.wheels.rear_left.pressure_kpa, config),
+                    display_pressure_value(snapshot.wheels.rear_right.pressure_kpa, config),
                 ],
-                "kPa",
+                pressure_unit_label(config),
             ),
             "brakes" => wheel_summary(
                 "BRAKES",
                 [
-                    snapshot.wheels.front_left.brake_temp_c,
-                    snapshot.wheels.front_right.brake_temp_c,
-                    snapshot.wheels.rear_left.brake_temp_c,
-                    snapshot.wheels.rear_right.brake_temp_c,
+                    display_temperature_value(snapshot.wheels.front_left.brake_temp_c, config),
+                    display_temperature_value(snapshot.wheels.front_right.brake_temp_c, config),
+                    display_temperature_value(snapshot.wheels.rear_left.brake_temp_c, config),
+                    display_temperature_value(snapshot.wheels.rear_right.brake_temp_c, config),
                 ],
-                "C",
+                temperature_unit_label(config),
             ),
             "electronics" => match (snapshot.vehicle.tc_setting, snapshot.vehicle.abs_setting) {
                 (Some(tc), Some(abs)) => format!("TC {tc}  ABS {abs}"),
@@ -1332,14 +1336,34 @@ mod windows_overlay {
                 snapshot.vehicle.engine_water_temp_c,
                 snapshot.vehicle.engine_oil_temp_c,
             ) {
-                (Some(water), Some(oil)) => format!("W {water:.0}C  O {oil:.0}C"),
+                (Some(water), Some(oil)) => format!(
+                    "W {}{}  O {}{}",
+                    display_temperature_value(Some(water), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config),
+                    display_temperature_value(Some(oil), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config)
+                ),
                 _ => "ENGINE --".to_string(),
             },
             "weather" => match (
                 snapshot.session.ambient_temp_c,
                 snapshot.session.track_temp_c,
             ) {
-                (Some(ambient), Some(track)) => format!("AIR {ambient:.0}C  TRACK {track:.0}C"),
+                (Some(ambient), Some(track)) => format!(
+                    "AIR {}{}  TRACK {}{}",
+                    display_temperature_value(Some(ambient), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config),
+                    display_temperature_value(Some(track), config)
+                        .unwrap_or_default()
+                        .round(),
+                    temperature_unit_label(config)
+                ),
                 _ => "WEATHER --".to_string(),
             },
             "damage" => {
@@ -1412,7 +1436,7 @@ mod windows_overlay {
                             area.x + padding,
                             stats_y,
                             detail_color,
-                            &format!("AVG {average:.2} L/lap"),
+                            &format!("AVG {} /lap", display_fuel(average, config)),
                         );
                     }
                 }
@@ -1423,7 +1447,7 @@ mod windows_overlay {
                             area.x + padding,
                             stats_y + scale_px(config, 18),
                             detail_color,
-                            &format!("LAST {last:.2} L/lap"),
+                            &format!("LAST {} /lap", display_fuel(last, config)),
                         );
                     }
                 }
@@ -1945,27 +1969,33 @@ mod windows_overlay {
             draw_widget_panel(hdc, card, config);
             let value = if brake {
                 format!(
-                    "{}  {} C / {} kPa",
+                    "{}  {} {} / {} {}",
                     labels[index],
-                    option_decimal(wheel.brake_temp_c),
-                    option_decimal(wheel.brake_pressure_kpa)
+                    option_decimal(display_temperature_value(wheel.brake_temp_c, config)),
+                    temperature_unit_label(config),
+                    option_decimal(display_pressure_value(wheel.brake_pressure_kpa, config)),
+                    pressure_unit_label(config)
                 )
             } else if show_wear {
                 format!(
-                    "{}  {} kPa  W{}%",
+                    "{}  {} {}  W{}%",
                     labels[index],
-                    option_decimal(wheel.pressure_kpa),
+                    option_decimal(display_pressure_value(wheel.pressure_kpa, config)),
+                    pressure_unit_label(config),
                     wheel
                         .wear_percent
                         .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
                 )
             } else {
                 format!(
-                    "{}  {} kPa  T{} C",
+                    "{}  {} {}  T{} {}",
                     labels[index],
-                    option_decimal(wheel.pressure_kpa),
+                    option_decimal(display_pressure_value(wheel.pressure_kpa, config)),
+                    pressure_unit_label(config),
                     wheel_surface_temperature(wheel)
-                        .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
+                        .and_then(|value| display_temperature_value(Some(value), config))
+                        .map_or_else(|| "--".to_string(), |value| format!("{value:.0}")),
+                    temperature_unit_label(config)
                 )
             };
             draw_text(
@@ -2001,6 +2031,50 @@ mod windows_overlay {
     }
     fn option_percent(value: Option<f64>) -> String {
         value.map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
+    }
+
+    fn display_fuel(value_liters: f64, config: &OverlayConfig) -> String {
+        if config.units.fuel == "gallons" {
+            format!("{:.2} gal", value_liters * 0.2641720524)
+        } else {
+            format!("{value_liters:.1} L")
+        }
+    }
+
+    fn display_pressure_value(value_kpa: Option<f64>, config: &OverlayConfig) -> Option<f64> {
+        value_kpa.map(|value| {
+            if config.units.pressure == "psi" {
+                value * 0.1450377377
+            } else {
+                value
+            }
+        })
+    }
+
+    fn pressure_unit_label(config: &OverlayConfig) -> &'static str {
+        if config.units.pressure == "psi" {
+            "psi"
+        } else {
+            "kPa"
+        }
+    }
+
+    fn display_temperature_value(value_c: Option<f64>, config: &OverlayConfig) -> Option<f64> {
+        value_c.map(|value| {
+            if config.units.temperature == "fahrenheit" {
+                value * 9.0 / 5.0 + 32.0
+            } else {
+                value
+            }
+        })
+    }
+
+    fn temperature_unit_label(config: &OverlayConfig) -> &'static str {
+        if config.units.temperature == "fahrenheit" {
+            "F"
+        } else {
+            "C"
+        }
     }
 
     fn semantic_flag(flag: i32) -> String {
@@ -3359,6 +3433,23 @@ mod windows_overlay {
             assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 1.0), 0x00FFFFFF);
             assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 0.5), 0x00808080);
             assert_eq!(blend_color(0x00112233, 0x00445566, 0.0), 0x00445566);
+        }
+
+        #[test]
+        fn converts_configured_display_units_from_normalized_si() {
+            let mut config = OverlayConfig::default();
+            assert_eq!(display_fuel(10.0, &config), "10.0 L");
+            assert_eq!(display_pressure_value(Some(100.0), &config), Some(100.0));
+            assert_eq!(display_temperature_value(Some(100.0), &config), Some(100.0));
+
+            config.units.fuel = "gallons".to_string();
+            config.units.pressure = "psi".to_string();
+            config.units.temperature = "fahrenheit".to_string();
+            assert_eq!(display_fuel(10.0, &config), "2.64 gal");
+            assert!(
+                (display_pressure_value(Some(100.0), &config).unwrap() - 14.5038).abs() < 0.001
+            );
+            assert_eq!(display_temperature_value(Some(100.0), &config), Some(212.0));
         }
 
         #[test]
