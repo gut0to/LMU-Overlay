@@ -5,6 +5,10 @@ use crate::config::OverlayConfig;
 #[cfg(not(windows))]
 use telemetry_engine::TelemetrySnapshot;
 
+#[cfg(windows)]
+#[path = "d2d_backend.rs"]
+mod d2d_backend;
+
 #[derive(Debug)]
 pub enum OverlayError {
     UnsupportedPlatform,
@@ -76,6 +80,7 @@ mod windows_overlay {
         },
     };
 
+    use super::d2d_backend;
     use crate::config::{WidgetLayout, WidgetOptions, WidgetStyleConfig};
 
     use super::{config::parse_color, OverlayConfig, OverlayError};
@@ -176,6 +181,7 @@ mod windows_overlay {
         config_path: Option<Arc<PathBuf>>,
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
+        d2d: Option<Arc<d2d_backend::D2dBackend>>,
     }
 
     #[derive(Debug, Default)]
@@ -250,6 +256,7 @@ mod windows_overlay {
                     config_path: config_path.map(Arc::new),
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
+                    d2d: None,
                 },
             })
         }
@@ -553,6 +560,17 @@ mod windows_overlay {
                 return Err(OverlayError::WindowCreationFailed);
             }
 
+            match d2d_backend::D2dBackend::new(
+                windows::Win32::Foundation::HWND(hwnd),
+                width as u32,
+                height as u32,
+            ) {
+                Ok(backend) => (*state_ptr).d2d = Some(Arc::new(backend)),
+                Err(error) => {
+                    log::warn!("Direct2D initialization failed; using GDI fallback: {error}")
+                }
+            }
+
             SetLayeredWindowAttributes(hwnd, COLOR_KEY, opacity, LWA_COLORKEY | LWA_ALPHA);
             windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(
                 hwnd,
@@ -846,7 +864,22 @@ mod windows_overlay {
     unsafe fn paint(hwnd: HWND) {
         let render_started = Instant::now();
         let mut paint: PAINTSTRUCT = zeroed();
-        let hdc = BeginPaint(hwnd, &mut paint);
+        let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
+            hwnd,
+            windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
+        ) as *mut SharedState;
+
+        if state_ptr.is_null() {
+            return;
+        }
+
+        let state = &*state_ptr;
+        let d2d_hdc = state
+            .d2d
+            .as_ref()
+            .and_then(|backend| backend.begin_gdi().ok());
+        let using_d2d = d2d_hdc.is_some();
+        let hdc = d2d_hdc.unwrap_or_else(|| BeginPaint(hwnd, &mut paint));
         let mut rect: RECT = zeroed();
         GetClientRect(hwnd, &mut rect);
 
@@ -854,17 +887,6 @@ mod windows_overlay {
         FillRect(hdc, &rect, black);
         DeleteObject(black);
 
-        let state_ptr = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
-            hwnd,
-            windows_sys::Win32::UI::WindowsAndMessaging::GWLP_USERDATA,
-        ) as *mut SharedState;
-
-        if state_ptr.is_null() {
-            EndPaint(hwnd, &paint);
-            return;
-        }
-
-        let state = &*state_ptr;
         let config = state
             .config
             .lock()
@@ -908,7 +930,17 @@ mod windows_overlay {
             stats.render_micros += render_started.elapsed().as_micros() as u64;
         }
 
-        EndPaint(hwnd, &paint);
+        if let Some(backend) = state.d2d.as_ref() {
+            if using_d2d {
+                if let Err(error) = backend.end_gdi() {
+                    log::warn!("Direct2D frame submission failed: {error}");
+                }
+            } else {
+                EndPaint(hwnd, &paint);
+            }
+        } else {
+            EndPaint(hwnd, &paint);
+        }
     }
 
     unsafe fn draw_panel(hdc: HDC, config: &OverlayConfig) {

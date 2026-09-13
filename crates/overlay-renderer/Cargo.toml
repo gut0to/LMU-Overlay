@@ -12,3 +12,4 @@ telemetry-engine = { path = "../telemetry-engine" }
 lmu-telemetry = { path = "../lmu-telemetry" }
 toml.workspace = true
 windows-sys.workspace = true
+windows.workspace = true
