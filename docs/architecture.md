@@ -21,13 +21,13 @@ The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU an
 
 ## Renderer
 
-The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, timing, coaching, engineering and performance widgets. Direct2D owns the frame surface and shape primitives, while DirectWrite owns text layout. The central widget catalog supplies stable IDs, categories, descriptions and data requirements to the Settings app. Window placement, layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visibility are loaded from one config file.
+The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, timing, coaching, engineering and performance widgets. The central widget catalog supplies stable IDs, categories, descriptions and data requirements to the Settings app. Window placement, layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visibility are loaded from one config file.
 
 F9 toggles visibility by default. F10 toggles edit mode by default, which makes the overlay clickable so each unlocked widget can be selected, moved, resized and saved back to the config file.
 
 Saved config changes are hot reloaded while the overlay is running. This lets the Settings app change colors, layout, opacity, units, coaching and timing behavior without restarting the overlay.
 
-The normal Windows path submits cached Direct2D shapes and DirectWrite text commands. A GDI path remains only as a compatibility fallback when the native surface cannot be created, and Win32/GDI interop is retained for bootstrap integration with the existing window paint lifecycle. Widgets do not depend on the fallback path for their data or layout.
+The renderer still uses GDI drawing while the Direct2D/DirectComposition backend is being refined. The module boundary keeps that swap isolated from telemetry and lap logic.
 
 ## Lap And Delta Engine
 

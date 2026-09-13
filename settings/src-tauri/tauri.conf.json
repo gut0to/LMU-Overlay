@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "identifier": "dev.hashoverlay.settings",
   "build": {
-    "beforeDevCommand": "node node_modules/vite/bin/vite.js",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -26,14 +27,6 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
-    "icon": ["icons/icon.ico"],
-    "resources": {
-      "../../target/release/hashoverlay.exe": "hashoverlay.exe",
-      "../../README.md": "README.md",
-      "../../LICENSE": "LICENSE",
-      "../../THIRD_PARTY_LICENSES.md": "THIRD_PARTY_LICENSES.md",
-      "../../docs/usage.md": "docs/usage.md",
-      "../../docs/widgets.md": "docs/widgets.md"
-    }
+    "icon": ["icons/icon.ico"]
   }
 }

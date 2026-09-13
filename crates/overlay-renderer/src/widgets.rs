@@ -7,9 +7,6 @@ pub struct WidgetDefinition {
     pub category: &'static str,
     pub description: &'static str,
     pub data_requirement: &'static str,
-    /// Truth status of the runtime data path. This is intentionally explicit
-    /// so the Settings catalog cannot imply that a placeholder is live data.
-    pub status: &'static str,
 }
 
 pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
@@ -19,7 +16,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "HUD",
         description: "Gear, speed and engine speed.",
         data_requirement: "fast telemetry",
-        status: "Real",
     },
     WidgetDefinition {
         id: "speed",
@@ -27,7 +23,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "HUD",
         description: "Dedicated speed readout with selectable units.",
         data_requirement: "fast telemetry",
-        status: "Real",
     },
     WidgetDefinition {
         id: "rpm",
@@ -35,7 +30,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "HUD",
         description: "Engine-speed bar and shift warning.",
         data_requirement: "fast telemetry",
-        status: "Real",
     },
     WidgetDefinition {
         id: "inputs",
@@ -43,7 +37,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "HUD",
         description: "Throttle, brake and clutch bars.",
         data_requirement: "fast telemetry",
-        status: "Real",
     },
     WidgetDefinition {
         id: "steering",
@@ -51,7 +44,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "HUD",
         description: "Steering position indicator.",
         data_requirement: "fast telemetry",
-        status: "Real",
     },
     WidgetDefinition {
         id: "input_history",
@@ -59,7 +51,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Analysis",
         description: "Bounded trace of driver inputs.",
         data_requirement: "fast telemetry history",
-        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "lap_timing",
@@ -67,7 +58,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Current, last, session and personal-best timing.",
         data_requirement: "lap engine",
-        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "timing",
@@ -75,7 +65,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Reference delta and predicted lap.",
         data_requirement: "lap engine",
-        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "sectors",
@@ -83,7 +72,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "S1, S2 and S3 when officially exposed.",
         data_requirement: "official scoring",
-        status: "Real",
     },
     WidgetDefinition {
         id: "mini_sectors",
@@ -91,7 +79,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Progress slices against the selected reference.",
         data_requirement: "lap engine",
-        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "lap_history",
@@ -99,7 +86,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Recent valid and invalid laps.",
         data_requirement: "lap engine",
-        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "position",
@@ -107,7 +93,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Player position and lap.",
         data_requirement: "official scoring",
-        status: "Real",
     },
     WidgetDefinition {
         id: "relative",
@@ -115,7 +100,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Nearby cars from official scoring data.",
         data_requirement: "official scoring",
-        status: "Real",
     },
     WidgetDefinition {
         id: "standings",
@@ -123,7 +107,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Configurable classification table.",
         data_requirement: "official scoring",
-        status: "Real",
     },
     WidgetDefinition {
         id: "flags",
@@ -131,7 +114,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Race",
         description: "Session and local flag status.",
         data_requirement: "official scoring",
-        status: "Real",
     },
     WidgetDefinition {
         id: "fuel",
@@ -139,7 +121,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Fuel",
         description: "Fuel quantity, consumption and remaining estimate.",
         data_requirement: "official vehicle data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "tyres",
@@ -147,7 +128,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Tyres",
         description: "Pressure, temperature, wear and grip by wheel.",
         data_requirement: "official wheel data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "brakes",
@@ -155,7 +135,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Brakes",
         description: "Brake temperature, pressure and bias.",
         data_requirement: "official wheel data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "electronics",
@@ -163,7 +142,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Electronics",
         description: "Electronic-aid state and settings.",
         data_requirement: "official vehicle data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "energy",
@@ -171,7 +149,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Energy",
         description: "Battery, virtual energy and hybrid state.",
         data_requirement: "official vehicle data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "engine",
@@ -179,7 +156,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Car",
         description: "Temperatures, boost and limiter state.",
         data_requirement: "official vehicle data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "damage",
@@ -187,7 +163,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Car",
         description: "Damage, tyre and impact warnings.",
         data_requirement: "official vehicle data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "weather",
@@ -195,7 +170,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Utility",
         description: "Track and ambient conditions.",
         data_requirement: "official session data",
-        status: "Real",
     },
     WidgetDefinition {
         id: "coaching",
@@ -203,7 +177,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Analysis",
         description: "Reference-lap braking, throttle, speed and gear hints.",
         data_requirement: "lap engine",
-        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "performance",
@@ -211,7 +184,6 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Utility",
         description: "Overlay acquisition and rendering health.",
         data_requirement: "runtime",
-        status: "Real",
     },
 ];
 

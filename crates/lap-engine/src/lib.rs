@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
-use telemetry_engine::{LapHistoryEntry, TelemetrySnapshot};
+use telemetry_engine::TelemetrySnapshot;
 
 const NORMALIZED_REFERENCE_POINTS: usize = 2_001;
 const MAX_MINI_SECTORS: usize = 200;
@@ -228,11 +226,10 @@ pub struct LapAnalysis {
     pub speed_hint_kph: Option<f64>,
     pub reference_gear: Option<i32>,
     pub reference_steering: Option<f64>,
-    pub mini_sector_history: Arc<[MiniSectorResult]>,
+    pub mini_sector_history: Vec<MiniSectorResult>,
     pub reference_throttle: Option<f64>,
     pub reference_brake: Option<f64>,
     pub reference_speed_kph: Option<f64>,
-    pub lap_history: std::sync::Arc<[LapHistoryEntry]>,
 }
 
 impl LapAnalysis {
@@ -252,7 +249,6 @@ impl LapAnalysis {
         snapshot.reference_throttle = self.reference_throttle;
         snapshot.reference_brake = self.reference_brake;
         snapshot.reference_speed_kph = self.reference_speed_kph;
-        snapshot.lap_history = self.lap_history;
     }
 }
 
@@ -310,8 +306,6 @@ pub struct LapEngine {
     previous_boundary_delta: Option<f64>,
     completed_mini_sector_delta: Option<f64>,
     completed_mini_sectors: Vec<MiniSectorResult>,
-    completed_mini_sector_snapshot: Arc<[MiniSectorResult]>,
-    lap_history: std::collections::VecDeque<LapHistoryEntry>,
     current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
     last_valid_lap: Option<ReferenceLap>,
@@ -337,8 +331,6 @@ impl LapEngine {
             previous_boundary_delta: None,
             completed_mini_sector_delta: None,
             completed_mini_sectors: Vec::with_capacity(MAX_MINI_SECTORS),
-            completed_mini_sector_snapshot: Arc::from(Vec::new()),
-            lap_history: std::collections::VecDeque::with_capacity(10),
             current_lap_valid: false,
             last_lap: None,
             last_valid_lap: None,
@@ -355,19 +347,19 @@ impl LapEngine {
     }
 
     pub fn update(&mut self, snapshot: TelemetrySnapshot) -> LapAnalysis {
-        self.reset_if_new_session(&snapshot);
+        self.reset_if_new_session(snapshot);
 
         if self.current_lap_number != Some(snapshot.lap_number) {
-            self.finish_current_lap(&snapshot);
+            self.finish_current_lap(snapshot);
         }
 
-        let sample_is_valid = is_lap_sample_valid(&snapshot);
+        let sample_is_valid = is_lap_sample_valid(snapshot);
         if !sample_is_valid {
             self.current_lap_valid = false;
         }
 
         if sample_is_valid {
-            self.record_driving_events(&snapshot);
+            self.record_driving_events(snapshot);
         }
 
         let progress = snapshot.lap_progress;
@@ -435,11 +427,10 @@ impl LapEngine {
             speed_hint_kph,
             reference_gear: reference_point.map(|point| point.gear),
             reference_steering: reference_point.map(|point| point.steering),
-            mini_sector_history: Arc::clone(&self.completed_mini_sector_snapshot),
+            mini_sector_history: self.completed_mini_sectors.clone(),
             reference_throttle: reference_point.map(|point| point.throttle),
             reference_brake: reference_point.map(|point| point.brake),
             reference_speed_kph: reference_point.map(|point| point.speed_kph),
-            lap_history: std::sync::Arc::from(self.lap_history.iter().cloned().collect::<Vec<_>>()),
         }
     }
 
@@ -455,27 +446,12 @@ impl LapEngine {
         self.pending_personal_best.take()
     }
 
-    fn finish_current_lap(&mut self, snapshot: &TelemetrySnapshot) {
+    fn finish_current_lap(&mut self, snapshot: TelemetrySnapshot) {
         if let Some(lap_time) = self.current_points.last().map(|point| point.time_seconds) {
             if self.current_points.len() >= self.config.min_reference_points {
                 if let Some(mut lap) = ReferenceLap::new(lap_time, self.current_points.clone()) {
                     lap.events = self.current_events.clone();
                     self.last_lap = Some(lap.clone());
-                    if let Some(lap_number) = self.current_lap_number {
-                        if self.lap_history.len() == 10 {
-                            self.lap_history.pop_front();
-                        }
-                        let delta_to_best = self
-                            .session_best
-                            .as_ref()
-                            .map(|best| lap.total_time_seconds - best.total_time_seconds);
-                        self.lap_history.push_back(LapHistoryEntry {
-                            lap: lap_number,
-                            time_seconds: Some(lap.total_time_seconds),
-                            valid: self.current_lap_valid,
-                            delta_to_best,
-                        });
-                    }
                     if self.current_lap_valid {
                         self.last_valid_lap = Some(lap.clone());
                         if is_better(&self.best_valid_lap, &lap) {
@@ -504,7 +480,6 @@ impl LapEngine {
         self.previous_boundary_delta = None;
         self.completed_mini_sector_delta = None;
         self.completed_mini_sectors.clear();
-        self.lap_history.clear();
         self.current_lap_valid = is_lap_sample_valid(snapshot);
     }
 
@@ -520,7 +495,7 @@ impl LapEngine {
         }
     }
 
-    fn record_driving_events(&mut self, snapshot: &TelemetrySnapshot) {
+    fn record_driving_events(&mut self, snapshot: TelemetrySnapshot) {
         if crossed_up(
             self.previous_brake,
             snapshot.brake,
@@ -561,7 +536,7 @@ impl LapEngine {
 
     fn push_event(
         &mut self,
-        snapshot: &TelemetrySnapshot,
+        snapshot: TelemetrySnapshot,
         kind: DrivingEventKind,
         input_value: f64,
     ) {
@@ -618,8 +593,6 @@ impl LapEngine {
                     delta_seconds: own_delta,
                     state: mini_sector_state(own_delta),
                 });
-                self.completed_mini_sector_snapshot =
-                    Arc::from(self.completed_mini_sectors.clone());
             }
         }
 
@@ -678,8 +651,8 @@ impl LapEngine {
         Some(delta_meters)
     }
 
-    fn reset_if_new_session(&mut self, snapshot: &TelemetrySnapshot) {
-        let marker = SessionMarker::from_snapshot(snapshot.clone());
+    fn reset_if_new_session(&mut self, snapshot: TelemetrySnapshot) {
+        let marker = SessionMarker::from_snapshot(snapshot);
         if self
             .session_marker
             .is_some_and(|previous| marker.starts_new_session(previous))
@@ -701,7 +674,6 @@ impl LapEngine {
         self.previous_boundary_delta = None;
         self.completed_mini_sector_delta = None;
         self.completed_mini_sectors.clear();
-        self.completed_mini_sector_snapshot = Arc::from(Vec::new());
         self.current_lap_valid = false;
         self.last_lap = None;
         self.last_valid_lap = None;
@@ -870,7 +842,7 @@ fn interpolate_points(points: &[ReferencePoint], progress: f64) -> ReferencePoin
     }
 }
 
-fn is_lap_sample_valid(snapshot: &TelemetrySnapshot) -> bool {
+fn is_lap_sample_valid(snapshot: TelemetrySnapshot) -> bool {
     snapshot.game_phase == lmu_telemetry::GamePhase::GreenFlag
         && !snapshot.in_pits
         && !snapshot.in_garage
@@ -1175,8 +1147,6 @@ mod tests {
             in_garage: false,
             lap_invalidated: None,
             player_slot_id: 42,
-            field: std::sync::Arc::from(Vec::new()),
-            lap_history: std::sync::Arc::from(Vec::new()),
             delta_seconds: None,
             predicted_lap_seconds: None,
             session_best_seconds: None,
@@ -1192,11 +1162,6 @@ mod tests {
             reference_throttle: None,
             reference_brake: None,
             reference_speed_kph: None,
-            fuel_current_liters: None,
-            fuel_capacity_liters: None,
-            fuel_last_lap_used: None,
-            fuel_average_lap_used: None,
-            fuel_estimated_laps_remaining: None,
         }
     }
 
