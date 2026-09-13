@@ -198,9 +198,9 @@ function App() {
     }
   }
 
-  async function saveConfig() {
+  async function saveConfig(): Promise<boolean> {
     if (!config) {
-      return;
+      return false;
     }
     setSaving(true);
     try {
@@ -208,8 +208,10 @@ function App() {
       setConfig(response.config);
       setPath(response.path);
       setStatus("Saved");
+      return true;
     } catch (error) {
       setStatus(String(error));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -261,6 +263,9 @@ function App() {
 
   async function startOverlay() {
     try {
+      if (!(await saveConfig())) {
+        return;
+      }
       await invoke("start_overlay");
       setStatus("Overlay started");
     } catch (error) {
