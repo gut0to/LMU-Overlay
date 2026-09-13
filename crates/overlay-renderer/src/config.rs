@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 #[cfg(windows)]
@@ -1149,7 +1150,62 @@ impl std::fmt::Display for ConfigError {
 impl std::error::Error for ConfigError {}
 
 pub fn default_config_text() -> &'static str {
-    r##"# HashOverlay configuration
+    static TEXT: OnceLock<String> = OnceLock::new();
+    TEXT.get_or_init(|| {
+        let mut config: OverlayConfig = toml::from_str(DEFAULT_CONFIG_TEMPLATE)
+            .expect("the built-in HashOverlay configuration must be valid TOML");
+        let race = PresetConfig::default().race;
+        config.window.height = 300;
+        config.performance.mode = race.performance_mode.clone();
+        config.style = race.style.clone();
+        config.units = race.units.clone();
+        config.coaching = race.coaching_config.clone();
+        config.timing.reference_mode = race.reference_mode.clone();
+        config.timing.mini_sectors = race.mini_sectors;
+        config.widgets = WidgetConfig {
+            title: race.title,
+            speed_gear_rpm: race.speed_gear_rpm,
+            pedals: race.pedals,
+            steering: race.steering,
+            lap_info: race.lap_info,
+            lap_timing: race.lap_timing,
+            sectors: false,
+            mini_sector_widget: false,
+            input_history: race.input_history,
+            delta_timing: race.delta_timing,
+            ghost_inputs: race.ghost_inputs,
+            coaching: race.coaching,
+            performance_monitor: race.performance_monitor,
+        };
+        config.extra_widgets = race.extra_widgets;
+        if let Some(standings) = config.extra_widgets.get_mut("standings") {
+            standings.enabled = false;
+        }
+        place_default_race_widgets(&mut config);
+        toml::to_string_pretty(&config)
+            .expect("the built-in HashOverlay configuration must serialize")
+    })
+}
+
+fn place_default_race_widgets(config: &mut OverlayConfig) {
+    let placements = [
+        ("position", 210, 230, 196, 52),
+        ("relative", 14, 174, 196, 52),
+        ("standings", 14, 230, 392, 120),
+        ("fuel", 210, 174, 196, 52),
+        ("flags", 14, 230, 196, 52),
+    ];
+    for (id, x, y, width, height) in placements {
+        if let Some(widget) = config.extra_widgets.get_mut(id) {
+            widget.layout.x = x;
+            widget.layout.y = y;
+            widget.layout.width = width;
+            widget.layout.height = height;
+        }
+    }
+}
+
+const DEFAULT_CONFIG_TEMPLATE: &str = r##"# HashOverlay configuration
 # Open with: hashoverlay --configure
 
 config_version = 7
@@ -1384,8 +1440,7 @@ delta_timing = true
 ghost_inputs = false
 coaching = false
 performance_monitor = false
-"##
-}
+"##;
 
 pub fn parse_color(value: &str, fallback: u32) -> u32 {
     let trimmed = value.trim().trim_start_matches('#');
@@ -1413,11 +1468,12 @@ mod tests {
 
         assert_eq!(config.config_version, 7);
         assert_eq!(config.window.width, 420);
-        assert!(config.widgets.input_history);
-        assert_eq!(config.timing.mini_sectors, 40);
+        assert_eq!(config.window.height, 300);
+        assert!(!config.widgets.input_history);
+        assert_eq!(config.timing.mini_sectors, 20);
         assert_eq!(config.hotkeys.toggle_overlay, "F9");
         assert_eq!(config.hotkeys.toggle_coaching, "Shift+F10");
-        assert_eq!(config.performance.mode, "normal");
+        assert_eq!(config.performance.mode, "eco");
         assert_eq!(config.style.scale, 1.0);
         assert_eq!(config.style.line_thickness, 2);
         assert_eq!(config.style.font_size, 14);
@@ -1432,6 +1488,10 @@ mod tests {
         assert_eq!(config.layout.telemetry.z_index, 10);
         assert_eq!(config.layout.telemetry.opacity, 1.0);
         assert_eq!(config.layout.inputs.width, 240);
+        assert!(config.extra_widgets["relative"].enabled);
+        assert!(config.extra_widgets["fuel"].enabled);
+        assert!(config.extra_widgets["flags"].enabled);
+        assert!(!config.extra_widgets["standings"].enabled);
         assert!(config.presets.custom.is_empty());
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
     }
