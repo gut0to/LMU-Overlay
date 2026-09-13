@@ -1278,11 +1278,7 @@ mod windows_overlay {
                     )
                 },
             ),
-            "position" => match (snapshot.session.position, snapshot.session.total_vehicles) {
-                (Some(position), Some(total)) => format!("P{position}/{total}"),
-                (Some(position), None) => format!("P{position}"),
-                _ => "POSITION --".to_string(),
-            },
+            "position" => position_summary(&snapshot),
             "flags" => snapshot
                 .session
                 .flag
@@ -1436,6 +1432,26 @@ mod windows_overlay {
         let detail_y = area.y + padding + title_height + scale_px(config, 22);
         let detail_color = widget_secondary_color(config, widget_style);
         match id {
+            "position" => {
+                if let Some(gap) = snapshot.session.gap_ahead_seconds {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y,
+                        detail_color,
+                        &format!("AHEAD {gap:+.3}s"),
+                    );
+                }
+                if let Some(gap) = snapshot.session.gap_behind_seconds {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        detail_color,
+                        &format!("BEHIND {gap:+.3}s"),
+                    );
+                }
+            }
             "fuel" => {
                 if let (Some(fuel), Some(capacity)) =
                     (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters)
@@ -1699,6 +1715,36 @@ mod windows_overlay {
             }
             _ => {}
         }
+    }
+
+    fn position_summary(snapshot: &TelemetrySnapshot) -> String {
+        let Some(position) = snapshot.session.position else {
+            return "POSITION --".to_string();
+        };
+        let overall = snapshot.session.total_vehicles.map_or_else(
+            || format!("P{position}"),
+            |total| format!("P{position}/{total}"),
+        );
+        let class_position = snapshot
+            .field
+            .iter()
+            .find(|car| car.is_player || car.slot_id == snapshot.player_slot_id)
+            .and_then(|player| {
+                let class = player.vehicle_class.as_deref()?;
+                let class_cars = snapshot
+                    .field
+                    .iter()
+                    .filter(|car| car.vehicle_class.as_deref() == Some(class))
+                    .collect::<Vec<_>>();
+                let place = class_cars
+                    .iter()
+                    .filter_map(|car| car.place)
+                    .filter(|place| *place <= position)
+                    .count();
+                (place > 0).then_some(format!(" C{place}/{}", class_cars.len()))
+            })
+            .unwrap_or_default();
+        format!("{overall}{class_position}  L{}", snapshot.lap_number)
     }
 
     unsafe fn draw_relative_widget(
@@ -3604,6 +3650,50 @@ mod windows_overlay {
             assert_eq!(standings_gap(&car), "-1L");
             car.laps_behind_leader = Some(2);
             assert_eq!(standings_gap(&car), "+2L");
+        }
+
+        #[test]
+        fn formats_overall_and_class_position() {
+            let mut sample = snapshot();
+            sample.session.position = Some(5);
+            sample.session.total_vehicles = Some(20);
+            sample.field = std::sync::Arc::from(vec![
+                scoring_car(1, 2, "Hypercar", false),
+                scoring_car(42, 5, "Hypercar", true),
+                scoring_car(7, 8, "LMP2", false),
+            ]);
+            assert_eq!(position_summary(&sample), "P5/20 C2/2  L1");
+        }
+
+        fn scoring_car(
+            slot_id: i32,
+            place: i32,
+            class: &str,
+            is_player: bool,
+        ) -> lmu_telemetry::VehicleScoringSnapshot {
+            lmu_telemetry::VehicleScoringSnapshot {
+                slot_id,
+                driver_name: None,
+                vehicle_name: None,
+                vehicle_class: Some(class.to_string()),
+                place: Some(place),
+                lap_number: 1,
+                lap_distance_m: None,
+                current_sector: None,
+                last_lap_seconds: None,
+                best_lap_seconds: None,
+                gap_to_next_seconds: None,
+                gap_to_leader_seconds: None,
+                laps_behind_next: None,
+                laps_behind_leader: None,
+                in_pits: false,
+                in_garage: false,
+                pit_state: None,
+                finish_status: None,
+                flag: None,
+                is_player,
+                world_position: None,
+            }
         }
 
         fn snapshot() -> TelemetrySnapshot {
