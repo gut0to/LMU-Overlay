@@ -1399,6 +1399,8 @@ mod windows_overlay {
                 || widget_primary_color(config, widget_style),
                 |flag| flag_color(config, flag),
             )
+        } else if id == "electronics" && electronics_intervention_active(&snapshot) {
+            colors(config).delta_loss
         } else {
             widget_primary_color(config, widget_style)
         };
@@ -2242,6 +2244,12 @@ mod windows_overlay {
             parts.push(limiter);
         }
         parts.join("  ")
+    }
+
+    fn electronics_intervention_active(snapshot: &TelemetrySnapshot) -> bool {
+        snapshot.vehicle.tc_active == Some(true)
+            || snapshot.vehicle.abs_active == Some(true)
+            || snapshot.vehicle.speed_limiter_active == Some(true)
     }
 
     fn option_decimal(value: Option<f64>) -> String {
@@ -3744,6 +3752,7 @@ mod windows_overlay {
                 electronics_summary(&sample),
                 "TC ACTIVE  ABS READY  LIMITER"
             );
+            assert!(electronics_intervention_active(&sample));
         }
 
         fn scoring_car(
