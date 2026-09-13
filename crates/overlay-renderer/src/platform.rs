@@ -646,7 +646,13 @@ mod windows_overlay {
                 width as u32,
                 height as u32,
             ) {
-                Ok(backend) => (*state_ptr).d2d = Some(Arc::new(backend)),
+                Ok(backend) => {
+                    // The D2D device is created and consumed on the overlay UI thread.
+                    #[allow(clippy::arc_with_non_send_sync)]
+                    {
+                        (*state_ptr).d2d = Some(Arc::new(backend));
+                    }
+                }
                 Err(error) => {
                     log::warn!("Direct2D initialization failed; using GDI fallback: {error}")
                 }
@@ -965,9 +971,22 @@ mod windows_overlay {
         let mut rect: RECT = zeroed();
         GetClientRect(hwnd, &mut rect);
 
-        let black = CreateSolidBrush(COLOR_KEY);
-        FillRect(hdc, &rect, black);
-        DeleteObject(black);
+        if using_d2d {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: 0.0,
+                top: 0.0,
+                right: rect.right as f32,
+                bottom: rect.bottom as f32,
+                fill: Some(COLOR_KEY),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: 0.0,
+            });
+        } else {
+            let black = CreateSolidBrush(COLOR_KEY);
+            FillRect(hdc, &rect, black);
+            DeleteObject(black);
+        }
 
         let config = state
             .config
@@ -1038,6 +1057,19 @@ mod windows_overlay {
 
     unsafe fn draw_panel(hdc: HDC, config: &OverlayConfig) {
         let colors = colors(config);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: 0.0,
+                top: 0.0,
+                right: config.window.width as f32,
+                bottom: config.window.height as f32,
+                fill: Some(colors.background),
+                stroke: Some(colors.border),
+                stroke_width: config.style.line_thickness.max(1) as f32,
+                radius: config.style.border_radius.max(0) as f32,
+            });
+            return;
+        }
         let bg = CreateSolidBrush(colors.background);
         let border = CreatePen(PS_SOLID, config.style.line_thickness, colors.border);
         let old_brush = SelectObject(hdc, bg);
@@ -2747,6 +2779,40 @@ mod windows_overlay {
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {
         let colors = colors(config);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            for (widget, area) in widget_areas(config) {
+                if widget_layout(config, widget).locked {
+                    continue;
+                }
+                queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                    left: area.x as f32,
+                    top: area.y as f32,
+                    right: area.right() as f32,
+                    bottom: area.bottom() as f32,
+                    fill: None,
+                    stroke: Some(widget_color(colors.reference)),
+                    stroke_width: config.style.line_thickness.max(2) as f32,
+                    radius: 0.0,
+                });
+                if selected == Some(widget) {
+                    let right = area.right().saturating_sub(scale_size(config, 6));
+                    let bottom = area.bottom().saturating_sub(scale_size(config, 6));
+                    let step = scale_size(config, 5);
+                    for index in 0..3 {
+                        let inset = step * index;
+                        queue_shape(d2d_backend::ShapeCommand::Line {
+                            x1: (right - scale_size(config, 22) + inset) as f32,
+                            y1: bottom as f32,
+                            x2: right as f32,
+                            y2: (bottom - scale_size(config, 22) + inset) as f32,
+                            color: widget_color(colors.reference),
+                            width: config.style.line_thickness.max(2) as f32,
+                        });
+                    }
+                }
+            }
+            return;
+        }
         let pen = CreatePen(
             PS_SOLID,
             config.style.line_thickness.max(2),

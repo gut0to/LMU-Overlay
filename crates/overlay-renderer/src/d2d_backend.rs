@@ -5,6 +5,8 @@
 //! existing widget geometry stable while making the window surface and text
 //! resources owned by Direct2D/DirectWrite.
 
+use std::{cell::RefCell, collections::HashMap};
+
 use windows::core::{Interface, Result, PCWSTR};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -12,14 +14,15 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1CreateFactory, ID2D1Factory, ID2D1GdiInteropRenderTarget, ID2D1HwndRenderTarget,
-    D2D1_DC_INITIALIZE_MODE_COPY, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT,
+    ID2D1SolidColorBrush, D2D1_DC_INITIALIZE_MODE_COPY, D2D1_DRAW_TEXT_OPTIONS_NONE,
+    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
+    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
-    DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT, DWRITE_MEASURING_MODE_NATURAL,
+    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
+    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT,
+    DWRITE_MEASURING_MODE_NATURAL,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows_numerics::Vector2;
@@ -31,7 +34,11 @@ pub struct D2dBackend {
     text_factory: IDWriteFactory,
     target: ID2D1HwndRenderTarget,
     gdi: ID2D1GdiInteropRenderTarget,
+    brushes: RefCell<HashMap<u32, ID2D1SolidColorBrush>>,
+    text_format: RefCell<TextFormatCache>,
 }
+
+type TextFormatCache = Option<((String, u32, i32), IDWriteTextFormat)>;
 
 #[derive(Debug, Clone)]
 pub struct TextCommand {
@@ -91,6 +98,8 @@ impl D2dBackend {
             text_factory,
             target,
             gdi,
+            brushes: RefCell::new(HashMap::new()),
+            text_format: RefCell::new(None),
         })
     }
 
@@ -140,7 +149,7 @@ impl D2dBackend {
                         radiusY: radius,
                     };
                     if let Some(color) = fill {
-                        let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                        let brush = self.brush(color)?;
                         if radius > 0.0 {
                             self.target.FillRoundedRectangle(&rounded, &brush);
                         } else {
@@ -148,7 +157,7 @@ impl D2dBackend {
                         }
                     }
                     if let Some(color) = stroke {
-                        let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                        let brush = self.brush(color)?;
                         if radius > 0.0 {
                             self.target
                                 .DrawRoundedRectangle(&rounded, &brush, stroke_width, None);
@@ -165,7 +174,7 @@ impl D2dBackend {
                     color,
                     width,
                 } => {
-                    let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                    let brush = self.brush(color)?;
                     self.target.DrawLine(
                         Vector2 { X: x1, Y: y1 },
                         Vector2 { X: x2, Y: y2 },
@@ -178,18 +187,34 @@ impl D2dBackend {
         }
         if !texts.is_empty() {
             let family = wide_null(font_family);
-            let format = self.text_factory.CreateTextFormat(
-                PCWSTR(family.as_ptr()),
-                None,
-                DWRITE_FONT_WEIGHT(font_weight.clamp(100, 900)),
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                font_size.max(1.0),
-                PCWSTR::null(),
-            )?;
+            let key = (font_family.to_string(), font_size.to_bits(), font_weight);
+            let format = if self
+                .text_format
+                .borrow()
+                .as_ref()
+                .is_some_and(|(cached_key, _)| *cached_key == key)
+            {
+                self.text_format
+                    .borrow()
+                    .as_ref()
+                    .expect("checked cached text format")
+                    .1
+                    .clone()
+            } else {
+                let format = self.text_factory.CreateTextFormat(
+                    PCWSTR(family.as_ptr()),
+                    None,
+                    DWRITE_FONT_WEIGHT(font_weight.clamp(100, 900)),
+                    DWRITE_FONT_STYLE_NORMAL,
+                    DWRITE_FONT_STRETCH_NORMAL,
+                    font_size.max(1.0),
+                    PCWSTR::null(),
+                )?;
+                *self.text_format.borrow_mut() = Some((key, format.clone()));
+                format
+            };
             for command in texts {
-                let color = color_f(command.color);
-                let brush = self.target.CreateSolidColorBrush(&color, None)?;
+                let brush = self.brush(command.color)?;
                 let text = wide_null(&command.text);
                 let rect = D2D_RECT_F {
                     left: command.x as f32,
@@ -208,6 +233,15 @@ impl D2dBackend {
             }
         }
         self.target.EndDraw(None, None)
+    }
+
+    unsafe fn brush(&self, color: u32) -> Result<ID2D1SolidColorBrush> {
+        if let Some(brush) = self.brushes.borrow().get(&color) {
+            return Ok(brush.clone());
+        }
+        let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+        self.brushes.borrow_mut().insert(color, brush.clone());
+        Ok(brush)
     }
 
     pub unsafe fn resize(&self, width: u32, height: u32) -> Result<()> {
