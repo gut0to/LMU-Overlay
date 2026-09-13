@@ -87,6 +87,12 @@ const pressureUnits = [
   ["kpa", "kPa"],
   ["psi", "psi"],
 ];
+const tyreTemperatureModes = [
+  ["surface_average", "Surface avg"],
+  ["surface_lcr", "Surface L/C/R"],
+  ["carcass", "Carcass"],
+  ["inner_layer", "Inner layer"],
+];
 const fuelUnits = [
   ["liters", "Liters"],
   ["gallons", "Gallons"],
@@ -1043,7 +1049,10 @@ function WidgetOptionsFields(props: {
       <label className="toggle full"><input type="checkbox" checked={props.options.show_last_lap} onChange={(event) => props.onChange("show_last_lap", event.target.checked)} /><span>Show last lap usage</span></label>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_estimated_laps} onChange={(event) => props.onChange("show_estimated_laps", event.target.checked)} /><span>Show estimated laps</span></label>
     </>}
-    {props.id === "tyres" && <label className="toggle full"><input type="checkbox" checked={props.options.show_wear} onChange={(event) => props.onChange("show_wear", event.target.checked)} /><span>Show tyre wear</span></label>}
+    {props.id === "tyres" && <>
+      <Segmented value={props.options.tyre_temperature_mode} options={tyreTemperatureModes} onChange={(value) => props.onChange("tyre_temperature_mode", value)} />
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_wear} onChange={(event) => props.onChange("show_wear", event.target.checked)} /><span>Show tyre wear</span></label>
+    </>}
     {props.id === "rpm" && <>
       <NumberField label="Shift start %" value={props.options.shift_start_percent} onChange={(value) => props.onChange("shift_start_percent", value)} />
       <NumberField label="Shift warning %" value={props.options.shift_warning_percent} onChange={(value) => props.onChange("shift_warning_percent", value)} />

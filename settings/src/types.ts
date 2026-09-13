@@ -107,6 +107,7 @@ export type WidgetOptions = {
   shift_warning_percent: number;
   limiter_percent: number;
   shift_segments: number;
+  tyre_temperature_mode: string;
 };
 
 export type WidgetInstanceConfig = {

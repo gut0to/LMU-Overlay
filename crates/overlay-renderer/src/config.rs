@@ -661,6 +661,7 @@ pub struct WidgetOptions {
     pub shift_warning_percent: u8,
     pub limiter_percent: u8,
     pub shift_segments: u8,
+    pub tyre_temperature_mode: String,
 }
 
 impl Default for WidgetOptions {
@@ -684,6 +685,7 @@ impl Default for WidgetOptions {
             shift_warning_percent: 85,
             limiter_percent: 95,
             shift_segments: 10,
+            tyre_temperature_mode: "surface_average".to_string(),
         }
     }
 }
@@ -699,6 +701,12 @@ impl WidgetOptions {
             .clamp(self.shift_start_percent, 100);
         self.limiter_percent = self.limiter_percent.clamp(self.shift_warning_percent, 100);
         self.shift_segments = self.shift_segments.clamp(4, 20);
+        if !matches!(
+            self.tyre_temperature_mode.as_str(),
+            "surface_average" | "surface_lcr" | "carcass" | "inner_layer"
+        ) {
+            self.tyre_temperature_mode = "surface_average".to_string();
+        }
     }
 }
 

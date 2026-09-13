@@ -1498,6 +1498,7 @@ mod windows_overlay {
                 ],
                 false,
                 options.show_wear,
+                &options.tyre_temperature_mode,
             ),
             "brakes" => draw_four_wheel_detail(
                 hdc,
@@ -1513,6 +1514,7 @@ mod windows_overlay {
                 ],
                 true,
                 false,
+                "surface_average",
             ),
             "electronics" => {
                 draw_text(
@@ -1954,6 +1956,7 @@ mod windows_overlay {
         wheels: [lmu_telemetry::WheelData; 4],
         brake: bool,
         show_wear: bool,
+        temperature_mode: &str,
     ) {
         let labels = ["FL", "FR", "RL", "RR"];
         for (index, wheel) in wheels.into_iter().enumerate() {
@@ -1992,9 +1995,7 @@ mod windows_overlay {
                     labels[index],
                     option_decimal(display_pressure_value(wheel.pressure_kpa, config)),
                     pressure_unit_label(config),
-                    wheel_surface_temperature(wheel)
-                        .and_then(|value| display_temperature_value(Some(value), config))
-                        .map_or_else(|| "--".to_string(), |value| format!("{value:.0}")),
+                    wheel_temperature_text(wheel, config, temperature_mode),
                     temperature_unit_label(config)
                 )
             };
@@ -2021,6 +2022,40 @@ mod windows_overlay {
             count += 1;
         }
         (count > 0).then_some(total / f64::from(count))
+    }
+
+    fn wheel_temperature_text(
+        wheel: lmu_telemetry::WheelData,
+        config: &OverlayConfig,
+        mode: &str,
+    ) -> String {
+        let value = match mode {
+            "carcass" => display_temperature_value(wheel.carcass_temp_c, config)
+                .map(|value| format!("{value:.0}")),
+            "inner_layer" => display_temperature_value(wheel.inner_temp_c, config)
+                .map(|value| format!("{value:.0}")),
+            "surface_lcr" => {
+                let values = [
+                    wheel.surface_temp_left_c,
+                    wheel.surface_temp_center_c,
+                    wheel.surface_temp_right_c,
+                ];
+                values.into_iter().flatten().next().is_some().then(|| {
+                    values
+                        .into_iter()
+                        .map(|value| {
+                            display_temperature_value(value, config)
+                                .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
+                        })
+                        .collect::<Vec<_>>()
+                        .join("/")
+                })
+            }
+            _ => wheel_surface_temperature(wheel)
+                .and_then(|value| display_temperature_value(Some(value), config))
+                .map(|value| format!("{value:.0}")),
+        };
+        value.unwrap_or_else(|| "--".to_string())
     }
 
     fn option_number(value: Option<u8>) -> String {
