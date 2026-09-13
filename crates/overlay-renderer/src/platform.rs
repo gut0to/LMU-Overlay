@@ -1050,12 +1050,18 @@ mod windows_overlay {
                 .session
                 .flag
                 .map_or_else(|| "FLAG --".to_string(), |flag| format!("FLAG {flag}")),
-            "fuel" => match (
-                snapshot.vehicle.fuel_liters,
-                snapshot.vehicle.fuel_capacity_liters,
-            ) {
+            "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
                 (Some(fuel), Some(capacity)) if capacity > 0.0 => {
-                    format!("FUEL {fuel:.1} L  {:.0}%", fuel / capacity * 100.0)
+                    let average = snapshot
+                        .fuel_average_lap_used
+                        .map_or_else(String::new, |value| format!("  AVG {value:.2}/lap"));
+                    let remaining = snapshot
+                        .fuel_estimated_laps_remaining
+                        .map_or_else(String::new, |value| format!("  {value:.1} laps"));
+                    format!(
+                        "FUEL {fuel:.1} L  {:.0}%{average}{remaining}",
+                        fuel / capacity * 100.0
+                    )
                 }
                 (Some(fuel), _) => format!("FUEL {fuel:.1} L"),
                 _ => "FUEL --".to_string(),
@@ -2262,6 +2268,11 @@ mod windows_overlay {
                 reference_throttle: None,
                 reference_brake: None,
                 reference_speed_kph: None,
+                fuel_current_liters: None,
+                fuel_capacity_liters: None,
+                fuel_last_lap_used: None,
+                fuel_average_lap_used: None,
+                fuel_estimated_laps_remaining: None,
             }
         }
     }

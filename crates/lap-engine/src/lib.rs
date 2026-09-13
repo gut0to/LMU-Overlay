@@ -1162,6 +1162,11 @@ mod tests {
             reference_throttle: None,
             reference_brake: None,
             reference_speed_kph: None,
+            fuel_current_liters: None,
+            fuel_capacity_liters: None,
+            fuel_last_lap_used: None,
+            fuel_average_lap_used: None,
+            fuel_estimated_laps_remaining: None,
         }
     }
 

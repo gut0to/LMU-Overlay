@@ -15,7 +15,7 @@ use lmu_telemetry::{
 use log::{info, warn};
 use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
 use storage::{ReferenceLapKey, ReferenceLapStore};
-use telemetry_engine::TelemetrySnapshot;
+use telemetry_engine::{FuelEngine, TelemetrySnapshot};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Cli {
@@ -169,6 +169,7 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
     let lap_writer_store = lap_store.clone();
     let mut current_lap_key = None;
     let mut lap_engine = LapEngine::new(lap_config.clone());
+    let mut fuel_engine = FuelEngine::default();
     let mut last_config_check = Instant::now();
     let mut config_mtime = modified_time(&config_path);
     let (lap_writer, lap_receiver) = mpsc::channel();
@@ -214,7 +215,11 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
                     current_lap_key = Some(lap_key.clone());
                 }
 
+                let fuel = fuel_engine.update(&sample);
                 let mut snapshot = TelemetrySnapshot::from(sample);
+                snapshot.fuel_last_lap_used = fuel.last_lap_used;
+                snapshot.fuel_average_lap_used = fuel.average_lap_used;
+                snapshot.fuel_estimated_laps_remaining = fuel.estimated_laps_remaining;
                 lap_engine.update(snapshot).apply_to(&mut snapshot);
                 if let Some(lap) = lap_engine.take_new_personal_best() {
                     if let Some(lap_key) = &current_lap_key {

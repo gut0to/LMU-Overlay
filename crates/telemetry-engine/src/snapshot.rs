@@ -50,6 +50,11 @@ pub struct TelemetrySnapshot {
     pub reference_throttle: Option<f64>,
     pub reference_brake: Option<f64>,
     pub reference_speed_kph: Option<f64>,
+    pub fuel_current_liters: Option<f64>,
+    pub fuel_capacity_liters: Option<f64>,
+    pub fuel_last_lap_used: Option<f64>,
+    pub fuel_average_lap_used: Option<f64>,
+    pub fuel_estimated_laps_remaining: Option<f64>,
 }
 
 impl From<TelemetrySample> for TelemetrySnapshot {
@@ -103,6 +108,11 @@ impl From<TelemetrySample> for TelemetrySnapshot {
             reference_throttle: None,
             reference_brake: None,
             reference_speed_kph: None,
+            fuel_current_liters: sample.vehicle.fuel_liters,
+            fuel_capacity_liters: sample.vehicle.fuel_capacity_liters,
+            fuel_last_lap_used: None,
+            fuel_average_lap_used: None,
+            fuel_estimated_laps_remaining: None,
         }
     }
 }
