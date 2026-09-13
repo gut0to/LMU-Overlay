@@ -117,6 +117,8 @@ type WidgetOptions = {
   cars_behind: number;
   rows: number;
   same_class_only: boolean;
+  show_position: boolean;
+  show_laps: boolean;
   show_driver: boolean;
   show_class: boolean;
   show_gap: boolean;
@@ -1221,6 +1223,8 @@ function WidgetOptionsFields(props: {
     </>}
     {(props.id === "relative" || props.id === "standings") && <>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_driver} onChange={(event) => props.onChange("show_driver", event.target.checked)} /><span>Show driver</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_position} onChange={(event) => props.onChange("show_position", event.target.checked)} /><span>Show position</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_laps} onChange={(event) => props.onChange("show_laps", event.target.checked)} /><span>Show laps</span></label>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_class} onChange={(event) => props.onChange("show_class", event.target.checked)} /><span>Show class</span></label>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_pit} onChange={(event) => props.onChange("show_pit", event.target.checked)} /><span>Show pit state</span></label>
     </>}

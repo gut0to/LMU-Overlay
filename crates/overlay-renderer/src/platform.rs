@@ -1493,9 +1493,18 @@ mod windows_overlay {
                 y,
                 text_color,
                 &format!(
-                    "{marker} P{} {:<16} {}{}{}",
-                    car.place.unwrap_or(0),
+                    "{marker} {}{} {}{}{}{}",
+                    if options.show_position {
+                        format!("P{}", car.place.unwrap_or(0))
+                    } else {
+                        String::new()
+                    },
                     name,
+                    if options.show_class {
+                        format!(" {}", car.vehicle_class.as_deref().unwrap_or("--"))
+                    } else {
+                        String::new()
+                    },
                     gap,
                     if options.show_gap { "s" } else { "" },
                     if options.show_pit && car.in_pits {
@@ -1641,10 +1650,12 @@ mod windows_overlay {
             } else {
                 "CAR"
             };
-            let lap = if car.lap_number > 0 {
+            let lap = if options.show_laps && car.lap_number > 0 {
                 format!("L{}", car.lap_number)
-            } else {
+            } else if options.show_laps {
                 "--".to_string()
+            } else {
+                String::new()
             };
             draw_text(
                 hdc,
@@ -1652,8 +1663,12 @@ mod windows_overlay {
                 y,
                 text_color,
                 &format!(
-                    "{marker} {:>2} {:<16} {}{}{}",
-                    car.place.unwrap_or(0),
+                    "{marker} {} {:<16} {}{}{}",
+                    if options.show_position {
+                        format!("{:>2}", car.place.unwrap_or(0))
+                    } else {
+                        String::new()
+                    },
                     name,
                     lap,
                     if options.show_class {
