@@ -635,21 +635,19 @@ fn read_wheel(bytes: &[u8], offset: usize) -> Result<WheelData, TelemetryError> 
     let temp = |index: usize| {
         read_f64(bytes, offset + raw::wheel::TEMPERATURE + index * 8)
             .ok()
-            .and_then(finite)
+            .and_then(kelvin_to_celsius)
     };
     let inner = |index: usize| {
         read_f64(bytes, offset + raw::wheel::INNER_TEMP + index * 8)
             .ok()
-            .and_then(finite)
-            .map(|v| v - 273.15)
+            .and_then(kelvin_to_celsius)
     };
     Ok(WheelData {
         pressure_kpa: positive(read_f64(bytes, offset + raw::wheel::PRESSURE)?),
-        surface_temp_left_c: temp(0).map(|v| v - 273.15),
-        surface_temp_center_c: temp(1).map(|v| v - 273.15),
-        surface_temp_right_c: temp(2).map(|v| v - 273.15),
-        carcass_temp_c: finite(read_f64(bytes, offset + raw::wheel::CARCASS_TEMP)?)
-            .map(|v| v - 273.15),
+        surface_temp_left_c: temp(0),
+        surface_temp_center_c: temp(1),
+        surface_temp_right_c: temp(2),
+        carcass_temp_c: kelvin_to_celsius(read_f64(bytes, offset + raw::wheel::CARCASS_TEMP)?),
         wear_percent: finite(read_f64(bytes, offset + raw::wheel::WEAR)?).map(|v| v * 100.0),
         brake_temp_c: finite(read_f64(bytes, offset + raw::wheel::BRAKE_TEMP)?),
         brake_pressure_kpa: finite(read_f64(bytes, offset + raw::wheel::BRAKE_PRESSURE)?),
@@ -812,6 +810,12 @@ fn field_gaps(
 
 fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
+}
+
+fn kelvin_to_celsius(value: f64) -> Option<f64> {
+    finite(value)
+        .filter(|value| *value > 0.0)
+        .map(|value| value - 273.15)
 }
 fn positive(value: f64) -> Option<f64> {
     value.is_finite().then_some(value).filter(|v| *v > 0.0)
@@ -1184,6 +1188,13 @@ mod tests {
             ensure_same_frame(before, after),
             Err(TelemetryError::TornFrame)
         ));
+    }
+
+    #[test]
+    fn treats_zero_kelvin_wheel_temperature_as_unavailable() {
+        assert_eq!(kelvin_to_celsius(0.0), None);
+        assert_eq!(kelvin_to_celsius(f64::NAN), None);
+        assert_eq!(kelvin_to_celsius(373.15), Some(100.0));
     }
 
     #[test]
