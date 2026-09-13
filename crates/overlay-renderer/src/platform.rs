@@ -1319,7 +1319,12 @@ mod windows_overlay {
             );
             return;
         };
-        let mut cars: Vec<&_> = snapshot.field.iter().collect();
+        let player_class = snapshot.field[player_index].vehicle_class.as_deref();
+        let mut cars: Vec<&_> = snapshot
+            .field
+            .iter()
+            .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
+            .collect();
         cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
         let Some(player_position) = cars
             .iter()
@@ -1346,10 +1351,7 @@ mod windows_overlay {
             } else if car.is_player || car.slot_id == snapshot.player_slot_id {
                 "0.000".to_string()
             } else {
-                car.gap_to_leader_seconds
-                    .zip(snapshot.field[player_index].gap_to_leader_seconds)
-                    .map(|(other, player)| format!("{:+.3}", other - player))
-                    .unwrap_or_else(|| "--".to_string())
+                relative_gap(car, &snapshot.field[player_index])
             };
             draw_text(
                 hdc,
@@ -1370,6 +1372,24 @@ mod windows_overlay {
                 ),
             );
         }
+    }
+
+    fn relative_gap(
+        car: &lmu_telemetry::VehicleScoringSnapshot,
+        player: &lmu_telemetry::VehicleScoringSnapshot,
+    ) -> String {
+        let lap_delta = car.lap_number - player.lap_number;
+        if lap_delta != 0 {
+            return format!(
+                "{}{}L",
+                if lap_delta > 0 { "+" } else { "-" },
+                lap_delta.abs()
+            );
+        }
+        car.gap_to_leader_seconds
+            .zip(player.gap_to_leader_seconds)
+            .map(|(other, own)| format!("{:+.3}", other - own))
+            .unwrap_or_else(|| "--".to_string())
     }
 
     unsafe fn draw_standings_widget(
