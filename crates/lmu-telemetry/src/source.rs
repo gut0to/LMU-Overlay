@@ -98,8 +98,6 @@ const OFFSET_SCORING_VEHICLE_CLASS: usize = 200;
 const OFFSET_SCORING_IN_GARAGE_STALL: usize = 507;
 
 const MAX_TORN_FRAME_RETRIES: usize = 3;
-const EXPECTED_GAME_VERSION_MIN: i32 = 1;
-const EXPECTED_GAME_VERSION_MAX: i32 = 99_999;
 
 const OFFSET_SCORING_END_ET: usize = OFFSET_SCORING_DATA + raw::session::END_ET;
 const OFFSET_SCORING_MAX_LAPS: usize = OFFSET_SCORING_DATA + raw::session::MAX_LAPS;
@@ -328,7 +326,7 @@ fn read_sample_once(
     }
 
     let marker_before = read_frame_marker(bytes)?;
-    if !is_supported_game_version(marker_before.game_version) {
+    if detect_layout(bytes, marker_before).is_none() {
         return Ok(None);
     }
 
@@ -842,8 +840,24 @@ fn read_frame_marker(bytes: &[u8]) -> Result<FrameMarker, TelemetryError> {
     })
 }
 
-fn is_supported_game_version(version: i32) -> bool {
-    (EXPECTED_GAME_VERSION_MIN..=EXPECTED_GAME_VERSION_MAX).contains(&version)
+/// Detect the one raw layout this parser is compiled for.
+///
+/// `gameVersion` is a diagnostic value supplied by LMU, not a shared-memory
+/// layout revision. An arbitrary numeric range is not compatibility proof.
+/// Validate the fixed layout invariants instead; a future incompatible layout
+/// must get its own detector and parser.
+fn detect_layout(bytes: &[u8], marker: FrameMarker) -> Option<()> {
+    if bytes.len() != BUFFER_SIZE
+        || marker.game_version <= 0
+        || marker.active_vehicles as usize > MAX_VEHICLES
+        || marker.scoring_vehicles < 0
+        || marker.scoring_vehicles as usize > MAX_VEHICLES
+        || (marker.player_has_vehicle && marker.player_index as usize >= MAX_VEHICLES)
+    {
+        return None;
+    }
+
+    Some(())
 }
 
 fn read_i32(bytes: &[u8], offset: usize) -> Result<i32, TelemetryError> {
@@ -1133,9 +1147,10 @@ mod tests {
     }
 
     #[test]
-    fn ignores_unsupported_game_version() {
+    fn ignores_invalid_layout_marker() {
         let mut bytes = vec![0; BUFFER_SIZE];
-        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1_000_000);
+        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES, 255);
 
         assert_eq!(read_sample_from_bytes(&bytes).unwrap(), None);
     }
