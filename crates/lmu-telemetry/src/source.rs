@@ -79,7 +79,6 @@ const OFFSET_LAP_NUMBER: usize = 20;
 const OFFSET_LAP_START_ET: usize = 24;
 const OFFSET_TELEMETRY_VEHICLE_NAME: usize = 32;
 const OFFSET_TELEMETRY_TRACK_NAME: usize = 96;
-const OFFSET_LOCAL_VEL: usize = 184;
 const OFFSET_GEAR: usize = 352;
 const OFFSET_RPM: usize = 356;
 const OFFSET_THROTTLE: usize = 388;
@@ -360,7 +359,7 @@ fn read_sample_once(
     let sample = TelemetrySample {
         timestamp_seconds: read_f64(bytes, OFFSET_SCORING_CURRENT_ET)
             .or_else(|_| read_f64(bytes, vehicle_offset + OFFSET_ELAPSED_TIME))?,
-        speed_mps: read_f64(bytes, vehicle_offset + OFFSET_LOCAL_VEL + 8)?,
+        speed_mps: read_local_speed_mps(bytes, vehicle_offset)?,
         rpm: read_f64(bytes, vehicle_offset + OFFSET_RPM)?,
         gear: Gear::from(read_i32(bytes, vehicle_offset + OFFSET_GEAR)?),
         throttle: read_f64(bytes, vehicle_offset + OFFSET_THROTTLE)?,
@@ -476,6 +475,14 @@ fn read_sector(
     read_i32(bytes, vehicle_offset + OFFSET_SECTOR)
 }
 
+fn read_local_speed_mps(bytes: &[u8], vehicle_offset: usize) -> Result<f64, TelemetryError> {
+    let velocity = raw::telemetry::LOCAL_VELOCITY;
+    let x = read_f64(bytes, vehicle_offset + velocity)?;
+    let y = read_f64(bytes, vehicle_offset + velocity + 8)?;
+    let z = read_f64(bytes, vehicle_offset + velocity + 16)?;
+    Ok((x * x + y * y + z * z).sqrt())
+}
+
 fn read_sector_times(
     bytes: &[u8],
     scoring_offset: Option<usize>,
@@ -511,6 +518,13 @@ fn read_vehicle_systems(
 ) -> Result<VehicleSystems, TelemetryError> {
     let hybrid_state = read_u8(bytes, offset + OFFSET_ELECTRIC_STATE)?;
     let hybrid = (hybrid_state != 0).then_some(());
+    let mut dent_severity = [None; 8];
+    for (index, value) in dent_severity.iter_mut().enumerate() {
+        *value = Some(read_u8(
+            bytes,
+            offset + raw::telemetry::DENT_SEVERITY + index,
+        )?);
+    }
     Ok(VehicleSystems {
         max_rpm: positive(read_f64(bytes, offset + OFFSET_MAX_RPM)?),
         fuel_liters: positive(read_f64(bytes, offset + OFFSET_FUEL)?),
@@ -548,6 +562,18 @@ fn read_vehicle_systems(
         scheduled_stops: Some(read_u8(bytes, offset + OFFSET_SCHEDULED_STOPS)?),
         overheating: Some(read_bool(bytes, offset + OFFSET_OVERHEATING)?),
         headlights: Some(read_bool(bytes, offset + OFFSET_HEADLIGHTS)?),
+        body_detached: Some(read_bool(bytes, offset + raw::telemetry::DETACHED)?),
+        dent_severity,
+        last_impact_et: finite(read_f64(bytes, offset + raw::telemetry::LAST_IMPACT_ET)?),
+        last_impact_magnitude: finite(read_f64(
+            bytes,
+            offset + raw::telemetry::LAST_IMPACT_MAGNITUDE,
+        )?),
+        last_impact_position: Some([
+            read_f64(bytes, offset + raw::telemetry::LAST_IMPACT_POSITION)?,
+            read_f64(bytes, offset + raw::telemetry::LAST_IMPACT_POSITION + 8)?,
+            read_f64(bytes, offset + raw::telemetry::LAST_IMPACT_POSITION + 16)?,
+        ]),
         steering_torque_nm: finite(read_f64(bytes, offset + OFFSET_STEERING_TORQUE)?),
         electric_motor_torque_nm: hybrid
             .map(|_| read_f64(bytes, offset + OFFSET_ELECTRIC_TORQUE))
@@ -629,7 +655,16 @@ fn read_wheel(bytes: &[u8], offset: usize) -> Result<WheelData, TelemetryError> 
         optimal_temp_c: Some(read_f32(bytes, offset + raw::wheel::OPTIMAL_TEMP)? as f64),
         compound_index: Some(read_u8(bytes, offset + raw::wheel::COMPOUND_INDEX)?),
         compound_type: Some(read_u8(bytes, offset + raw::wheel::COMPOUND_TYPE)?),
-        ..WheelData::default()
+        surface_type: Some(read_u8(bytes, offset + raw::wheel::SURFACE_TYPE)?),
+        suspension_deflection_m: finite(read_f64(
+            bytes,
+            offset + raw::wheel::SUSPENSION_DEFLECTION,
+        )?),
+        ride_height_m: finite(read_f64(bytes, offset + raw::wheel::RIDE_HEIGHT)?),
+        suspension_force_n: finite(read_f64(bytes, offset + raw::wheel::SUSPENSION_FORCE)?),
+        rotation_rad_s: finite(read_f64(bytes, offset + raw::wheel::ROTATION)?),
+        camber_rad: finite(read_f64(bytes, offset + raw::wheel::CAMBER)?),
+        tyre_load_n: finite(read_f64(bytes, offset + raw::wheel::TYRE_LOAD)?),
     })
 }
 
@@ -908,7 +943,16 @@ mod tests {
         );
         write_i32(&mut bytes, telemetry_offset + OFFSET_LAP_NUMBER, 3);
         write_f64(&mut bytes, telemetry_offset + OFFSET_LAP_START_ET, 8.0);
-        write_f64(&mut bytes, telemetry_offset + OFFSET_LOCAL_VEL + 8, 72.0);
+        write_f64(
+            &mut bytes,
+            telemetry_offset + raw::telemetry::LOCAL_VELOCITY,
+            3.0,
+        );
+        write_f64(
+            &mut bytes,
+            telemetry_offset + raw::telemetry::LOCAL_VELOCITY + 8,
+            4.0,
+        );
         write_i32(&mut bytes, telemetry_offset + OFFSET_GEAR, 4);
         write_f64(&mut bytes, telemetry_offset + OFFSET_RPM, 8_800.0);
         write_f64(&mut bytes, telemetry_offset + OFFSET_THROTTLE, 0.9);
@@ -918,6 +962,7 @@ mod tests {
         write_i32(&mut bytes, telemetry_offset + OFFSET_SECTOR, 1);
         write_f64(&mut bytes, telemetry_offset + OFFSET_FUEL, 24.8);
         write_f64(&mut bytes, telemetry_offset + OFFSET_FUEL_CAPACITY, 110.0);
+        write_f64(&mut bytes, telemetry_offset + OFFSET_ENGINE_TORQUE, 740.0);
         write_f64(
             &mut bytes,
             telemetry_offset + OFFSET_ENGINE_WATER_TEMP,
@@ -926,6 +971,17 @@ mod tests {
         write_f64(&mut bytes, telemetry_offset + OFFSET_ENGINE_OIL_TEMP, 108.0);
         write_f64(&mut bytes, telemetry_offset + OFFSET_REAR_BRAKE_BIAS, 0.4);
         write_u8(&mut bytes, telemetry_offset + OFFSET_LAP_INVALIDATED, 1);
+        write_u8(&mut bytes, telemetry_offset + raw::telemetry::DETACHED, 1);
+        write_u8(
+            &mut bytes,
+            telemetry_offset + raw::telemetry::DENT_SEVERITY,
+            2,
+        );
+        write_f64(
+            &mut bytes,
+            telemetry_offset + raw::telemetry::LAST_IMPACT_MAGNITUDE,
+            12.5,
+        );
         write_u8(&mut bytes, telemetry_offset + OFFSET_ELECTRIC_STATE, 2);
         write_u8(&mut bytes, telemetry_offset + OFFSET_TC, 3);
         write_u8(&mut bytes, telemetry_offset + OFFSET_ABS, 2);
@@ -946,6 +1002,12 @@ mod tests {
         );
         write_f64(&mut bytes, wheel_offset + raw::wheel::BRAKE_TEMP, 620.0);
         write_f64(&mut bytes, wheel_offset + raw::wheel::WEAR, 0.82);
+        write_f64(
+            &mut bytes,
+            wheel_offset + raw::wheel::SUSPENSION_DEFLECTION,
+            0.012,
+        );
+        write_u8(&mut bytes, wheel_offset + raw::wheel::SURFACE_TYPE, 1);
 
         let scoring_offset = OFFSET_SCORING_VEHICLES;
         write_i32(&mut bytes, scoring_offset + OFFSET_SCORING_SLOT_ID, 42);
@@ -1015,7 +1077,7 @@ mod tests {
 
         assert_eq!(sample.gear, Gear::Forward(4));
         assert_eq!(sample.lap_number, 3);
-        assert_eq!(sample.speed_mps, 72.0);
+        assert_eq!(sample.speed_mps, 5.0);
         assert_eq!(sample.lap_distance_m, Some(1_250.0));
         assert_eq!(sample.track_length_m, Some(5_000.0));
         assert_eq!(sample.lap_progress(), Some(0.25));
@@ -1034,6 +1096,10 @@ mod tests {
         assert_eq!(sample.vehicle.fuel_liters, Some(24.8));
         assert_eq!(sample.vehicle.fuel_capacity_liters, Some(110.0));
         assert_eq!(sample.vehicle.engine_water_temp_c, Some(93.0));
+        assert_eq!(sample.vehicle.engine_torque_nm, Some(740.0));
+        assert_eq!(sample.vehicle.body_detached, Some(true));
+        assert_eq!(sample.vehicle.dent_severity[0], Some(2));
+        assert_eq!(sample.vehicle.last_impact_magnitude, Some(12.5));
         assert_eq!(sample.vehicle.brake_bias_front_percent, Some(60.0));
         assert_eq!(sample.vehicle.tc_setting, Some(3));
         assert_eq!(sample.vehicle.abs_setting, Some(2));
@@ -1043,6 +1109,11 @@ mod tests {
         assert_eq!(sample.wheels.front_left.surface_temp_center_c, Some(110.0));
         assert_eq!(sample.wheels.front_left.brake_temp_c, Some(620.0));
         assert_eq!(sample.wheels.front_left.wear_percent, Some(82.0));
+        assert_eq!(
+            sample.wheels.front_left.suspension_deflection_m,
+            Some(0.012)
+        );
+        assert_eq!(sample.wheels.front_left.surface_type, Some(1));
         assert_eq!(sample.sector_times.current_sector1_seconds, Some(31.0));
         assert_eq!(sample.sector_times.current_sector2_seconds, Some(32.0));
         assert_eq!(sample.sector_times.last_sector3_seconds, Some(31.0));

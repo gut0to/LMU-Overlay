@@ -27,8 +27,8 @@ pub mod telemetry {
     pub const LAP_START_ET: usize = 24;
     pub const VEHICLE_NAME: usize = 32;
     pub const TRACK_NAME: usize = 96;
-    pub const WORLD_POSITION: usize = 184;
-    pub const LOCAL_VELOCITY: usize = 184 + 24;
+    pub const WORLD_POSITION: usize = 160;
+    pub const LOCAL_VELOCITY: usize = 184;
     pub const LOCAL_ACCELERATION: usize = 208;
     pub const GEAR: usize = 352;
     pub const RPM: usize = 356;
@@ -45,10 +45,14 @@ pub mod telemetry {
     pub const OVERHEATING: usize = 541;
     pub const DETACHED: usize = 542;
     pub const HEADLIGHTS: usize = 543;
-    pub const ENGINE_TORQUE: usize = 576;
+    pub const DENT_SEVERITY: usize = 544;
+    pub const LAST_IMPACT_ET: usize = 552;
+    pub const LAST_IMPACT_MAGNITUDE: usize = 560;
+    pub const LAST_IMPACT_POSITION: usize = 568;
+    pub const ENGINE_TORQUE: usize = 592;
     pub const CURRENT_SECTOR: usize = 600;
     pub const SPEED_LIMITER: usize = 604;
-    pub const FUEL_CAPACITY: usize = 628;
+    pub const FUEL_CAPACITY: usize = 608;
     pub const REAR_BRAKE_BIAS: usize = 664;
     pub const TURBO_BOOST: usize = 672;
     pub const BATTERY_CHARGE_FRACTION: usize = 704;
@@ -74,8 +78,8 @@ pub mod telemetry {
     pub const MOTOR_MAP_MAX: usize = 759;
     pub const MIGRATION: usize = 760;
     pub const MIGRATION_MAX: usize = 761;
-    pub const LIFT_AND_COAST: usize = 764;
-    pub const TRACK_LIMIT_STEPS: usize = 765;
+    pub const LIFT_AND_COAST: usize = 766;
+    pub const TRACK_LIMIT_STEPS: usize = 767;
     pub const REGEN: usize = 768;
     pub const STATE_OF_CHARGE: usize = 772;
     pub const VIRTUAL_ENERGY: usize = 776;
@@ -88,19 +92,28 @@ pub mod telemetry {
 
 pub mod wheel {
     pub const SIZE: usize = 260;
+    pub const SUSPENSION_DEFLECTION: usize = 0;
+    pub const RIDE_HEIGHT: usize = 8;
+    pub const SUSPENSION_FORCE: usize = 16;
     pub const PRESSURE: usize = 120;
     pub const TEMPERATURE: usize = 128;
-    pub const WEAR: usize = 176;
+    pub const WEAR: usize = 152;
     pub const BRAKE_TEMP: usize = 24;
     pub const BRAKE_PRESSURE: usize = 32;
-    pub const SURFACE_TYPE: usize = 184;
-    pub const FLAT: usize = 185;
-    pub const DETACHED: usize = 186;
-    pub const CARCASS_TEMP: usize = 220;
-    pub const INNER_TEMP: usize = 228;
-    pub const OPTIMAL_TEMP: usize = 252;
-    pub const COMPOUND_INDEX: usize = 256;
-    pub const COMPOUND_TYPE: usize = 257;
+    pub const ROTATION: usize = 40;
+    pub const CAMBER: usize = 80;
+    pub const TYRE_LOAD: usize = 104;
+    pub const SURFACE_TYPE: usize = 176;
+    pub const FLAT: usize = 177;
+    pub const DETACHED: usize = 178;
+    pub const VERTICAL_DEFLECTION: usize = 180;
+    pub const WHEEL_Y_LOCATION: usize = 188;
+    pub const TOE: usize = 196;
+    pub const CARCASS_TEMP: usize = 204;
+    pub const INNER_TEMP: usize = 212;
+    pub const OPTIMAL_TEMP: usize = 236;
+    pub const COMPOUND_INDEX: usize = 240;
+    pub const COMPOUND_TYPE: usize = 241;
 }
 
 pub mod scoring {
@@ -110,7 +123,7 @@ pub mod scoring {
     pub const TOTAL_LAPS: usize = 100;
     pub const SECTOR: usize = 102;
     pub const LAP_DISTANCE: usize = 104;
-    pub const FINISH_STATUS: usize = 101;
+    pub const FINISH_STATUS: usize = 103;
     pub const BEST_SECTOR1: usize = 128;
     pub const BEST_SECTOR2: usize = 136;
     pub const BEST_LAP: usize = 144;
@@ -130,7 +143,7 @@ pub mod scoring {
     pub const LAPS_BEHIND_NEXT: usize = 240;
     pub const TIME_BEHIND_LEADER: usize = 244;
     pub const LAPS_BEHIND_LEADER: usize = 252;
-    pub const WORLD_POSITION: usize = 260;
+    pub const WORLD_POSITION: usize = 264;
     pub const PIT_STATE: usize = 488;
     pub const FLAG: usize = 504;
     pub const COUNT_LAP_FLAG: usize = 506;
@@ -177,9 +190,18 @@ mod tests {
     fn critical_offsets_match_mit_reference() {
         assert_eq!(telemetry::RPM, 356);
         assert_eq!(telemetry::FUEL, 524);
+        assert_eq!(telemetry::WORLD_POSITION, 160);
+        assert_eq!(telemetry::LOCAL_VELOCITY, 184);
+        assert_eq!(telemetry::ENGINE_TORQUE, 592);
+        assert_eq!(telemetry::FUEL_CAPACITY, 608);
         assert_eq!(telemetry::LAP_INVALIDATED, 745);
         assert_eq!(telemetry::WHEELS, 848);
+        assert_eq!(wheel::WEAR, 152);
+        assert_eq!(wheel::CARCASS_TEMP, 204);
+        assert_eq!(wheel::INNER_TEMP, 212);
         assert_eq!(scoring::DRIVER_NAME, 4);
+        assert_eq!(scoring::FINISH_STATUS, 103);
+        assert_eq!(scoring::WORLD_POSITION, 264);
         assert_eq!(scoring::BEST_LAP, 144);
         assert_eq!(session::CURRENT_ET, 68);
     }

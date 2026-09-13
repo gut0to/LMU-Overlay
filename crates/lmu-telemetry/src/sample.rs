@@ -208,6 +208,11 @@ pub struct VehicleSystems {
     pub scheduled_stops: Option<u8>,
     pub overheating: Option<bool>,
     pub headlights: Option<bool>,
+    pub body_detached: Option<bool>,
+    pub dent_severity: [Option<u8>; 8],
+    pub last_impact_et: Option<f64>,
+    pub last_impact_magnitude: Option<f64>,
+    pub last_impact_position: Option<[f64; 3]>,
     pub steering_torque_nm: Option<f64>,
     pub electric_motor_torque_nm: Option<f64>,
     pub electric_motor_rpm: Option<f64>,
@@ -251,6 +256,7 @@ pub struct WheelData {
     pub optimal_temp_c: Option<f64>,
     pub compound_index: Option<u8>,
     pub compound_type: Option<u8>,
+    pub surface_type: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

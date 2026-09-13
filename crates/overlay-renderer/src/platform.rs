@@ -1367,16 +1367,30 @@ mod windows_overlay {
                 _ => "WEATHER --".to_string(),
             },
             "damage" => {
-                if [
+                let wheel_damage = [
                     snapshot.wheels.front_left,
                     snapshot.wheels.front_right,
                     snapshot.wheels.rear_left,
                     snapshot.wheels.rear_right,
                 ]
                 .into_iter()
-                .any(|wheel| wheel.flat == Some(true) || wheel.detached == Some(true))
-                {
+                .any(|wheel| wheel.flat == Some(true) || wheel.detached == Some(true));
+                let dent_damage = snapshot
+                    .vehicle
+                    .dent_severity
+                    .into_iter()
+                    .flatten()
+                    .any(|severity| severity > 0);
+                if wheel_damage || snapshot.vehicle.body_detached == Some(true) || dent_damage {
                     "DAMAGE WARNING".to_string()
+                } else if snapshot.vehicle.body_detached == Some(false)
+                    || snapshot
+                        .vehicle
+                        .dent_severity
+                        .iter()
+                        .all(|value| *value == Some(0))
+                {
+                    "DAMAGE CLEAR".to_string()
                 } else {
                     "DAMAGE --".to_string()
                 }
@@ -1628,10 +1642,24 @@ mod windows_overlay {
                         (wheel.flat == Some(true) || wheel.detached == Some(true)).then_some(label)
                     })
                     .collect::<Vec<_>>();
-                let message = if damaged.is_empty() {
-                    "WHEELS OK".to_string()
+                let body = if snapshot.vehicle.body_detached == Some(true) {
+                    " BODY"
                 } else {
-                    format!("WHEEL DAMAGE {}", damaged.join(" "))
+                    ""
+                };
+                let max_dent = snapshot.vehicle.dent_severity.into_iter().flatten().max();
+                let message = if damaged.is_empty() && body.is_empty() {
+                    max_dent.map_or_else(
+                        || "WHEELS OK".to_string(),
+                        |severity| format!("WHEELS OK DENT {severity}"),
+                    )
+                } else {
+                    format!(
+                        "DAMAGE{}{}{}",
+                        body,
+                        if damaged.is_empty() { "" } else { " WHEELS " },
+                        damaged.join(" ")
+                    )
                 };
                 draw_text(
                     hdc,
@@ -1644,6 +1672,15 @@ mod windows_overlay {
                     },
                     &message,
                 );
+                if let Some(magnitude) = snapshot.vehicle.last_impact_magnitude {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        detail_color,
+                        &format!("IMPACT {magnitude:.1}"),
+                    );
+                }
             }
             _ => {}
         }
