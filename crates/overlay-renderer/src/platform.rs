@@ -1971,12 +1971,32 @@ mod windows_overlay {
             );
             return;
         }
+        let mut header = Vec::new();
+        if options.show_position {
+            header.push("POS");
+        }
+        if options.show_driver {
+            header.push("DRIVER");
+        }
+        if options.show_car {
+            header.push("CAR");
+        }
+        if options.show_class {
+            header.push("CLASS");
+        }
+        if options.show_laps {
+            header.push("LAPS");
+        }
+        if options.show_gap {
+            header.push("GAP");
+        }
+        header.extend(["LAST", "BEST"]);
         draw_text(
             hdc,
             area.x + padding,
             area.y + padding + scale_px(config, 18),
             title_color,
-            "POS DRIVER           LAPS       GAP      LAST      BEST",
+            &header.join("  "),
         );
         for (row, car) in cars
             .iter()
@@ -2019,35 +2039,36 @@ mod windows_overlay {
                 .best_lap_seconds
                 .map(lap_time)
                 .unwrap_or_else(|| "--:--.---".to_string());
+            let mut columns = Vec::new();
+            if options.show_position {
+                columns.push(format!("P{}", car.place.unwrap_or(0)));
+            }
+            if options.show_driver {
+                columns.push(name.to_string());
+            }
+            if options.show_car {
+                columns.push(car_name.to_string());
+            }
+            if options.show_class {
+                columns.push(car.vehicle_class.as_deref().unwrap_or("--").to_string());
+            }
+            if options.show_laps {
+                columns.push(lap);
+            }
+            if options.show_gap {
+                columns.push(gap);
+            }
+            columns.push(last);
+            columns.push(best);
+            if options.show_pit && car.in_pits {
+                columns.push("PIT".to_string());
+            }
             draw_text(
                 hdc,
                 area.x + padding,
                 y,
                 text_color,
-                &format!(
-                    "{marker} {:>2} {:<16} {:<16} {:>4} {:>8} {:>9} {:>9}{}{}",
-                    if options.show_position {
-                        format!("{:>2}", car.place.unwrap_or(0))
-                    } else {
-                        String::new()
-                    },
-                    name,
-                    car_name,
-                    lap,
-                    gap,
-                    last,
-                    best,
-                    if options.show_class {
-                        format!(" {}", car.vehicle_class.as_deref().unwrap_or("--"))
-                    } else {
-                        String::new()
-                    },
-                    if options.show_pit && car.in_pits {
-                        " PIT"
-                    } else {
-                        ""
-                    }
-                ),
+                &format!("{marker} {}", columns.join("  ")),
             );
         }
     }
