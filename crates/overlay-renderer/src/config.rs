@@ -657,6 +657,10 @@ pub struct WidgetOptions {
     pub show_last_lap: bool,
     pub show_estimated_laps: bool,
     pub show_wear: bool,
+    pub shift_start_percent: u8,
+    pub shift_warning_percent: u8,
+    pub limiter_percent: u8,
+    pub shift_segments: u8,
 }
 
 impl Default for WidgetOptions {
@@ -676,6 +680,10 @@ impl Default for WidgetOptions {
             show_last_lap: true,
             show_estimated_laps: true,
             show_wear: true,
+            shift_start_percent: 70,
+            shift_warning_percent: 85,
+            limiter_percent: 95,
+            shift_segments: 10,
         }
     }
 }
@@ -685,6 +693,12 @@ impl WidgetOptions {
         self.cars_ahead = self.cars_ahead.min(8);
         self.cars_behind = self.cars_behind.min(8);
         self.rows = self.rows.clamp(1, 20);
+        self.shift_start_percent = self.shift_start_percent.min(100);
+        self.shift_warning_percent = self
+            .shift_warning_percent
+            .clamp(self.shift_start_percent, 100);
+        self.limiter_percent = self.limiter_percent.clamp(self.shift_warning_percent, 100);
+        self.shift_segments = self.shift_segments.clamp(4, 20);
     }
 }
 
@@ -1509,6 +1523,13 @@ mod tests {
         assert_eq!(config.presets.qualifying.performance_mode, "high_refresh");
         assert!(config.presets.race.extra_widgets["relative"].enabled);
         assert!(config.presets.endurance.extra_widgets["damage"].enabled);
+        assert_eq!(config.extra_widgets["rpm"].options.shift_start_percent, 70);
+        assert_eq!(
+            config.extra_widgets["rpm"].options.shift_warning_percent,
+            85
+        );
+        assert_eq!(config.extra_widgets["rpm"].options.limiter_percent, 95);
+        assert_eq!(config.extra_widgets["rpm"].options.shift_segments, 10);
     }
 
     #[test]
@@ -1601,6 +1622,11 @@ mod tests {
         assert_eq!(config.layout.telemetry.opacity, 0.1);
         assert_eq!(config.layout.telemetry.z_index, 1000);
         assert_eq!(config.timing.mini_sectors, 40);
+        let rpm_options = &config.extra_widgets["rpm"].options;
+        assert_eq!(rpm_options.shift_start_percent, 70);
+        assert_eq!(rpm_options.shift_warning_percent, 85);
+        assert_eq!(rpm_options.limiter_percent, 95);
+        assert_eq!(rpm_options.shift_segments, 10);
     }
 
     #[test]
