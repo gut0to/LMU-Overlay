@@ -1020,7 +1020,7 @@ function WidgetOptionsFields(props: {
   options: WidgetOptions;
   onChange: <K extends keyof WidgetOptions>(key: K, value: WidgetOptions[K]) => void;
 }) {
-  if (!["relative", "standings", "fuel", "tyres"].includes(props.id)) return null;
+  if (!["relative", "standings", "fuel", "tyres", "rpm"].includes(props.id)) return null;
   return <>
     {props.id === "relative" && <>
       <NumberField label="Cars ahead" value={props.options.cars_ahead} onChange={(value) => props.onChange("cars_ahead", value)} />
@@ -1044,6 +1044,12 @@ function WidgetOptionsFields(props: {
       <label className="toggle full"><input type="checkbox" checked={props.options.show_estimated_laps} onChange={(event) => props.onChange("show_estimated_laps", event.target.checked)} /><span>Show estimated laps</span></label>
     </>}
     {props.id === "tyres" && <label className="toggle full"><input type="checkbox" checked={props.options.show_wear} onChange={(event) => props.onChange("show_wear", event.target.checked)} /><span>Show tyre wear</span></label>}
+    {props.id === "rpm" && <>
+      <NumberField label="Shift start %" value={props.options.shift_start_percent} onChange={(value) => props.onChange("shift_start_percent", value)} />
+      <NumberField label="Shift warning %" value={props.options.shift_warning_percent} onChange={(value) => props.onChange("shift_warning_percent", value)} />
+      <NumberField label="Limiter %" value={props.options.limiter_percent} onChange={(value) => props.onChange("limiter_percent", value)} />
+      <NumberField label="Shift light segments" value={props.options.shift_segments} onChange={(value) => props.onChange("shift_segments", value)} />
+    </>}
   </>;
 }
 

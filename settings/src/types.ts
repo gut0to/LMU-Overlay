@@ -103,6 +103,10 @@ export type WidgetOptions = {
   show_last_lap: boolean;
   show_estimated_laps: boolean;
   show_wear: boolean;
+  shift_start_percent: number;
+  shift_warning_percent: number;
+  limiter_percent: number;
+  shift_segments: number;
 };
 
 export type WidgetInstanceConfig = {

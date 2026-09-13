@@ -1453,6 +1453,10 @@ mod windows_overlay {
                         max_rpm,
                         colors(config).reference,
                         detail_color,
+                        options.shift_start_percent,
+                        options.shift_warning_percent,
+                        options.limiter_percent,
+                        options.shift_segments,
                     );
                 }
             }
@@ -2386,6 +2390,7 @@ mod windows_overlay {
         DeleteObject(fill_brush);
     }
 
+    #[allow(clippy::too_many_arguments)]
     unsafe fn draw_rpm_segments(
         hdc: HDC,
         area: Area,
@@ -2393,23 +2398,31 @@ mod windows_overlay {
         max_rpm: f64,
         active_color: u32,
         inactive_color: u32,
+        shift_start_percent: u8,
+        shift_warning_percent: u8,
+        limiter_percent: u8,
+        segment_count: u8,
     ) {
         let ratio = if max_rpm > 0.0 {
             (rpm / max_rpm).clamp(0.0, 1.0)
         } else {
             0.0
         };
-        let segments = 10;
+        let segments = i32::from(segment_count.clamp(4, 20));
         let gap = 2;
         let segment_width = ((area.width - gap * (segments - 1)) / segments).max(2);
         let active = (ratio * segments as f64).ceil() as i32;
         for index in 0..segments {
             let left = area.x + index * (segment_width + gap);
             let right = (left + segment_width).min(area.right());
-            let color = if index < active {
-                if index >= 8 {
+            let segment_ratio = (index + 1) as f64 / segments as f64;
+            let start_ratio = f64::from(shift_start_percent) / 100.0;
+            let warning_ratio = f64::from(shift_warning_percent) / 100.0;
+            let limiter_ratio = f64::from(limiter_percent) / 100.0;
+            let color = if index < active && segment_ratio >= start_ratio {
+                if segment_ratio >= limiter_ratio {
                     0x000000FF
-                } else if index >= 6 {
+                } else if segment_ratio >= warning_ratio {
                     0x0000FFFF
                 } else {
                     active_color
