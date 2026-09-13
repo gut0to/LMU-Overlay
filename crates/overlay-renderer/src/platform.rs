@@ -100,6 +100,7 @@ mod windows_overlay {
     thread_local! {
         static WIDGET_RENDER_STATE: Cell<(f64, u32)> = const { Cell::new((1.0, COLOR_KEY)) };
         static NATIVE_TEXT_ENABLED: Cell<bool> = const { Cell::new(false) };
+        static NATIVE_SHAPE_COMMANDS: RefCell<Vec<d2d_backend::ShapeCommand>> = const { RefCell::new(Vec::new()) };
         static NATIVE_TEXT_COMMANDS: RefCell<Vec<d2d_backend::TextCommand>> = const { RefCell::new(Vec::new()) };
     }
 
@@ -150,7 +151,16 @@ mod windows_overlay {
 
     fn begin_native_text(enabled: bool) {
         NATIVE_TEXT_ENABLED.with(|state| state.set(enabled));
+        NATIVE_SHAPE_COMMANDS.with(|commands| commands.borrow_mut().clear());
         NATIVE_TEXT_COMMANDS.with(|commands| commands.borrow_mut().clear());
+    }
+
+    fn queue_shape(command: d2d_backend::ShapeCommand) {
+        NATIVE_SHAPE_COMMANDS.with(|commands| commands.borrow_mut().push(command));
+    }
+
+    fn take_native_shape_commands() -> Vec<d2d_backend::ShapeCommand> {
+        NATIVE_SHAPE_COMMANDS.with(|commands| std::mem::take(&mut *commands.borrow_mut()))
     }
 
     fn take_native_text_commands() -> Vec<d2d_backend::TextCommand> {
@@ -1006,7 +1016,9 @@ mod windows_overlay {
         if let Some(backend) = state.d2d.as_ref() {
             if using_d2d {
                 let texts = take_native_text_commands();
+                let shapes = take_native_shape_commands();
                 if let Err(error) = backend.end_gdi(
+                    &shapes,
                     &texts,
                     &config.style.font_family,
                     config.style.font_size as f32 * config.style.scale as f32,
@@ -1051,6 +1063,19 @@ mod windows_overlay {
 
     unsafe fn draw_widget_panel(hdc: HDC, area: Area, config: &OverlayConfig) {
         let colors = colors(config);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: (area.x + area.width) as f32,
+                bottom: (area.y + area.height) as f32,
+                fill: None,
+                stroke: Some(widget_color(colors.border)),
+                stroke_width: config.style.line_thickness.max(1) as f32,
+                radius: config.style.border_radius.max(0) as f32,
+            });
+            return;
+        }
         let border = CreatePen(
             PS_SOLID,
             config.style.line_thickness.max(1),
@@ -1878,6 +1903,23 @@ mod windows_overlay {
                 theme_colors.border,
             )
         };
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: area.right() as f32,
+                bottom: area.bottom() as f32,
+                fill: show_background.then(|| widget_color(background)),
+                stroke: show_border.then(|| widget_color(border)),
+                stroke_width: widget_style
+                    .map_or(config.style.line_thickness, |style| style.border_width)
+                    .max(1) as f32,
+                radius: widget_style
+                    .map_or(config.style.border_radius, |style| style.border_radius)
+                    .max(0) as f32,
+            });
+            return;
+        }
         let rect = RECT {
             left: area.x,
             top: area.y,

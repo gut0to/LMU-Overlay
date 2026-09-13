@@ -15,6 +15,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_DC_INITIALIZE_MODE_COPY, D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_PRESENT_OPTIONS_NONE,
     D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
+    D2D1_ROUNDED_RECT,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL,
@@ -37,6 +38,18 @@ pub struct TextCommand {
     pub y: i32,
     pub color: u32,
     pub text: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ShapeCommand {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub fill: Option<u32>,
+    pub stroke: Option<u32>,
+    pub stroke_width: f32,
+    pub radius: f32,
 }
 
 impl D2dBackend {
@@ -80,8 +93,10 @@ impl D2dBackend {
         Ok(self.gdi.GetDC(D2D1_DC_INITIALIZE_MODE_COPY)?.0)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub unsafe fn end_gdi(
         &self,
+        shapes: &[ShapeCommand],
         texts: &[TextCommand],
         font_family: &str,
         font_size: f32,
@@ -90,6 +105,37 @@ impl D2dBackend {
         height: i32,
     ) -> Result<()> {
         self.gdi.ReleaseDC(None)?;
+        for command in shapes {
+            let rect = D2D_RECT_F {
+                left: command.left,
+                top: command.top,
+                right: command.right,
+                bottom: command.bottom,
+            };
+            let rounded = D2D1_ROUNDED_RECT {
+                rect,
+                radiusX: command.radius,
+                radiusY: command.radius,
+            };
+            if let Some(color) = command.fill {
+                let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                if command.radius > 0.0 {
+                    self.target.FillRoundedRectangle(&rounded, &brush);
+                } else {
+                    self.target.FillRectangle(&rect, &brush);
+                }
+            }
+            if let Some(color) = command.stroke {
+                let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+                if command.radius > 0.0 {
+                    self.target
+                        .DrawRoundedRectangle(&rounded, &brush, command.stroke_width, None);
+                } else {
+                    self.target
+                        .DrawRectangle(&rect, &brush, command.stroke_width, None);
+                }
+            }
+        }
         if !texts.is_empty() {
             let family = wide_null(font_family);
             let format = self.text_factory.CreateTextFormat(
@@ -102,12 +148,7 @@ impl D2dBackend {
                 PCWSTR::null(),
             )?;
             for command in texts {
-                let color = D2D1_COLOR_F {
-                    r: (command.color & 0xff) as f32 / 255.0,
-                    g: ((command.color >> 8) & 0xff) as f32 / 255.0,
-                    b: ((command.color >> 16) & 0xff) as f32 / 255.0,
-                    a: 1.0,
-                };
+                let color = color_f(command.color);
                 let brush = self.target.CreateSolidColorBrush(&color, None)?;
                 let text = wide_null(&command.text);
                 let rect = D2D_RECT_F {
@@ -142,4 +183,13 @@ impl D2dBackend {
 
 fn wide_null(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+fn color_f(color: u32) -> D2D1_COLOR_F {
+    D2D1_COLOR_F {
+        r: (color & 0xff) as f32 / 255.0,
+        g: ((color >> 8) & 0xff) as f32 / 255.0,
+        b: ((color >> 16) & 0xff) as f32 / 255.0,
+        a: 1.0,
+    }
 }
