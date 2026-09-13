@@ -41,6 +41,7 @@ impl From<config::ConfigError> for OverlayError {
 #[cfg(windows)]
 mod windows_overlay {
     use std::{
+        cell::Cell,
         ffi::c_void,
         fs,
         mem::zeroed,
@@ -95,6 +96,55 @@ mod windows_overlay {
     const HOTKEY_TOGGLE_COACHING: i32 = 3;
     const HOTKEY_CYCLE_PRESET: i32 = 4;
     const EDIT_HIT_MARGIN: i32 = 16;
+
+    thread_local! {
+        static WIDGET_RENDER_STATE: Cell<(f64, u32)> = const { Cell::new((1.0, COLOR_KEY)) };
+    }
+
+    struct WidgetOpacityScope {
+        previous: (f64, u32),
+    }
+
+    impl WidgetOpacityScope {
+        fn new(opacity: f64) -> Self {
+            let previous = WIDGET_RENDER_STATE.with(|state| {
+                let previous = state.get();
+                state.set((opacity.clamp(0.1, 1.0), previous.1));
+                previous
+            });
+            Self { previous }
+        }
+    }
+
+    impl Drop for WidgetOpacityScope {
+        fn drop(&mut self) {
+            WIDGET_RENDER_STATE.with(|state| state.set(self.previous));
+        }
+    }
+
+    fn set_render_background(color: u32) {
+        WIDGET_RENDER_STATE.with(|state| {
+            let (opacity, _) = state.get();
+            state.set((opacity, color));
+        });
+    }
+
+    fn widget_color(color: u32) -> u32 {
+        WIDGET_RENDER_STATE.with(|state| {
+            let (opacity, background) = state.get();
+            blend_color(color, background, opacity)
+        })
+    }
+
+    fn blend_color(color: u32, background: u32, opacity: f64) -> u32 {
+        let opacity = opacity.clamp(0.0, 1.0);
+        let channel = |shift: u32| {
+            let foreground = ((color >> shift) & 0xff) as f64;
+            let background = ((background >> shift) & 0xff) as f64;
+            (foreground * opacity + background * (1.0 - opacity)).round() as u32
+        };
+        channel(0) | (channel(8) << 8) | (channel(16) << 16)
+    }
 
     #[derive(Clone, Copy)]
     struct Area {
@@ -902,6 +952,7 @@ mod windows_overlay {
             .ok()
             .map(|config| config.clone())
             .unwrap_or_default();
+        set_render_background(colors(&config).background);
         if let Ok(mut stats) = state.stats.lock() {
             stats.render_frames += 1;
         }
@@ -967,7 +1018,11 @@ mod windows_overlay {
 
     unsafe fn draw_widget_panel(hdc: HDC, area: Area, config: &OverlayConfig) {
         let colors = colors(config);
-        let border = CreatePen(PS_SOLID, config.style.line_thickness.max(1), colors.border);
+        let border = CreatePen(
+            PS_SOLID,
+            config.style.line_thickness.max(1),
+            widget_color(colors.border),
+        );
         let old_pen = SelectObject(hdc, border);
         Rectangle(
             hdc,
@@ -982,6 +1037,7 @@ mod windows_overlay {
 
     unsafe fn draw_snapshot(hdc: HDC, snapshot: TelemetrySnapshot, config: &OverlayConfig) {
         for (widget, area) in widget_areas(config) {
+            let _opacity = WidgetOpacityScope::new(widget_layout(config, widget).opacity);
             match widget {
                 WidgetId::Telemetry if config.widgets.title || config.widgets.speed_gear_rpm => {
                     draw_widget_panel(hdc, area, config);
@@ -1784,7 +1840,7 @@ mod windows_overlay {
             bottom: area.bottom(),
         };
         if show_background {
-            let brush = CreateSolidBrush(background);
+            let brush = CreateSolidBrush(widget_color(background));
             FillRect(hdc, &rect, brush);
             DeleteObject(brush);
         }
@@ -1792,7 +1848,7 @@ mod windows_overlay {
             let width = widget_style
                 .map_or(config.style.line_thickness, |style| style.border_width)
                 .max(1);
-            let pen = CreatePen(PS_SOLID, width, border);
+            let pen = CreatePen(PS_SOLID, width, widget_color(border));
             let old_pen = SelectObject(hdc, pen);
             Rectangle(hdc, area.x, area.y, area.right(), area.bottom());
             SelectObject(hdc, old_pen);
@@ -1962,7 +2018,7 @@ mod windows_overlay {
     ) {
         let clamped = value.clamp(0.0, 1.0);
         let filled = (area.height as f64 * clamped).round() as i32;
-        let outline = CreatePen(PS_SOLID, style.line_width.max(1), 0x00888888);
+        let outline = CreatePen(PS_SOLID, style.line_width.max(1), widget_color(0x00888888));
         let old_pen = SelectObject(hdc, outline);
         Rectangle(
             hdc,
@@ -1974,7 +2030,7 @@ mod windows_overlay {
         SelectObject(hdc, old_pen);
         DeleteObject(outline);
 
-        let brush = CreateSolidBrush(style.fill);
+        let brush = CreateSolidBrush(widget_color(style.fill));
         let fill_rect = RECT {
             left: area.x + 2,
             top: area.y + area.height - filled + 2,
@@ -1994,7 +2050,11 @@ mod windows_overlay {
         if let Some(reference_value) = reference_value {
             let reference_y = area.y + area.height
                 - (reference_value.clamp(0.0, 1.0) * area.height as f64).round() as i32;
-            let reference_pen = CreatePen(PS_SOLID, style.line_width.max(1), style.reference);
+            let reference_pen = CreatePen(
+                PS_SOLID,
+                style.line_width.max(1),
+                widget_color(style.reference),
+            );
             let old_pen = SelectObject(hdc, reference_pen);
             MoveToEx(hdc, area.x, reference_y, ptr::null_mut());
             LineTo(hdc, area.x + area.width, reference_y);
@@ -2006,7 +2066,7 @@ mod windows_overlay {
     unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
         let center = area.x + area.width / 2;
         let end = center + (value.clamp(-1.0, 1.0) * (area.width / 2) as f64).round() as i32;
-        let pen = CreatePen(PS_SOLID, area.height, color);
+        let pen = CreatePen(PS_SOLID, area.height, widget_color(color));
         let old_pen = SelectObject(hdc, pen);
         MoveToEx(hdc, center, area.y, ptr::null_mut());
         LineTo(hdc, end, area.y);
@@ -2599,7 +2659,7 @@ mod windows_overlay {
     unsafe fn draw_text(hdc: HDC, x: i32, y: i32, color: u32, text: &str) {
         let wide: Vec<u16> = text.encode_utf16().collect();
         SetBkMode(hdc, TRANSPARENT as i32);
-        SetTextColor(hdc, color);
+        SetTextColor(hdc, widget_color(color));
         TextOutW(hdc, x, y, wide.as_ptr(), wide.len() as i32);
     }
 
@@ -2817,6 +2877,13 @@ mod windows_overlay {
             speed.speed_kph = 180.0;
             speed.reference_speed_kph = Some(200.0);
             assert_eq!(input_coaching_message(speed), Some("carry speed"));
+        }
+
+        #[test]
+        fn blends_widget_colors_with_configured_opacity() {
+            assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 1.0), 0x00FFFFFF);
+            assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 0.5), 0x00808080);
+            assert_eq!(blend_color(0x00112233, 0x00445566, 0.0), 0x00445566);
         }
 
         fn snapshot() -> TelemetrySnapshot {
