@@ -1150,6 +1150,155 @@ mod windows_overlay {
             widget_primary_color(config, widget_style),
             &value,
         );
+        let detail_y = area.y + padding + title_height + scale_px(config, 22);
+        let detail_color = widget_secondary_color(config, widget_style);
+        match id {
+            "fuel" => {
+                if let Some(last) = snapshot.fuel_last_lap_used {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y,
+                        detail_color,
+                        &format!("LAST {last:.2} L/lap"),
+                    );
+                }
+                if let Some(remaining) = snapshot.fuel_estimated_laps_remaining {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        detail_color,
+                        &format!("REMAIN {remaining:.1} laps"),
+                    );
+                }
+            }
+            "tyres" => draw_four_wheel_detail(
+                hdc,
+                area,
+                config,
+                detail_y,
+                detail_color,
+                [
+                    snapshot.wheels.front_left,
+                    snapshot.wheels.front_right,
+                    snapshot.wheels.rear_left,
+                    snapshot.wheels.rear_right,
+                ],
+                false,
+            ),
+            "brakes" => draw_four_wheel_detail(
+                hdc,
+                area,
+                config,
+                detail_y,
+                detail_color,
+                [
+                    snapshot.wheels.front_left,
+                    snapshot.wheels.front_right,
+                    snapshot.wheels.rear_left,
+                    snapshot.wheels.rear_right,
+                ],
+                true,
+            ),
+            "electronics" => {
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    detail_color,
+                    &format!(
+                        "TC SLIP {}  CUT {}",
+                        option_number(snapshot.vehicle.tc_slip),
+                        option_number(snapshot.vehicle.tc_cut)
+                    ),
+                );
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y + scale_px(config, 18),
+                    detail_color,
+                    &format!(
+                        "MIG {} / {}",
+                        option_number(snapshot.vehicle.migration),
+                        option_number(snapshot.vehicle.migration_max)
+                    ),
+                );
+            }
+            "engine" => {
+                draw_text(
+                    hdc,
+                    area.x + padding,
+                    detail_y,
+                    detail_color,
+                    &format!(
+                        "BOOST {} kPa",
+                        option_decimal(snapshot.vehicle.turbo_boost_kpa)
+                    ),
+                );
+                if snapshot.vehicle.overheating == Some(true) {
+                    draw_text(
+                        hdc,
+                        area.x + padding,
+                        detail_y + scale_px(config, 18),
+                        colors(config).delta_loss,
+                        "OVERHEAT",
+                    );
+                }
+            }
+            "weather" => draw_text(
+                hdc,
+                area.x + padding,
+                detail_y,
+                detail_color,
+                &format!(
+                    "RAIN {}%  WET {}%",
+                    option_percent(snapshot.session.rain_density),
+                    option_percent(snapshot.session.track_wetness)
+                ),
+            ),
+            _ => {}
+        }
+    }
+
+    unsafe fn draw_four_wheel_detail(
+        hdc: HDC,
+        area: Area,
+        config: &OverlayConfig,
+        y: i32,
+        color: u32,
+        wheels: [lmu_telemetry::WheelData; 4],
+        brake: bool,
+    ) {
+        let labels = ["FL", "FR", "RL", "RR"];
+        for (index, wheel) in wheels.into_iter().enumerate() {
+            let x = area.x + scale_px(config, 8) + (index as i32 % 2) * (area.width / 2);
+            let row = index as i32 / 2;
+            let value = if brake {
+                format!(
+                    "{} {:.0} C",
+                    labels[index],
+                    wheel.brake_temp_c.unwrap_or_default()
+                )
+            } else {
+                format!(
+                    "{} {:.0} kPa",
+                    labels[index],
+                    wheel.pressure_kpa.unwrap_or_default()
+                )
+            };
+            draw_text(hdc, x, y + row * scale_px(config, 18), color, &value);
+        }
+    }
+
+    fn option_number(value: Option<u8>) -> String {
+        value.map_or_else(|| "--".to_string(), |value| value.to_string())
+    }
+    fn option_decimal(value: Option<f64>) -> String {
+        value.map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
+    }
+    fn option_percent(value: Option<f64>) -> String {
+        value.map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
     }
 
     fn semantic_flag(flag: i32) -> String {
