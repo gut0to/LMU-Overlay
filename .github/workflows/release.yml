@@ -43,7 +43,9 @@ jobs:
           Copy-Item target\release\hashoverlay.exe dist\HashOverlay\
           Copy-Item README.md dist\HashOverlay\
           Copy-Item LICENSE dist\HashOverlay\
+          Copy-Item THIRD_PARTY_LICENSES.md dist\HashOverlay\
           Copy-Item docs\usage.md dist\HashOverlay\USAGE.md
+          Copy-Item docs\widgets.md dist\HashOverlay\WIDGETS.md
           Copy-Item settings\src-tauri\target\release\bundle -Destination dist\HashOverlay\settings-bundle -Recurse
           Compress-Archive -Path dist\HashOverlay\* -DestinationPath dist\HashOverlay-windows.zip -Force
 

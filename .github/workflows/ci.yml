@@ -59,5 +59,8 @@ jobs:
         run: npm run build
         working-directory: settings
 
+      - name: Build overlay resource
+        run: cargo build --release
+
       - name: Check settings shell
         run: cargo check --manifest-path settings/src-tauri/Cargo.toml

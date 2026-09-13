@@ -16,202 +16,29 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-
-type WindowConfig = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  refresh_hz: number;
-  sample_ms: number;
-  history_samples: number;
-};
-
-type StyleConfig = {
-  opacity: number;
-  scale: number;
-  line_thickness: number;
-  background: string;
-  border: string;
-  primary_text: string;
-  secondary_text: string;
-  throttle: string;
-  brake: string;
-  clutch: string;
-  steering: string;
-  delta_gain: string;
-  delta_loss: string;
-  delta_neutral: string;
-  reference: string;
-  rpm: string;
-  coaching_warning: string;
-  coaching_positive: string;
-  font_family: string;
-  font_size: number;
-  font_weight: number;
-  large_number_size: number;
-  theme: string;
-};
-
-type WidgetConfig = {
-  title: boolean;
-  speed_gear_rpm: boolean;
-  pedals: boolean;
-  steering: boolean;
-  lap_info: boolean;
-  lap_timing: boolean;
-  sectors: boolean;
-  mini_sector_widget: boolean;
-  input_history: boolean;
-  delta_timing: boolean;
-  ghost_inputs: boolean;
-  coaching: boolean;
-  performance_monitor: boolean;
-};
-
-type WidgetDefinition = {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  data_requirement: string;
-};
-
-type WidgetLayout = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  locked: boolean;
-  scale: number;
-  opacity: number;
-  z_index: number;
-};
-
-type WidgetStyleConfig = {
-  inherit_theme: boolean;
-  show_background: boolean;
-  background_color: string;
-  show_border: boolean;
-  border_color: string;
-  border_width: number;
-  padding: number;
-  font_scale: number;
-  primary_color: string;
-  secondary_color: string;
-  accent_color: string;
-  show_title: boolean;
-  title_text: string;
-};
-
-type WidgetInstanceConfig = {
-  enabled: boolean;
-  layout: WidgetLayout;
-  style: WidgetStyleConfig;
-};
-
-type LayoutConfig = {
-  lock_all: boolean;
-  snap_to_edges: boolean;
-  snap_to_grid: boolean;
-  snap_to_widgets: boolean;
-  grid_size: number;
-  snap_distance: number;
-  telemetry: WidgetLayout;
-  inputs: WidgetLayout;
-  lap_timing: WidgetLayout;
-  timing: WidgetLayout;
-  sectors: WidgetLayout;
-  mini_sectors: WidgetLayout;
-  coaching: WidgetLayout;
-  performance: WidgetLayout;
-};
-
-type LayoutWidgetKey = "telemetry" | "inputs" | "lap_timing" | "timing" | "sectors" | "mini_sectors" | "coaching" | "performance";
-type LayoutSelection = LayoutWidgetKey | `extra:${string}`;
-
-type UnitsConfig = {
-  speed: string;
-  temperature: string;
-  pressure: string;
-  fuel: string;
-};
-
-type CoachingConfig = {
-  mode: string;
-  brake_timing: boolean;
-  throttle_timing: boolean;
-  input_match: boolean;
-  speed: boolean;
-  gear: boolean;
-  speed_threshold_kph: number;
-  timing_deadband_m: number;
-  event_match_tolerance_m: number;
-  max_hints: number;
-};
-
-type TimingConfig = {
-  reference_mode: string;
-  mini_sectors: number;
-  brake_threshold: number;
-  throttle_threshold: number;
-};
-
-type HotkeyConfig = {
-  toggle_overlay: string;
-  edit_mode: string;
-  toggle_coaching: string;
-  cycle_preset: string;
-};
-
-type PerformanceConfig = {
-  mode: string;
-};
-
-type PresetProfileConfig = {
-  performance_mode: string;
-  reference_mode: string;
-  mini_sectors: number;
-  style: StyleConfig;
-  units: UnitsConfig;
-  coaching_config: CoachingConfig;
-  layout: LayoutConfig;
-  extra_widgets: Record<string, WidgetInstanceConfig>;
-} & WidgetConfig;
-
-type PresetConfig = {
-  practice: PresetProfileConfig;
-  qualifying: PresetProfileConfig;
-  race: PresetProfileConfig;
-  endurance: PresetProfileConfig;
-  minimal: PresetProfileConfig;
-  custom: CustomPresetConfig[];
-};
-
-type CustomPresetConfig = {
-  name: string;
-  profile: PresetProfileConfig;
-};
-
-type OverlayConfig = {
-  config_version: number;
-  window: WindowConfig;
-  style: StyleConfig;
-  widgets: WidgetConfig;
-  extra_widgets: Record<string, WidgetInstanceConfig>;
-  layout: LayoutConfig;
-  units: UnitsConfig;
-  coaching: CoachingConfig;
-  timing: TimingConfig;
-  hotkeys: HotkeyConfig;
-  performance: PerformanceConfig;
-  presets: PresetConfig;
-};
-
-type LoadResponse = {
-  path: string;
-  config: OverlayConfig;
-};
+import type {
+  CoachingConfig,
+  CustomPresetConfig,
+  HotkeyConfig,
+  LayoutConfig,
+  LayoutSelection,
+  LayoutWidgetKey,
+  LoadResponse,
+  OverlayConfig,
+  PerformanceConfig,
+  PresetConfig,
+  PresetProfileConfig,
+  StyleConfig,
+  TimingConfig,
+  UnitsConfig,
+  WidgetConfig,
+  WidgetDefinition,
+  WidgetInstanceConfig,
+  WidgetLayout,
+  WidgetOptions,
+  WidgetStyleConfig,
+  WindowConfig,
+} from "./types";
 
 type SectionProps = {
   icon: React.ReactNode;
@@ -259,6 +86,12 @@ const temperatureUnits = [
 const pressureUnits = [
   ["kpa", "kPa"],
   ["psi", "psi"],
+];
+const tyreTemperatureModes = [
+  ["surface_average", "Surface avg"],
+  ["surface_lcr", "Surface L/C/R"],
+  ["carcass", "Carcass"],
+  ["inner_layer", "Inner layer"],
 ];
 const fuelUnits = [
   ["liters", "Liters"],
@@ -365,9 +198,9 @@ function App() {
     }
   }
 
-  async function saveConfig() {
+  async function saveConfig(): Promise<boolean> {
     if (!config) {
-      return;
+      return false;
     }
     setSaving(true);
     try {
@@ -375,8 +208,10 @@ function App() {
       setConfig(response.config);
       setPath(response.path);
       setStatus("Saved");
+      return true;
     } catch (error) {
       setStatus(String(error));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -428,6 +263,9 @@ function App() {
 
   async function startOverlay() {
     try {
+      if (!(await saveConfig())) {
+        return;
+      }
       await invoke("start_overlay");
       setStatus("Overlay started");
     } catch (error) {
@@ -635,10 +473,17 @@ function App() {
             onChange={(key, value) => setLayoutSelection(config, setConfig, selectedLayout, key, value)}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
-            <WidgetStyleFields
-              style={config.extra_widgets[selectedLayout.slice("extra:".length)].style}
-              onChange={(key, value) => setExtraWidgetStyle(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
-            />
+            <>
+              <WidgetStyleFields
+                style={config.extra_widgets[selectedLayout.slice("extra:".length)].style}
+                onChange={(key, value) => setExtraWidgetStyle(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
+              />
+              <WidgetOptionsFields
+                id={selectedLayout.slice("extra:".length)}
+                options={config.extra_widgets[selectedLayout.slice("extra:".length)].options}
+                onChange={(key, value) => setExtraWidgetOption(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
+              />
+            </>
           )}
         </Section>}
 
@@ -702,8 +547,8 @@ function App() {
               const enabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
-                  <input type="checkbox" checked={enabled} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
-                  <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement}</small></span>
+                  <input type="checkbox" checked={enabled} disabled={widget.status === "Unavailable in current LMU interface"} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
+                  <span><strong>{widget.name}</strong><small>{widget.description} · {widget.data_requirement} · {widget.status}</small></span>
                 </label>
               );
             })}
@@ -1161,6 +1006,7 @@ function WidgetStyleFields(props: {
           <span>Show widget border</span>
         </label>
         <NumberField label="Border width" value={props.style.border_width} onChange={(value) => props.onChange("border_width", value)} />
+        <NumberField label="Border radius" value={props.style.border_radius} onChange={(value) => props.onChange("border_radius", value)} />
         <NumberField label="Inner padding" value={props.style.padding} onChange={(value) => props.onChange("padding", value)} />
         <div className="swatches">
           {colorFields.map(([key, label]) => (
@@ -1178,6 +1024,54 @@ function WidgetStyleFields(props: {
       {props.style.show_title && <TextInput label="Widget title" value={props.style.title_text} onChange={(value) => props.onChange("title_text", value)} />}
     </>
   );
+}
+
+function WidgetOptionsFields(props: {
+  id: string;
+  options: WidgetOptions;
+  onChange: <K extends keyof WidgetOptions>(key: K, value: WidgetOptions[K]) => void;
+}) {
+  if (!["relative", "standings", "fuel", "tyres", "brakes", "rpm"].includes(props.id)) return null;
+  return <>
+    {props.id === "relative" && <>
+      <NumberField label="Cars ahead" value={props.options.cars_ahead} onChange={(value) => props.onChange("cars_ahead", value)} />
+      <NumberField label="Cars behind" value={props.options.cars_behind} onChange={(value) => props.onChange("cars_behind", value)} />
+    </>}
+    {props.id === "standings" && <>
+      <NumberField label="Rows" value={props.options.rows} onChange={(value) => props.onChange("rows", value)} />
+      <label className="toggle full"><input type="checkbox" checked={props.options.same_class_only} onChange={(event) => props.onChange("same_class_only", event.target.checked)} /><span>Same class only</span></label>
+    </>}
+    {(props.id === "relative" || props.id === "standings") && <>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_driver} onChange={(event) => props.onChange("show_driver", event.target.checked)} /><span>Show driver</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_car} onChange={(event) => props.onChange("show_car", event.target.checked)} /><span>Show car</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_position} onChange={(event) => props.onChange("show_position", event.target.checked)} /><span>Show position</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_laps} onChange={(event) => props.onChange("show_laps", event.target.checked)} /><span>Show laps</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_class} onChange={(event) => props.onChange("show_class", event.target.checked)} /><span>Show class</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_gap} onChange={(event) => props.onChange("show_gap", event.target.checked)} /><span>Show gap</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_pit} onChange={(event) => props.onChange("show_pit", event.target.checked)} /><span>Show pit state</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_last_lap} onChange={(event) => props.onChange("show_last_lap", event.target.checked)} /><span>Show last lap</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_best_lap} onChange={(event) => props.onChange("show_best_lap", event.target.checked)} /><span>Show best lap</span></label>
+    </>}
+    {props.id === "fuel" && <>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_average} onChange={(event) => props.onChange("show_average", event.target.checked)} /><span>Show average usage</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_last_lap} onChange={(event) => props.onChange("show_last_lap", event.target.checked)} /><span>Show last lap usage</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_estimated_laps} onChange={(event) => props.onChange("show_estimated_laps", event.target.checked)} /><span>Show estimated laps</span></label>
+    </>}
+    {props.id === "tyres" && <>
+      <Segmented value={props.options.tyre_temperature_mode} options={tyreTemperatureModes} onChange={(value) => props.onChange("tyre_temperature_mode", value)} />
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_wear} onChange={(event) => props.onChange("show_wear", event.target.checked)} /><span>Show tyre wear</span></label>
+    </>}
+    {props.id === "brakes" && <>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_brake_temperature} onChange={(event) => props.onChange("show_brake_temperature", event.target.checked)} /><span>Show brake temperature</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_brake_pressure} onChange={(event) => props.onChange("show_brake_pressure", event.target.checked)} /><span>Show brake pressure</span></label>
+    </>}
+    {props.id === "rpm" && <>
+      <NumberField label="Shift start %" value={props.options.shift_start_percent} onChange={(value) => props.onChange("shift_start_percent", value)} />
+      <NumberField label="Shift warning %" value={props.options.shift_warning_percent} onChange={(value) => props.onChange("shift_warning_percent", value)} />
+      <NumberField label="Limiter %" value={props.options.limiter_percent} onChange={(value) => props.onChange("limiter_percent", value)} />
+      <NumberField label="Shift light segments" value={props.options.shift_segments} onChange={(value) => props.onChange("shift_segments", value)} />
+    </>}
+  </>;
 }
 
 function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
@@ -1233,6 +1127,18 @@ function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
     return;
   }
   setConfig({ ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, style: { ...widget.style, [key]: value } } } });
+}
+
+function setExtraWidgetOption<K extends keyof WidgetOptions>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  id: string,
+  key: K,
+  value: WidgetOptions[K],
+) {
+  const widget = config.extra_widgets[id];
+  if (!widget) return;
+  setConfig({ ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, options: { ...widget.options, [key]: value } } } });
 }
 
 function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof HotkeyConfig, value: string) {

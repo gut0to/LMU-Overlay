@@ -37,7 +37,15 @@ To avoid reading a half-updated frame, the reader captures a small frame marker 
 
 The source layout is based on the `SharedMemoryInterface` header shipped with LMU under the game's `Support\SharedMemoryInterface` folder. TinyPedal's open source `pyLMUSharedMemory` project follows the same source and is useful as a reference implementation.
 
-Lap validity is intentionally conservative. The current mapped `LMU_Data` fields identify green-flag state, pits and garage, but do not yet expose a confirmed official track-cut/lap-invalidated flag in this reader. Until that field is mapped from the official header, HashOverlay will not invent an offset or treat hidden process memory as a source of truth.
+The generic `gameVersion` value is recorded by the interface but is not a
+shared-memory layout revision. The reader therefore does not treat an
+arbitrary version range as proof of compatibility: it validates the mapped
+buffer size and marker bounds for the compiled layout and rejects malformed
+markers. A future incompatible layout must receive its own verified parser.
+
+Lap validity is intentionally conservative. When the active `LMU_Data` layout contains the verified `mLapInvalidated` field, the reader exposes `Some(true)` or `Some(false)`. If that field is unavailable in the installed layout, it remains `None`; HashOverlay never invents an offset or treats hidden process memory as a source of truth.
+
+The scoring field is refreshed independently at a bounded rate (about 10 Hz), while player telemetry remains on the fast path. Each field row is copied into an immutable shared snapshot so widgets do not re-read or parse the 100+ vehicle entries on every render frame.
 
 ## LMU Rest API
 

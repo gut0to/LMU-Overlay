@@ -7,7 +7,9 @@
 3. Select **Practice**, **Qualifying** or **Race**, then open **Widgets** to choose what is visible.
 4. Use **Layout** to drag, resize, lock and snap widgets in the preview. Press **Save**.
 5. Select **Start overlay**.
-6. Start Le Mans Ultimate, enable its built-in plugin/shared-memory option, and enter a session.
+6. Start Le Mans Ultimate and enter a session. The overlay reads LMU's built-in `LMU_Data` interface; no external telemetry plugin is required.
+
+The widget list and customization live in **HashOverlay Settings**, not inside LMU. LMU only provides the live data; use **Widgets**, **Layout** and **Appearance** in Settings, save, then start the overlay.
 
 The overlay displays **WAITING FOR LMU** until it has a valid player sample. It never manufactures values while LMU is closed.
 
@@ -24,6 +26,8 @@ All shortcuts can be changed in **Settings > Hotkeys**. Conflicting shortcuts ar
 
 The default layout is deliberately small: driving HUD, inputs, timing, relative/race information when available, fuel and flags. Turn on additional widgets one by one rather than placing everything on screen.
 
+If you are upgrading an older installation, select a preset and press **Save** once. Existing configuration is preserved during migration, so widgets that were previously disabled do not turn on automatically. The Settings installer includes the matching overlay executable; start the overlay from the same Settings installation so both use `%APPDATA%\\HashOverlay\\hashoverlay.toml`.
+
 Use the Widget Browser to search by name or filter by category. A widget can be enabled even if LMU does not currently expose its official data on your installed game version; it will show `--` until that data becomes available.
 
 ## Settings and Storage
@@ -34,6 +38,6 @@ Personal-best reference laps are stored under `%APPDATA%\HashOverlay\laps` and k
 
 ## Troubleshooting
 
-If the overlay stays on **WAITING FOR LMU**, start LMU first, confirm its shared-memory/plugins option is enabled, and make sure the game and HashOverlay run as the same Windows user.
+If the overlay stays on **WAITING FOR LMU**, start LMU first, enter a driving session, and make sure the game and HashOverlay run as the same Windows user. On older LMU builds, update the game so the built-in `LMU_Data` interface is available.
 
 For source-level development and validation, see [development.md](development.md). For the exact data-source limits, see [telemetry-sources.md](telemetry-sources.md).

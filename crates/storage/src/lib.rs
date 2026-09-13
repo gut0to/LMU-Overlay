@@ -32,19 +32,34 @@ impl ReferenceLapKey {
     pub fn fallback() -> Self {
         Self {
             track: "unknown-track".to_string(),
-            track_layout: "unknown-layout".to_string(),
+            track_layout: String::new(),
             car: "unknown-car".to_string(),
             legacy_vehicle_class: None,
         }
     }
 
     fn file_stem(&self) -> String {
-        format!(
-            "{}__{}__{}",
-            sanitize_path_part(&self.track),
-            sanitize_path_part(&self.track_layout),
-            sanitize_path_part(&self.car)
-        )
+        let track = sanitize_path_part(&self.track);
+        let car = sanitize_path_part(&self.car);
+        if self.has_layout() {
+            format!("{track}__{}__{car}", sanitize_path_part(&self.track_layout))
+        } else {
+            format!("{track}__{car}")
+        }
+    }
+
+    fn has_layout(&self) -> bool {
+        !self.track_layout.trim().is_empty() && self.track_layout != "unknown-layout"
+    }
+
+    fn legacy_layout_file_stem(&self) -> Option<String> {
+        (!self.has_layout()).then(|| {
+            format!(
+                "{}__unknown-layout__{}",
+                sanitize_path_part(&self.track),
+                sanitize_path_part(&self.car)
+            )
+        })
     }
 
     fn legacy_file_stem(&self) -> Option<String> {
@@ -86,14 +101,20 @@ impl ReferenceLapStore {
             return read_reference_lap(&path).map(Some);
         }
 
-        let Some(legacy_path) = self.legacy_personal_best_path(key) else {
-            return Ok(None);
-        };
-        if !legacy_path.exists() {
-            return Ok(None);
+        if let Some(legacy_path) = self.legacy_personal_best_path(key) {
+            if legacy_path.exists() {
+                return read_reference_lap(&legacy_path).map(Some);
+            }
         }
 
-        read_reference_lap(&legacy_path).map(Some)
+        if let Some(file_stem) = key.legacy_layout_file_stem() {
+            let legacy_layout_path = self.root.join(format!("{file_stem}.pb-lap"));
+            if legacy_layout_path.exists() {
+                return read_reference_lap(&legacy_layout_path).map(Some);
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn save_personal_best(
@@ -314,6 +335,14 @@ mod tests {
             key.legacy_file_stem().as_deref(),
             Some("le-mans-24h__car-hyper__hypercar")
         );
+
+        let no_layout = ReferenceLapKey {
+            track: "Le Mans/24h".to_string(),
+            track_layout: String::new(),
+            car: "Car:Hyper".to_string(),
+            legacy_vehicle_class: None,
+        };
+        assert_eq!(no_layout.file_stem(), "le-mans-24h__car-hyper");
     }
 
     #[test]
