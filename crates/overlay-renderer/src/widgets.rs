@@ -99,7 +99,7 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         category: "Timing",
         description: "Recent valid and invalid laps.",
         data_requirement: "lap engine",
-        status: "Unavailable in current LMU interface",
+        status: "Computed from official data",
     },
     WidgetDefinition {
         id: "position",
