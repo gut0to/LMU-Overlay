@@ -2028,8 +2028,8 @@ mod windows_overlay {
                     labels[index],
                     option_decimal(display_temperature_value(wheel.brake_temp_c, config)),
                     temperature_unit_label(config),
-                    option_decimal(display_pressure_value(wheel.brake_pressure_kpa, config)),
-                    pressure_unit_label(config)
+                    option_percent(wheel.brake_pressure_fraction),
+                    "%"
                 )
             } else if show_wear {
                 format!(

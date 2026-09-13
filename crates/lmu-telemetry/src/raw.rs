@@ -103,6 +103,7 @@ pub mod wheel {
     pub const TEMPERATURE: usize = 128;
     pub const WEAR: usize = 152;
     pub const BRAKE_TEMP: usize = 24;
+    // LMU currently exposes normalized brake input here, not physical kPa.
     pub const BRAKE_PRESSURE: usize = 32;
     pub const ROTATION: usize = 40;
     pub const CAMBER: usize = 80;

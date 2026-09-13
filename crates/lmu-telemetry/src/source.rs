@@ -650,7 +650,8 @@ fn read_wheel(bytes: &[u8], offset: usize) -> Result<WheelData, TelemetryError> 
         carcass_temp_c: kelvin_to_celsius(read_f64(bytes, offset + raw::wheel::CARCASS_TEMP)?),
         wear_percent: finite(read_f64(bytes, offset + raw::wheel::WEAR)?).map(|v| v * 100.0),
         brake_temp_c: finite(read_f64(bytes, offset + raw::wheel::BRAKE_TEMP)?),
-        brake_pressure_kpa: finite(read_f64(bytes, offset + raw::wheel::BRAKE_PRESSURE)?),
+        brake_pressure_fraction: finite(read_f64(bytes, offset + raw::wheel::BRAKE_PRESSURE)?)
+            .filter(|value| (0.0..=1.0).contains(value)),
         grip_fraction: finite(read_f64(bytes, offset + 112)?),
         detached: Some(read_bool(bytes, offset + raw::wheel::DETACHED)?),
         flat: Some(read_bool(bytes, offset + raw::wheel::FLAT)?),
@@ -1035,6 +1036,7 @@ mod tests {
             393.15,
         );
         write_f64(&mut bytes, wheel_offset + raw::wheel::BRAKE_TEMP, 620.0);
+        write_f64(&mut bytes, wheel_offset + raw::wheel::BRAKE_PRESSURE, 0.65);
         write_f64(&mut bytes, wheel_offset + raw::wheel::WEAR, 0.82);
         write_f64(
             &mut bytes,
@@ -1143,6 +1145,7 @@ mod tests {
         assert_eq!(sample.wheels.front_left.pressure_kpa, Some(182.0));
         assert_eq!(sample.wheels.front_left.surface_temp_center_c, Some(110.0));
         assert_eq!(sample.wheels.front_left.brake_temp_c, Some(620.0));
+        assert_eq!(sample.wheels.front_left.brake_pressure_fraction, Some(0.65));
         assert_eq!(sample.wheels.front_left.wear_percent, Some(82.0));
         assert_eq!(
             sample.wheels.front_left.suspension_deflection_m,

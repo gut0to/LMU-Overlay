@@ -247,7 +247,8 @@ pub struct WheelData {
     pub carcass_temp_c: Option<f64>,
     pub wear_percent: Option<f64>,
     pub brake_temp_c: Option<f64>,
-    pub brake_pressure_kpa: Option<f64>,
+    /// LMU exposes this field as a normalized brake-pressure fraction.
+    pub brake_pressure_fraction: Option<f64>,
     pub grip_fraction: Option<f64>,
     pub detached: Option<bool>,
     pub flat: Option<bool>,
