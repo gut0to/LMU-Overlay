@@ -1398,6 +1398,14 @@ mod windows_overlay {
             "lap_history" => "LAP HISTORY".to_string(),
             _ => "--".to_string(),
         };
+        let value_color = if id == "flags" {
+            snapshot.session.flag.map_or_else(
+                || widget_primary_color(config, widget_style),
+                |flag| flag_color(config, flag),
+            )
+        } else {
+            widget_primary_color(config, widget_style)
+        };
         let title_height = if widget_style.is_some_and(|style| style.show_title) {
             let title = widget_style
                 .and_then(|style| {
@@ -1419,7 +1427,7 @@ mod windows_overlay {
             hdc,
             area.x + padding,
             area.y + padding + title_height,
-            widget_primary_color(config, widget_style),
+            value_color,
             &value,
         );
         let detail_y = area.y + padding + title_height + scale_px(config, 22);
@@ -2165,6 +2173,18 @@ mod windows_overlay {
             other => return format!("FLAG UNKNOWN ({other})"),
         };
         format!("FLAG {label}")
+    }
+
+    fn flag_color(config: &OverlayConfig, flag: i32) -> u32 {
+        let colors = colors(config);
+        match flag {
+            0 => colors.coaching_positive,
+            1 | 6 => colors.reference,
+            2 => colors.coaching_warning,
+            3 | 4 => colors.delta_loss,
+            5 => colors.secondary_text,
+            _ => colors.primary_text,
+        }
     }
 
     unsafe fn draw_extra_widget_panel(
@@ -3509,6 +3529,15 @@ mod windows_overlay {
             assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 1.0), 0x00FFFFFF);
             assert_eq!(blend_color(0x00FFFFFF, 0x00000000, 0.5), 0x00808080);
             assert_eq!(blend_color(0x00112233, 0x00445566, 0.0), 0x00445566);
+        }
+
+        #[test]
+        fn maps_flags_to_semantic_colors() {
+            let config = OverlayConfig::default();
+            assert_eq!(flag_color(&config, 0), colors(&config).coaching_positive);
+            assert_eq!(flag_color(&config, 2), colors(&config).coaching_warning);
+            assert_eq!(flag_color(&config, 3), colors(&config).delta_loss);
+            assert_eq!(flag_color(&config, 255), colors(&config).primary_text);
         }
 
         #[test]
