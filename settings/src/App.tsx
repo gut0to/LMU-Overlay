@@ -109,6 +109,22 @@ type WidgetInstanceConfig = {
   enabled: boolean;
   layout: WidgetLayout;
   style: WidgetStyleConfig;
+  options: WidgetOptions;
+};
+
+type WidgetOptions = {
+  cars_ahead: number;
+  cars_behind: number;
+  rows: number;
+  same_class_only: boolean;
+  show_driver: boolean;
+  show_class: boolean;
+  show_gap: boolean;
+  show_pit: boolean;
+  show_average: boolean;
+  show_last_lap: boolean;
+  show_estimated_laps: boolean;
+  show_wear: boolean;
 };
 
 type LayoutConfig = {
@@ -636,10 +652,17 @@ function App() {
             onChange={(key, value) => setLayoutSelection(config, setConfig, selectedLayout, key, value)}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
-            <WidgetStyleFields
-              style={config.extra_widgets[selectedLayout.slice("extra:".length)].style}
-              onChange={(key, value) => setExtraWidgetStyle(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
-            />
+            <>
+              <WidgetStyleFields
+                style={config.extra_widgets[selectedLayout.slice("extra:".length)].style}
+                onChange={(key, value) => setExtraWidgetStyle(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
+              />
+              <WidgetOptionsFields
+                id={selectedLayout.slice("extra:".length)}
+                options={config.extra_widgets[selectedLayout.slice("extra:".length)].options}
+                onChange={(key, value) => setExtraWidgetOption(config, setConfig, selectedLayout.slice("extra:".length), key, value)}
+              />
+            </>
           )}
         </Section>}
 
@@ -1181,6 +1204,35 @@ function WidgetStyleFields(props: {
   );
 }
 
+function WidgetOptionsFields(props: {
+  id: string;
+  options: WidgetOptions;
+  onChange: <K extends keyof WidgetOptions>(key: K, value: WidgetOptions[K]) => void;
+}) {
+  if (!["relative", "standings", "fuel", "tyres"].includes(props.id)) return null;
+  return <>
+    {props.id === "relative" && <>
+      <NumberField label="Cars ahead" value={props.options.cars_ahead} onChange={(value) => props.onChange("cars_ahead", value)} />
+      <NumberField label="Cars behind" value={props.options.cars_behind} onChange={(value) => props.onChange("cars_behind", value)} />
+    </>}
+    {props.id === "standings" && <>
+      <NumberField label="Rows" value={props.options.rows} onChange={(value) => props.onChange("rows", value)} />
+      <label className="toggle full"><input type="checkbox" checked={props.options.same_class_only} onChange={(event) => props.onChange("same_class_only", event.target.checked)} /><span>Same class only</span></label>
+    </>}
+    {(props.id === "relative" || props.id === "standings") && <>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_driver} onChange={(event) => props.onChange("show_driver", event.target.checked)} /><span>Show driver</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_class} onChange={(event) => props.onChange("show_class", event.target.checked)} /><span>Show class</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_pit} onChange={(event) => props.onChange("show_pit", event.target.checked)} /><span>Show pit state</span></label>
+    </>}
+    {props.id === "fuel" && <>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_average} onChange={(event) => props.onChange("show_average", event.target.checked)} /><span>Show average usage</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_last_lap} onChange={(event) => props.onChange("show_last_lap", event.target.checked)} /><span>Show last lap usage</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_estimated_laps} onChange={(event) => props.onChange("show_estimated_laps", event.target.checked)} /><span>Show estimated laps</span></label>
+    </>}
+    {props.id === "tyres" && <label className="toggle full"><input type="checkbox" checked={props.options.show_wear} onChange={(event) => props.onChange("show_wear", event.target.checked)} /><span>Show tyre wear</span></label>}
+  </>;
+}
+
 function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
   const value = normalizeHotkey(hotkeys[key]);
   if (!value) {
@@ -1234,6 +1286,18 @@ function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
     return;
   }
   setConfig({ ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, style: { ...widget.style, [key]: value } } } });
+}
+
+function setExtraWidgetOption<K extends keyof WidgetOptions>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  id: string,
+  key: K,
+  value: WidgetOptions[K],
+) {
+  const widget = config.extra_widgets[id];
+  if (!widget) return;
+  setConfig({ ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, options: { ...widget.options, [key]: value } } } });
 }
 
 function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof HotkeyConfig, value: string) {

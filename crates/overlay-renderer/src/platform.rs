@@ -76,7 +76,7 @@ mod windows_overlay {
         },
     };
 
-    use crate::config::{WidgetLayout, WidgetStyleConfig};
+    use crate::config::{WidgetLayout, WidgetOptions, WidgetStyleConfig};
 
     use super::{config::parse_color, OverlayConfig, OverlayError};
 
@@ -1023,14 +1023,31 @@ mod windows_overlay {
         id: &str,
     ) {
         let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
+        let widget_options = config.extra_widgets.get(id).map(|widget| &widget.options);
         draw_extra_widget_panel(hdc, area, config, widget_style);
         let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
         if id == "relative" {
-            draw_relative_widget(hdc, &snapshot, config, area, padding, widget_style);
+            draw_relative_widget(
+                hdc,
+                &snapshot,
+                config,
+                area,
+                padding,
+                widget_style,
+                widget_options,
+            );
             return;
         }
         if id == "standings" {
-            draw_standings_widget(hdc, &snapshot, config, area, padding, widget_style);
+            draw_standings_widget(
+                hdc,
+                &snapshot,
+                config,
+                area,
+                padding,
+                widget_style,
+                widget_options,
+            );
             return;
         }
         let value = match id {
@@ -1276,9 +1293,11 @@ mod windows_overlay {
         area: Area,
         padding: i32,
         style: Option<&crate::config::WidgetStyleConfig>,
+        options: Option<&WidgetOptions>,
     ) {
         let title_color = widget_secondary_color(config, style);
         let text_color = widget_primary_color(config, style);
+        let options = options.cloned().unwrap_or_default();
         draw_text(
             hdc,
             area.x + padding,
@@ -1308,8 +1327,8 @@ mod windows_overlay {
         else {
             return;
         };
-        let start = player_position.saturating_sub(2);
-        let end = (player_position + 3).min(cars.len());
+        let start = player_position.saturating_sub(options.cars_ahead as usize);
+        let end = (player_position + options.cars_behind as usize + 1).min(cars.len());
         for (row, car) in cars[start..end].iter().enumerate() {
             let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
             let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
@@ -1317,8 +1336,14 @@ mod windows_overlay {
             } else {
                 " "
             };
-            let name = car.driver_name.as_deref().unwrap_or("UNKNOWN");
-            let gap = if car.is_player || car.slot_id == snapshot.player_slot_id {
+            let name = if options.show_driver {
+                car.driver_name.as_deref().unwrap_or("UNKNOWN")
+            } else {
+                "CAR"
+            };
+            let gap = if !options.show_gap {
+                String::new()
+            } else if car.is_player || car.slot_id == snapshot.player_slot_id {
                 "0.000".to_string()
             } else {
                 car.gap_to_leader_seconds
@@ -1331,7 +1356,18 @@ mod windows_overlay {
                 area.x + padding,
                 y,
                 text_color,
-                &format!("{marker} P{} {:<16} {}s", car.place.unwrap_or(0), name, gap),
+                &format!(
+                    "{marker} P{} {:<16} {}{}{}",
+                    car.place.unwrap_or(0),
+                    name,
+                    gap,
+                    if options.show_gap { "s" } else { "" },
+                    if options.show_pit && car.in_pits {
+                        " PIT"
+                    } else {
+                        ""
+                    }
+                ),
             );
         }
     }
@@ -1343,9 +1379,11 @@ mod windows_overlay {
         area: Area,
         padding: i32,
         style: Option<&crate::config::WidgetStyleConfig>,
+        options: Option<&WidgetOptions>,
     ) {
         let title_color = widget_secondary_color(config, style);
         let text_color = widget_primary_color(config, style);
+        let options = options.cloned().unwrap_or_default();
         draw_text(
             hdc,
             area.x + padding,
@@ -1353,7 +1391,16 @@ mod windows_overlay {
             title_color,
             "STANDINGS",
         );
-        let mut cars: Vec<&_> = snapshot.field.iter().collect();
+        let player_class = snapshot
+            .field
+            .iter()
+            .find(|car| car.is_player || car.slot_id == snapshot.player_slot_id)
+            .and_then(|car| car.vehicle_class.as_deref());
+        let mut cars: Vec<&_> = snapshot
+            .field
+            .iter()
+            .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
+            .collect();
         cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
         if cars.is_empty() {
             draw_text(
@@ -1365,14 +1412,22 @@ mod windows_overlay {
             );
             return;
         }
-        for (row, car) in cars.iter().take(8).enumerate() {
+        for (row, car) in cars
+            .iter()
+            .take(options.rows.clamp(1, 20) as usize)
+            .enumerate()
+        {
             let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
             let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
                 ">"
             } else {
                 " "
             };
-            let name = car.driver_name.as_deref().unwrap_or("UNKNOWN");
+            let name = if options.show_driver {
+                car.driver_name.as_deref().unwrap_or("UNKNOWN")
+            } else {
+                "CAR"
+            };
             let lap = if car.lap_number > 0 {
                 format!("L{}", car.lap_number)
             } else {
@@ -1383,7 +1438,22 @@ mod windows_overlay {
                 area.x + padding,
                 y,
                 text_color,
-                &format!("{marker} {:>2} {:<16} {lap}", car.place.unwrap_or(0), name),
+                &format!(
+                    "{marker} {:>2} {:<16} {}{}{}",
+                    car.place.unwrap_or(0),
+                    name,
+                    lap,
+                    if options.show_class {
+                        format!(" {}", car.vehicle_class.as_deref().unwrap_or("--"))
+                    } else {
+                        String::new()
+                    },
+                    if options.show_pit && car.in_pits {
+                        " PIT"
+                    } else {
+                        ""
+                    }
+                ),
             );
         }
     }

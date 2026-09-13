@@ -619,6 +619,43 @@ pub struct WidgetInstanceConfig {
     pub enabled: bool,
     pub layout: WidgetLayout,
     pub style: WidgetStyleConfig,
+    pub options: WidgetOptions,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WidgetOptions {
+    pub cars_ahead: u8,
+    pub cars_behind: u8,
+    pub rows: u8,
+    pub same_class_only: bool,
+    pub show_driver: bool,
+    pub show_class: bool,
+    pub show_gap: bool,
+    pub show_pit: bool,
+    pub show_average: bool,
+    pub show_last_lap: bool,
+    pub show_estimated_laps: bool,
+    pub show_wear: bool,
+}
+
+impl Default for WidgetOptions {
+    fn default() -> Self {
+        Self {
+            cars_ahead: 2,
+            cars_behind: 2,
+            rows: 8,
+            same_class_only: false,
+            show_driver: true,
+            show_class: false,
+            show_gap: true,
+            show_pit: true,
+            show_average: true,
+            show_last_lap: true,
+            show_estimated_laps: true,
+            show_wear: true,
+        }
+    }
 }
 
 impl WidgetInstanceConfig {
@@ -638,6 +675,7 @@ impl WidgetInstanceConfig {
                 z_index: 100 + index as i32,
             },
             style: WidgetStyleConfig::default(),
+            options: WidgetOptions::default(),
         }
     }
 }
