@@ -1323,7 +1323,10 @@ mod windows_overlay {
                 _ => "TC / ABS --".to_string(),
             },
             "energy" => match (
-                snapshot.vehicle.battery_charge_percent,
+                snapshot
+                    .vehicle
+                    .state_of_charge_percent
+                    .or(snapshot.vehicle.battery_charge_percent),
                 snapshot.vehicle.virtual_energy_percent,
             ) {
                 (Some(charge), Some(energy)) => {

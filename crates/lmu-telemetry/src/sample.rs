@@ -203,6 +203,7 @@ pub struct VehicleSystems {
     pub abs_setting: Option<i32>,
     pub motor_map: Option<i32>,
     pub battery_charge_percent: Option<f64>,
+    pub state_of_charge_percent: Option<f64>,
     pub virtual_energy_percent: Option<f64>,
     pub hybrid_regen_active: Option<bool>,
     pub scheduled_stops: Option<u8>,

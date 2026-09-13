@@ -552,6 +552,10 @@ fn read_vehicle_systems(
             .map(|_| read_f64(bytes, offset + OFFSET_BATTERY))
             .transpose()?
             .map(|v| v * 100.0),
+        state_of_charge_percent: hybrid
+            .map(|_| read_f32(bytes, offset + raw::telemetry::STATE_OF_CHARGE))
+            .transpose()?
+            .and_then(|value| finite(f64::from(value))),
         virtual_energy_percent: hybrid
             .map(|_| read_f32(bytes, offset + OFFSET_VIRTUAL_ENERGY))
             .transpose()?
@@ -1007,6 +1011,11 @@ mod tests {
         write_u8(&mut bytes, telemetry_offset + OFFSET_TC, 3);
         write_u8(&mut bytes, telemetry_offset + OFFSET_ABS, 2);
         write_f64(&mut bytes, telemetry_offset + OFFSET_BATTERY, 0.75);
+        write_f32(
+            &mut bytes,
+            telemetry_offset + raw::telemetry::STATE_OF_CHARGE,
+            73.5,
+        );
 
         let wheel_offset = telemetry_offset + OFFSET_WHEELS;
         write_f64(&mut bytes, wheel_offset + raw::wheel::PRESSURE, 182.0);
@@ -1125,6 +1134,7 @@ mod tests {
         assert_eq!(sample.vehicle.tc_setting, Some(3));
         assert_eq!(sample.vehicle.abs_setting, Some(2));
         assert_eq!(sample.vehicle.battery_charge_percent, Some(75.0));
+        assert_eq!(sample.vehicle.state_of_charge_percent, Some(73.5));
         assert_eq!(sample.metadata.lap_invalidated, Some(true));
         assert_eq!(sample.wheels.front_left.pressure_kpa, Some(182.0));
         assert_eq!(sample.wheels.front_left.surface_temp_center_c, Some(110.0));
@@ -1220,6 +1230,10 @@ mod tests {
 
     fn write_f64(bytes: &mut [u8], offset: usize, value: f64) {
         bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn write_f32(bytes: &mut [u8], offset: usize, value: f32) {
+        bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 
     fn write_string(bytes: &mut [u8], offset: usize, len: usize, value: &str) {
