@@ -102,6 +102,7 @@ export type WidgetOptions = {
   show_pit: boolean;
   show_average: boolean;
   show_last_lap: boolean;
+  show_best_lap: boolean;
   show_estimated_laps: boolean;
   show_wear: boolean;
   shift_start_percent: number;

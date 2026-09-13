@@ -1049,6 +1049,8 @@ function WidgetOptionsFields(props: {
       <label className="toggle full"><input type="checkbox" checked={props.options.show_class} onChange={(event) => props.onChange("show_class", event.target.checked)} /><span>Show class</span></label>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_gap} onChange={(event) => props.onChange("show_gap", event.target.checked)} /><span>Show gap</span></label>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_pit} onChange={(event) => props.onChange("show_pit", event.target.checked)} /><span>Show pit state</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_last_lap} onChange={(event) => props.onChange("show_last_lap", event.target.checked)} /><span>Show last lap</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_best_lap} onChange={(event) => props.onChange("show_best_lap", event.target.checked)} /><span>Show best lap</span></label>
     </>}
     {props.id === "fuel" && <>
       <label className="toggle full"><input type="checkbox" checked={props.options.show_average} onChange={(event) => props.onChange("show_average", event.target.checked)} /><span>Show average usage</span></label>

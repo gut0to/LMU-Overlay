@@ -652,7 +652,7 @@ fn read_wheel(bytes: &[u8], offset: usize) -> Result<WheelData, TelemetryError> 
         brake_temp_c: finite(read_f64(bytes, offset + raw::wheel::BRAKE_TEMP)?),
         brake_pressure_fraction: finite(read_f64(bytes, offset + raw::wheel::BRAKE_PRESSURE)?)
             .filter(|value| (0.0..=1.0).contains(value)),
-        grip_fraction: finite(read_f64(bytes, offset + 112)?),
+        grip_fraction: finite(read_f64(bytes, offset + raw::wheel::GRIP_FRACTION)?),
         detached: Some(read_bool(bytes, offset + raw::wheel::DETACHED)?),
         flat: Some(read_bool(bytes, offset + raw::wheel::FLAT)?),
         inner_temp_c: [inner(0), inner(1), inner(2)]

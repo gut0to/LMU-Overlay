@@ -108,6 +108,7 @@ pub mod wheel {
     pub const ROTATION: usize = 40;
     pub const CAMBER: usize = 80;
     pub const TYRE_LOAD: usize = 104;
+    pub const GRIP_FRACTION: usize = 112;
     pub const SURFACE_TYPE: usize = 176;
     pub const FLAT: usize = 177;
     pub const DETACHED: usize = 178;

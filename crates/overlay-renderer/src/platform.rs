@@ -1990,7 +1990,12 @@ mod windows_overlay {
         if options.show_gap {
             header.push("GAP");
         }
-        header.extend(["LAST", "BEST"]);
+        if options.show_last_lap {
+            header.push("LAST");
+        }
+        if options.show_best_lap {
+            header.push("BEST");
+        }
         draw_text(
             hdc,
             area.x + padding,
@@ -2058,8 +2063,12 @@ mod windows_overlay {
             if options.show_gap {
                 columns.push(gap);
             }
-            columns.push(last);
-            columns.push(best);
+            if options.show_last_lap {
+                columns.push(last);
+            }
+            if options.show_best_lap {
+                columns.push(best);
+            }
             if options.show_pit && car.in_pits {
                 columns.push("PIT".to_string());
             }
