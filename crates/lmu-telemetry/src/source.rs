@@ -541,8 +541,8 @@ fn read_vehicle_systems(
             .transpose()?
             .map(|state| state != 0),
         wiper_state: Some(read_u8(bytes, offset + raw::telemetry::WIPER_STATE)?),
-        lift_and_coast_progress: finite(
-            read_f32(bytes, offset + raw::telemetry::LIFT_AND_COAST)? as f64
+        lift_and_coast_progress: Some(
+            read_u8(bytes, offset + raw::telemetry::LIFT_AND_COAST)? as f64
         ),
         track_limit_steps: Some(read_u8(bytes, offset + raw::telemetry::TRACK_LIMIT_STEPS)?),
         tc_active: Some(read_bool(bytes, offset + OFFSET_TC_ACTIVE)?),
@@ -597,6 +597,13 @@ fn read_vehicle_systems(
         motor_map_max: Some(read_u8(bytes, offset + OFFSET_MOTOR_MAP_MAX)?),
         migration: Some(read_u8(bytes, offset + OFFSET_MIGRATION)?),
         migration_max: Some(read_u8(bytes, offset + OFFSET_MIGRATION_MAX)?),
+        front_anti_sway: Some(read_u8(bytes, offset + raw::telemetry::FRONT_ANTI_SWAY)?),
+        front_anti_sway_max: Some(read_u8(
+            bytes,
+            offset + raw::telemetry::FRONT_ANTI_SWAY_MAX,
+        )?),
+        rear_anti_sway: Some(read_u8(bytes, offset + raw::telemetry::REAR_ANTI_SWAY)?),
+        rear_anti_sway_max: Some(read_u8(bytes, offset + raw::telemetry::REAR_ANTI_SWAY_MAX)?),
         regen_kw: hybrid
             .map(|_| read_f32(bytes, offset + OFFSET_REGEN))
             .transpose()?

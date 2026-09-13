@@ -1550,9 +1550,13 @@ mod windows_overlay {
                     detail_y + scale_px(config, 18),
                     detail_color,
                     &format!(
-                        "MIG {} / {}",
+                        "MIG {} / {}  ARB F {}/{} R {}/{}",
                         option_number(snapshot.vehicle.migration),
-                        option_number(snapshot.vehicle.migration_max)
+                        option_number(snapshot.vehicle.migration_max),
+                        option_number(snapshot.vehicle.front_anti_sway),
+                        option_number(snapshot.vehicle.front_anti_sway_max),
+                        option_number(snapshot.vehicle.rear_anti_sway),
+                        option_number(snapshot.vehicle.rear_anti_sway_max)
                     ),
                 );
                 draw_text(
@@ -2018,7 +2022,7 @@ mod windows_overlay {
                 )
             } else if show_wear {
                 format!(
-                    "{}  {} {}  W{}%",
+                    "{}  {} {}  REM{}%",
                     labels[index],
                     option_decimal(display_pressure_value(wheel.pressure_kpa, config)),
                     pressure_unit_label(config),

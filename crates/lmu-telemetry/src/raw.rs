@@ -78,6 +78,10 @@ pub mod telemetry {
     pub const MOTOR_MAP_MAX: usize = 759;
     pub const MIGRATION: usize = 760;
     pub const MIGRATION_MAX: usize = 761;
+    pub const FRONT_ANTI_SWAY: usize = 762;
+    pub const FRONT_ANTI_SWAY_MAX: usize = 763;
+    pub const REAR_ANTI_SWAY: usize = 764;
+    pub const REAR_ANTI_SWAY_MAX: usize = 765;
     pub const LIFT_AND_COAST: usize = 766;
     pub const TRACK_LIMIT_STEPS: usize = 767;
     pub const REGEN: usize = 768;
