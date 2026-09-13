@@ -1792,12 +1792,19 @@ mod windows_overlay {
             );
             return;
         }
+        draw_text(
+            hdc,
+            area.x + padding,
+            area.y + padding + scale_px(config, 18),
+            title_color,
+            "POS DRIVER           LAPS       GAP      LAST      BEST",
+        );
         for (row, car) in cars
             .iter()
             .take(options.rows.clamp(1, 20) as usize)
             .enumerate()
         {
-            let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
+            let y = area.y + padding + scale_px(config, 36 + (row as i32 * 18));
             let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
                 ">"
             } else {
@@ -1815,13 +1822,26 @@ mod windows_overlay {
             } else {
                 String::new()
             };
+            let gap = if options.show_gap {
+                standings_gap(car)
+            } else {
+                String::new()
+            };
+            let last = car
+                .last_lap_seconds
+                .map(lap_time)
+                .unwrap_or_else(|| "--:--.---".to_string());
+            let best = car
+                .best_lap_seconds
+                .map(lap_time)
+                .unwrap_or_else(|| "--:--.---".to_string());
             draw_text(
                 hdc,
                 area.x + padding,
                 y,
                 text_color,
                 &format!(
-                    "{marker} {} {:<16} {}{}{}",
+                    "{marker} {:>2} {:<16} {:>4} {:>8} {:>9} {:>9}{}{}",
                     if options.show_position {
                         format!("{:>2}", car.place.unwrap_or(0))
                     } else {
@@ -1829,6 +1849,9 @@ mod windows_overlay {
                     },
                     name,
                     lap,
+                    gap,
+                    last,
+                    best,
                     if options.show_class {
                         format!(" {}", car.vehicle_class.as_deref().unwrap_or("--"))
                     } else {
@@ -1842,6 +1865,14 @@ mod windows_overlay {
                 ),
             );
         }
+    }
+
+    fn standings_gap(car: &lmu_telemetry::VehicleScoringSnapshot) -> String {
+        if car.laps_behind_leader.unwrap_or_default() != 0 {
+            return format!("+{}L", car.laps_behind_leader.unwrap_or_default());
+        }
+        car.gap_to_leader_seconds
+            .map_or_else(|| "--".to_string(), |gap| format!("+{gap:.3}"))
     }
 
     #[allow(clippy::too_many_arguments)]
