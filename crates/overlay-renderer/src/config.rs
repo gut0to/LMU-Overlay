@@ -1553,4 +1553,15 @@ mod tests {
         assert!(profile.extra_widgets.contains_key("fuel"));
         assert_eq!(profile.layout.telemetry.z_index, 10);
     }
+
+    #[test]
+    fn shipped_presets_enable_their_real_widget_sets() {
+        let presets = PresetConfig::default();
+        assert!(presets.race.extra_widgets["relative"].enabled);
+        assert!(presets.race.extra_widgets["standings"].enabled);
+        assert!(presets.race.extra_widgets["fuel"].enabled);
+        assert!(presets.endurance.extra_widgets["energy"].enabled);
+        assert!(presets.practice.extra_widgets["tyres"].enabled);
+        assert!(!presets.minimal.extra_widgets["relative"].enabled);
+    }
 }
