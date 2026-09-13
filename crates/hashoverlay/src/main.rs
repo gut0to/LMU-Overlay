@@ -269,11 +269,7 @@ fn reference_lap_key(sample: &TelemetrySample) -> ReferenceLapKey {
             .track_name
             .clone()
             .unwrap_or_else(|| "unknown-track".to_string()),
-        track_layout: sample
-            .metadata
-            .track_layout
-            .clone()
-            .unwrap_or_else(|| "unknown-layout".to_string()),
+        track_layout: sample.metadata.track_layout.clone().unwrap_or_default(),
         car: sample
             .metadata
             .vehicle_name
