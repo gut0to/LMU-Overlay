@@ -1289,24 +1289,7 @@ mod windows_overlay {
                 .map_or_else(|| "FLAG --".to_string(), semantic_flag),
             "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
                 (Some(fuel), Some(capacity)) if capacity > 0.0 => {
-                    let average = if options.show_average {
-                        snapshot
-                            .fuel_average_lap_used
-                            .map_or_else(String::new, |value| format!("  AVG {value:.2}/lap"))
-                    } else {
-                        String::new()
-                    };
-                    let remaining = if options.show_estimated_laps {
-                        snapshot
-                            .fuel_estimated_laps_remaining
-                            .map_or_else(String::new, |value| format!("  {value:.1} laps"))
-                    } else {
-                        String::new()
-                    };
-                    format!(
-                        "FUEL {fuel:.1} L  {:.0}%{average}{remaining}",
-                        fuel / capacity * 100.0
-                    )
+                    format!("{fuel:.1} L  {:.0}%", fuel / capacity * 100.0)
                 }
                 (Some(fuel), _) => format!("FUEL {fuel:.1} L"),
                 _ => "FUEL --".to_string(),
@@ -1405,12 +1388,29 @@ mod windows_overlay {
         let detail_color = widget_secondary_color(config, widget_style);
         match id {
             "fuel" => {
+                if let (Some(fuel), Some(capacity)) =
+                    (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters)
+                {
+                    draw_horizontal_meter(
+                        hdc,
+                        Area {
+                            x: area.x + padding,
+                            y: detail_y,
+                            width: (area.width - padding * 2).max(scale_size(config, 40)),
+                            height: scale_size(config, 8),
+                        },
+                        fuel / capacity,
+                        colors(config).throttle,
+                        detail_color,
+                    );
+                }
+                let stats_y = detail_y + scale_size(config, 14);
                 if options.show_last_lap {
                     if let Some(last) = snapshot.fuel_last_lap_used {
                         draw_text(
                             hdc,
                             area.x + padding,
-                            detail_y,
+                            stats_y,
                             detail_color,
                             &format!("LAST {last:.2} L/lap"),
                         );
@@ -1421,7 +1421,7 @@ mod windows_overlay {
                         draw_text(
                             hdc,
                             area.x + padding,
-                            detail_y + scale_px(config, 18),
+                            stats_y + scale_px(config, 18),
                             detail_color,
                             &format!("REMAIN {remaining:.1} laps"),
                         );
@@ -1857,32 +1857,64 @@ mod windows_overlay {
     ) {
         let labels = ["FL", "FR", "RL", "RR"];
         for (index, wheel) in wheels.into_iter().enumerate() {
-            let x = area.x + scale_px(config, 8) + (index as i32 % 2) * (area.width / 2);
+            let card_width = (area.width / 2 - scale_size(config, 12)).max(scale_size(config, 54));
+            let x = area.x + scale_px(config, 6) + (index as i32 % 2) * (area.width / 2);
             let row = index as i32 / 2;
+            let card = Area {
+                x,
+                y: y + row * scale_size(config, 30),
+                width: card_width,
+                height: scale_size(config, 26),
+            };
+            draw_widget_panel(hdc, card, config);
             let value = if brake {
                 format!(
-                    "{} {:.0} C",
+                    "{}  {} C / {} kPa",
                     labels[index],
-                    wheel.brake_temp_c.unwrap_or_default()
+                    option_decimal(wheel.brake_temp_c),
+                    option_decimal(wheel.brake_pressure_kpa)
                 )
             } else if show_wear {
                 format!(
-                    "{} {:.0} kPa W{}%",
+                    "{}  {} kPa  W{}%",
                     labels[index],
-                    wheel.pressure_kpa.unwrap_or_default(),
+                    option_decimal(wheel.pressure_kpa),
                     wheel
                         .wear_percent
                         .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
                 )
             } else {
                 format!(
-                    "{} {:.0} kPa",
+                    "{}  {} kPa  T{} C",
                     labels[index],
-                    wheel.pressure_kpa.unwrap_or_default()
+                    option_decimal(wheel.pressure_kpa),
+                    wheel_surface_temperature(wheel)
+                        .map_or_else(|| "--".to_string(), |value| format!("{value:.0}"))
                 )
             };
-            draw_text(hdc, x, y + row * scale_px(config, 18), color, &value);
+            draw_text(
+                hdc,
+                card.x + scale_px(config, 4),
+                card.y + scale_px(config, 5),
+                color,
+                &value,
+            );
         }
+    }
+
+    fn wheel_surface_temperature(wheel: lmu_telemetry::WheelData) -> Option<f64> {
+        let values = [
+            wheel.surface_temp_left_c,
+            wheel.surface_temp_center_c,
+            wheel.surface_temp_right_c,
+        ];
+        let mut total = 0.0;
+        let mut count = 0;
+        for value in values.into_iter().flatten() {
+            total += value;
+            count += 1;
+        }
+        (count > 0).then_some(total / f64::from(count))
     }
 
     fn option_number(value: Option<u8>) -> String {
@@ -2237,6 +2269,49 @@ mod windows_overlay {
             SelectObject(hdc, old_pen);
             DeleteObject(reference_pen);
         }
+    }
+
+    unsafe fn draw_horizontal_meter(hdc: HDC, area: Area, value: f64, fill: u32, background: u32) {
+        let ratio = value.clamp(0.0, 1.0);
+        if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: area.right() as f32,
+                bottom: area.bottom() as f32,
+                fill: Some(widget_color(background)),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: (area.height / 2) as f32,
+            });
+            queue_shape(d2d_backend::ShapeCommand::Rectangle {
+                left: area.x as f32,
+                top: area.y as f32,
+                right: (area.x + (area.width as f64 * ratio) as i32) as f32,
+                bottom: area.bottom() as f32,
+                fill: Some(widget_color(fill)),
+                stroke: None,
+                stroke_width: 0.0,
+                radius: (area.height / 2) as f32,
+            });
+            return;
+        }
+        let background_brush = CreateSolidBrush(widget_color(background));
+        let rect = RECT {
+            left: area.x,
+            top: area.y,
+            right: area.right(),
+            bottom: area.bottom(),
+        };
+        FillRect(hdc, &rect, background_brush);
+        DeleteObject(background_brush);
+        let filled = RECT {
+            right: area.x + (area.width as f64 * ratio) as i32,
+            ..rect
+        };
+        let fill_brush = CreateSolidBrush(widget_color(fill));
+        FillRect(hdc, &filled, fill_brush);
+        DeleteObject(fill_brush);
     }
 
     unsafe fn draw_center_bar(hdc: HDC, area: Area, value: f64, color: u32, label_color: u32) {
