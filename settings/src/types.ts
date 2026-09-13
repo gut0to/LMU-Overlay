@@ -105,6 +105,8 @@ export type WidgetOptions = {
   show_best_lap: boolean;
   show_estimated_laps: boolean;
   show_wear: boolean;
+  show_brake_temperature: boolean;
+  show_brake_pressure: boolean;
   shift_start_percent: number;
   shift_warning_percent: number;
   limiter_percent: number;

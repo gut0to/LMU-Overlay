@@ -1538,6 +1538,8 @@ mod windows_overlay {
                 ],
                 false,
                 options.show_wear,
+                true,
+                true,
                 &options.tyre_temperature_mode,
             ),
             "brakes" => draw_four_wheel_detail(
@@ -1554,6 +1556,8 @@ mod windows_overlay {
                 ],
                 true,
                 false,
+                options.show_brake_temperature,
+                options.show_brake_pressure,
                 "surface_average",
             ),
             "electronics" => {
@@ -2099,6 +2103,8 @@ mod windows_overlay {
         wheels: [lmu_telemetry::WheelData; 4],
         brake: bool,
         show_wear: bool,
+        show_brake_temperature: bool,
+        show_brake_pressure: bool,
         temperature_mode: &str,
     ) {
         let labels = ["FL", "FR", "RL", "RR"];
@@ -2114,14 +2120,24 @@ mod windows_overlay {
             };
             draw_widget_panel(hdc, card, config);
             let value = if brake {
-                format!(
-                    "{}  {} {} / {} {}",
-                    labels[index],
-                    option_decimal(display_temperature_value(wheel.brake_temp_c, config)),
-                    temperature_unit_label(config),
-                    option_percent(wheel.brake_pressure_fraction),
-                    "%"
-                )
+                let mut values = vec![labels[index].to_string()];
+                if show_brake_temperature {
+                    values.push(format!(
+                        "T {} {}",
+                        option_decimal(display_temperature_value(wheel.brake_temp_c, config)),
+                        temperature_unit_label(config)
+                    ));
+                }
+                if show_brake_pressure {
+                    values.push(format!(
+                        "P {}%",
+                        option_percent(wheel.brake_pressure_fraction)
+                    ));
+                }
+                if values.len() == 1 {
+                    values.push("--".to_string());
+                }
+                values.join("  ")
             } else if show_wear {
                 format!(
                     "{}  {} {}  REM{}%",

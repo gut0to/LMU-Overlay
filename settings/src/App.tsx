@@ -1031,7 +1031,7 @@ function WidgetOptionsFields(props: {
   options: WidgetOptions;
   onChange: <K extends keyof WidgetOptions>(key: K, value: WidgetOptions[K]) => void;
 }) {
-  if (!["relative", "standings", "fuel", "tyres", "rpm"].includes(props.id)) return null;
+  if (!["relative", "standings", "fuel", "tyres", "brakes", "rpm"].includes(props.id)) return null;
   return <>
     {props.id === "relative" && <>
       <NumberField label="Cars ahead" value={props.options.cars_ahead} onChange={(value) => props.onChange("cars_ahead", value)} />
@@ -1060,6 +1060,10 @@ function WidgetOptionsFields(props: {
     {props.id === "tyres" && <>
       <Segmented value={props.options.tyre_temperature_mode} options={tyreTemperatureModes} onChange={(value) => props.onChange("tyre_temperature_mode", value)} />
       <label className="toggle full"><input type="checkbox" checked={props.options.show_wear} onChange={(event) => props.onChange("show_wear", event.target.checked)} /><span>Show tyre wear</span></label>
+    </>}
+    {props.id === "brakes" && <>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_brake_temperature} onChange={(event) => props.onChange("show_brake_temperature", event.target.checked)} /><span>Show brake temperature</span></label>
+      <label className="toggle full"><input type="checkbox" checked={props.options.show_brake_pressure} onChange={(event) => props.onChange("show_brake_pressure", event.target.checked)} /><span>Show brake pressure</span></label>
     </>}
     {props.id === "rpm" && <>
       <NumberField label="Shift start %" value={props.options.shift_start_percent} onChange={(value) => props.onChange("shift_start_percent", value)} />
