@@ -1154,7 +1154,8 @@ pub fn default_config_text() -> &'static str {
     TEXT.get_or_init(|| {
         let mut config: OverlayConfig = toml::from_str(DEFAULT_CONFIG_TEMPLATE)
             .expect("the built-in HashOverlay configuration must be valid TOML");
-        let race = PresetConfig::default().race;
+        config.presets = PresetConfig::default();
+        let race = config.presets.race.clone();
         config.window.height = 300;
         config.performance.mode = race.performance_mode.clone();
         config.style = race.style.clone();
