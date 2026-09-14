@@ -294,7 +294,18 @@ function App() {
     if (!defaultConfigState) {
       return;
     }
-    setConfig((current) => current ? { ...current, window: defaultConfigState.window, layout: defaultConfigState.layout } : current);
+    setConfig((current) => {
+      if (!current) {
+        return current;
+      }
+      const arranged = arrangeExtraWidgets(current.extra_widgets);
+      return {
+        ...current,
+        window: { ...defaultConfigState.window, height: arranged.height },
+        layout: structuredClone(defaultConfigState.layout),
+        extra_widgets: arranged.widgets,
+      };
+    });
     setStatus("Layout reset");
   }
 
@@ -1222,6 +1233,7 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
 }
 
 function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): OverlayConfig {
+  const arranged = arrangeExtraWidgets(profile.extra_widgets);
   return {
     ...config,
     performance: { mode: profile.performance_mode },
@@ -1235,8 +1247,45 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): Over
     units: structuredClone(profile.units),
     coaching: structuredClone(profile.coaching_config),
     layout: structuredClone(profile.layout),
-    extra_widgets: structuredClone(profile.extra_widgets),
+    extra_widgets: arranged.widgets,
+    window: { ...config.window, height: Math.max(config.window.height, arranged.height) },
   };
+}
+
+function arrangeExtraWidgets(widgets: Record<string, WidgetInstanceConfig>) {
+  const next = structuredClone(widgets);
+  const enabled = Object.entries(next)
+    .filter(([, widget]) => widget.enabled)
+    .sort(([left], [right]) => Number(right === "standings") - Number(left === "standings"));
+  const columnWidth = 196;
+  const rowHeight = 52;
+  const gap = 10;
+  const left = 14;
+  const top = 326;
+  let slot = 0;
+
+  for (const [id, widget] of enabled) {
+    const isStandings = id === "standings";
+    if (isStandings) {
+      widget.layout = { ...widget.layout, x: left, y: top, width: 392, height: 120, z_index: 100 + slot };
+      slot += 4;
+      continue;
+    }
+    const column = slot % 2;
+    const row = Math.floor(slot / 2);
+    widget.layout = {
+      ...widget.layout,
+      x: left + column * (columnWidth + gap),
+      y: top + row * (rowHeight + gap),
+      width: columnWidth,
+      height: rowHeight,
+      z_index: 100 + slot,
+    };
+    slot += 1;
+  }
+
+  const rows = Math.max(1, Math.ceil(slot / 2));
+  return { widgets: next, height: Math.max(450, top + rows * rowHeight + (rows - 1) * gap + 14) };
 }
 
 function titleCase(value: string) {
