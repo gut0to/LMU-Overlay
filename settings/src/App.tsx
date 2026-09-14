@@ -170,6 +170,29 @@ const colorLabels: Array<[keyof StyleConfig, string]> = [
   ["coaching_positive", "Coaching positive"],
 ];
 
+function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
+  const incoming = raw as OverlayConfig & { overlays?: OverlayLayerConfig[] };
+  if (Array.isArray(incoming.overlays) && incoming.overlays.length > 0) {
+    return raw;
+  }
+
+  const widgetIds = [
+    ...Object.keys(legacyWidgetById),
+    ...Object.keys(raw.extra_widgets ?? {}),
+  ];
+  return {
+    ...raw,
+    overlays: [{
+      id: "main",
+      name: "Main overlay",
+      enabled: true,
+      window: { ...raw.window },
+      widgets: [...new Set(widgetIds)],
+      layout_overrides: {},
+    }],
+  };
+}
+
 function App() {
   const [config, setConfig] = useState<OverlayConfig | null>(null);
   const [path, setPath] = useState("");
@@ -209,7 +232,7 @@ function App() {
   async function loadConfig() {
     try {
       const response = await invoke<LoadResponse>("load_config");
-      setConfig(response.config);
+      setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
       setStatus("Config loaded");
     } catch (error) {
@@ -224,7 +247,7 @@ function App() {
     setSaving(true);
     try {
       const response = await invoke<LoadResponse>("save_config", { config });
-      setConfig(response.config);
+      setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
       setStatus("Saved");
       return true;
@@ -239,7 +262,7 @@ function App() {
   async function loadDefaultConfig() {
     try {
       const nextDefault = await invoke<OverlayConfig>("default_config");
-      setDefaultConfigState(nextDefault);
+      setDefaultConfigState(normalizeUiConfig(nextDefault));
     } catch (error) {
       setStatus(String(error));
     }
@@ -261,7 +284,7 @@ function App() {
   async function importConfigText() {
     try {
       const response = await invoke<LoadResponse>("import_config", { text: configText });
-      setConfig(response.config);
+      setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
       setStatus("Config imported");
     } catch (error) {
@@ -272,7 +295,7 @@ function App() {
   async function resetConfig() {
     try {
       const response = await invoke<LoadResponse>("reset_config");
-      setConfig(response.config);
+      setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
       setStatus("Config reset");
     } catch (error) {
@@ -632,8 +655,8 @@ function App() {
           <Segmented value={String(config.layout.grid_size)} options={gridSizes} onChange={(value) => setLayoutFlag(config, setConfig, "grid_size", Number(value))} />
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
           <WidgetLayoutFields
-            layout={layoutForSelection(config, selectedLayout)}
-            onChange={(key, value) => setLayoutSelection(config, setConfig, selectedLayout, key, value)}
+            layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
+            onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
             <>
@@ -708,9 +731,10 @@ function App() {
             {filteredWidgetCatalog.map((widget) => {
               const legacy = legacyWidgetById[widget.id];
               const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
+              const globallyEnabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
               const enabled = activeOverlay
-                ? activeOverlay.widgets.includes(widget.id)
-                : legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
+                ? activeOverlay.widgets.includes(widget.id) && globallyEnabled
+                : globallyEnabled;
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
                   <input type="checkbox" checked={enabled} disabled={widget.status === "Unavailable in current LMU interface"} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
@@ -1328,15 +1352,17 @@ function setLayoutFlag<K extends keyof Omit<LayoutConfig, "telemetry" | "inputs"
   setConfig({ ...config, layout: { ...config.layout, [key]: value } });
 }
 
-function setLayoutSelection<K extends keyof WidgetLayout>(
+function setOverlayLayoutSelection<K extends keyof WidgetLayout>(
   config: OverlayConfig,
   setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  overlayId: string,
   selection: LayoutSelection,
   key: K,
   value: WidgetLayout[K],
 ) {
-  const layout = layoutForSelection(config, selection);
-  setConfig(updateLayoutSelection(config, selection, { ...layout, [key]: value }));
+  const view = overlayPreviewConfig(config, overlayId);
+  const layout = layoutForSelection(view, selection);
+  setConfig(updateOverlayLayoutSelection(config, overlayId, selection, { ...layout, [key]: value }));
 }
 
 function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
