@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Save,
   SlidersHorizontal,
+  Square,
   Timer,
   Trash2,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import type {
   LayoutWidgetKey,
   LoadResponse,
   OverlayConfig,
+  OverlayLayerConfig,
   PerformanceConfig,
   PresetConfig,
   PresetProfileConfig,
@@ -173,6 +175,7 @@ function App() {
   const [path, setPath] = useState("");
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
+  const [overlayRunning, setOverlayRunning] = useState(false);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
@@ -180,12 +183,28 @@ function App() {
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [widgetSearch, setWidgetSearch] = useState("");
   const [widgetCategory, setWidgetCategory] = useState("All");
+  const [activeOverlayId, setActiveOverlayId] = useState("main");
 
   useEffect(() => {
     void loadConfig();
     void loadDefaultConfig();
     void loadWidgetCatalog();
+    void refreshOverlayStatus();
   }, []);
+
+  useEffect(() => {
+    if (config && !config.overlays.some((overlay) => overlay.id === activeOverlayId)) {
+      setActiveOverlayId(config.overlays[0]?.id ?? "main");
+    }
+  }, [config, activeOverlayId]);
+
+  async function refreshOverlayStatus() {
+    try {
+      setOverlayRunning(await invoke<boolean>("overlay_status"));
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
 
   async function loadConfig() {
     try {
@@ -267,7 +286,18 @@ function App() {
         return;
       }
       await invoke("start_overlay");
+      setOverlayRunning(true);
       setStatus("Overlay started");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function stopOverlay() {
+    try {
+      await invoke("stop_overlay");
+      setOverlayRunning(false);
+      setStatus("Overlay stopped");
     } catch (error) {
       setStatus(String(error));
     }
@@ -325,13 +355,56 @@ function App() {
       if (!current) {
         return current;
       }
-      if (legacy) {
-        return { ...current, widgets: { ...current.widgets, [legacy]: enabled } };
+      let next = legacy
+        ? { ...current, widgets: { ...current.widgets, [legacy]: enabled } }
+        : current.extra_widgets[id]
+          ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...current.extra_widgets[id], enabled } } }
+          : current;
+      next = {
+        ...next,
+        overlays: next.overlays.map((overlay) => overlay.id === activeOverlayId
+          ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, id])] : overlay.widgets.filter((widget) => widget !== id) }
+          : overlay),
+      };
+      return next;
+    });
+  }
+
+  function addOverlayLayer() {
+    setConfig((current) => {
+      if (!current) {
+        return current;
       }
-      const widget = current.extra_widgets[id];
-      return widget
-        ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...widget, enabled } } }
-        : current;
+      const id = `overlay-${current.overlays.length + 1}`;
+      const layer: OverlayLayerConfig = {
+        id,
+        name: `Overlay ${current.overlays.length + 1}`,
+        enabled: true,
+        window: { ...current.window, x: current.window.x + 36, y: current.window.y + 36 },
+        widgets: ["coaching"],
+        layout_overrides: {},
+      };
+      setActiveOverlayId(id);
+      return { ...current, overlays: [...current.overlays, layer] };
+    });
+    setStatus("New overlay added");
+  }
+
+  function updateOverlayLayer(id: string, update: Partial<OverlayLayerConfig>) {
+    setConfig((current) => current ? {
+      ...current,
+      overlays: current.overlays.map((overlay) => overlay.id === id ? { ...overlay, ...update } : overlay),
+    } : current);
+  }
+
+  function removeOverlayLayer(id: string) {
+    setConfig((current) => {
+      if (!current || current.overlays.length <= 1) {
+        return current;
+      }
+      const overlays = current.overlays.filter((overlay) => overlay.id !== id);
+      setActiveOverlayId(overlays[0]?.id ?? "main");
+      return { ...current, overlays };
     });
   }
 
@@ -347,7 +420,11 @@ function App() {
     }),
     [widgetCatalog, widgetCategory, widgetSearch],
   );
-  const availableLayoutEntries = useMemo(() => config ? layoutEntries(config) : [], [config]);
+  const activeOverlayConfig = useMemo(
+    () => config ? overlayPreviewConfig(config, activeOverlayId) : null,
+    [config, activeOverlayId],
+  );
+  const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
 
   const activePreset = useMemo(() => {
     if (!config) {
@@ -391,6 +468,10 @@ function App() {
             <Play size={18} />
             Start overlay
           </button>
+          <button className="dangerButton" onClick={stopOverlay} disabled={!overlayRunning}>
+            <Square size={16} />
+            Stop overlay
+          </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
             {saving ? "Saving" : "Save"}
@@ -421,6 +502,32 @@ function App() {
         </div>
       </section>
 
+      <section className="layersBar">
+        <div className="sceneHeading">
+          <span className="eyebrow">OVERLAY SURFACES</span>
+          <strong>Run separate transparent windows and assign widgets to each one.</strong>
+        </div>
+        <div className="layerChoices">
+          {config.overlays.map((overlay) => (
+            <button key={overlay.id} className={activeOverlayId === overlay.id ? "selected" : ""} onClick={() => setActiveOverlayId(overlay.id)}>
+              <span>{overlay.name}</span>
+              <small>{overlay.widgets.length} widgets</small>
+            </button>
+          ))}
+          <button className="addLayerButton" onClick={addOverlayLayer}><Plus size={15} /> Add overlay</button>
+        </div>
+        {config.overlays.find((overlay) => overlay.id === activeOverlayId) && (() => {
+          const overlay = config.overlays.find((item) => item.id === activeOverlayId)!;
+          return (
+            <div className="layerControls">
+              <input value={overlay.name} onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })} aria-label="Overlay name" />
+              <label className="toggle"><input type="checkbox" checked={overlay.enabled} onChange={(event) => updateOverlayLayer(overlay.id, { enabled: event.target.checked })} /><span>Run this overlay</span></label>
+              <button className="dangerButton" onClick={() => removeOverlayLayer(overlay.id)} disabled={config.overlays.length <= 1}><Trash2 size={15} /> Remove</button>
+            </div>
+          );
+        })()}
+      </section>
+
       <nav className="tabs">
         {pages.map((page) => (
           <button key={page} className={activePage === page ? "selected" : ""} onClick={() => setActivePage(page)}>
@@ -433,17 +540,17 @@ function App() {
         {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Activity />} title="Live Preview">
           <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
           <OverlayPreview
-            config={config}
+            config={activeOverlayConfig ?? config}
             selected={selectedLayout}
             onSelect={setSelectedLayout}
-            onLayoutChange={(widget, layout) => setConfig(updateLayoutSelection(config, widget, layout))}
+            onLayoutChange={(widget, layout) => setConfig(updateOverlayLayoutSelection(config, activeOverlayId, widget, layout))}
           />
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<LayoutGrid />} title="Window">
           <p className="previewHint">To move the whole overlay on screen, press F10 in the game and drag its border.</p>
-          <NumberField label="Width" value={config.window.width} onChange={(value) => setWindow(config, setConfig, "width", value)} />
-          <NumberField label="Height" value={config.window.height} onChange={(value) => setWindow(config, setConfig, "height", value)} />
+          <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
+          <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
           <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
           <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
         </Section>}
@@ -566,7 +673,10 @@ function App() {
             </div>
             {filteredWidgetCatalog.map((widget) => {
               const legacy = legacyWidgetById[widget.id];
-              const enabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
+              const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
+              const enabled = activeOverlay
+                ? activeOverlay.widgets.includes(widget.id)
+                : legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
                   <input type="checkbox" checked={enabled} disabled={widget.status === "Unavailable in current LMU interface"} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
@@ -777,6 +887,39 @@ function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; lab
   return [...legacy, ...extra];
 }
 
+function overlayPreviewConfig(config: OverlayConfig, overlayId: string): OverlayConfig {
+  const layer = config.overlays.find((overlay) => overlay.id === overlayId);
+  if (!layer) {
+    return config;
+  }
+  const next = structuredClone(config);
+  next.window = { ...layer.window };
+  const has = (id: string) => layer.widgets.includes(id);
+  next.widgets.title = next.widgets.title && has("telemetry");
+  next.widgets.speed_gear_rpm = next.widgets.speed_gear_rpm && has("telemetry");
+  next.widgets.pedals = next.widgets.pedals && has("inputs");
+  next.widgets.steering = next.widgets.steering && has("inputs");
+  next.widgets.input_history = next.widgets.input_history && has("inputs");
+  next.widgets.lap_info = next.widgets.lap_info && has("lap_timing");
+  next.widgets.lap_timing = next.widgets.lap_timing && has("lap_timing");
+  next.widgets.delta_timing = next.widgets.delta_timing && has("timing");
+  next.widgets.sectors = next.widgets.sectors && has("sectors");
+  next.widgets.mini_sector_widget = next.widgets.mini_sector_widget && has("mini_sectors");
+  next.widgets.coaching = next.widgets.coaching && has("coaching");
+  next.widgets.performance_monitor = next.widgets.performance_monitor && has("performance");
+  for (const [id, widget] of Object.entries(next.extra_widgets)) {
+    widget.enabled = widget.enabled && has(id);
+  }
+  for (const [id, layout] of Object.entries(layer.layout_overrides)) {
+    if (id in next.layout) {
+      (next.layout as unknown as Record<string, WidgetLayout>)[id] = layout;
+    } else if (next.extra_widgets[id]) {
+      next.extra_widgets[id].layout = layout;
+    }
+  }
+  return next;
+}
+
 function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): WidgetLayout {
   if (selection.startsWith("extra:")) {
     return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
@@ -791,6 +934,17 @@ function updateLayoutSelection(config: OverlayConfig, selection: LayoutSelection
     return widget ? { ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, layout } } } : config;
   }
   return { ...config, layout: { ...config.layout, [selection]: layout } };
+}
+
+function updateOverlayLayoutSelection(config: OverlayConfig, overlayId: string, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
+  const next = updateLayoutSelection(config, selection, layout);
+  const key = selection.startsWith("extra:") ? selection.slice("extra:".length) : selection;
+  return {
+    ...next,
+    overlays: next.overlays.map((overlay) => overlay.id === overlayId
+      ? { ...overlay, layout_overrides: { ...overlay.layout_overrides, [key]: layout } }
+      : overlay),
+  };
 }
 
 function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
@@ -935,6 +1089,22 @@ function Segmented(props: { value: string; options: string[][]; onChange: (value
 
 function setWindow<K extends keyof WindowConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: WindowConfig[K]) {
   setConfig({ ...config, window: { ...config.window, [key]: value } });
+}
+
+function setOverlayWindow<K extends keyof WindowConfig>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  overlayId: string,
+  key: K,
+  value: WindowConfig[K],
+) {
+  const next = { ...config, window: { ...config.window, [key]: value } };
+  setConfig({
+    ...next,
+    overlays: next.overlays.map((overlay) => overlay.id === overlayId
+      ? { ...overlay, window: { ...overlay.window, [key]: value } }
+      : overlay),
+  });
 }
 
 function setStyle<K extends keyof StyleConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: StyleConfig[K]) {

@@ -75,9 +75,10 @@ mod windows_overlay {
                 RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
                 HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_HOTKEY, WM_LBUTTONDOWN,
-                WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WNDCLASSW, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_HOTKEY,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WNDCLASSW,
+                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+                WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -276,6 +277,7 @@ mod windows_overlay {
         stats: Arc<Mutex<PerfStats>>,
         config: Arc<Mutex<OverlayConfig>>,
         config_path: Option<Arc<PathBuf>>,
+        overlay_layer: Option<Arc<String>>,
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
         d2d: Option<Arc<d2d_backend::D2dBackend>>,
@@ -340,6 +342,22 @@ mod windows_overlay {
             config: OverlayConfig,
             config_path: Option<PathBuf>,
         ) -> Result<Self, OverlayError> {
+            Self::with_config_source_and_layer(config, config_path, None)
+        }
+
+        pub fn with_config_path_and_layer(
+            config: OverlayConfig,
+            config_path: impl Into<PathBuf>,
+            overlay_layer: Option<String>,
+        ) -> Result<Self, OverlayError> {
+            Self::with_config_source_and_layer(config, Some(config_path.into()), overlay_layer)
+        }
+
+        fn with_config_source_and_layer(
+            config: OverlayConfig,
+            config_path: Option<PathBuf>,
+            overlay_layer: Option<String>,
+        ) -> Result<Self, OverlayError> {
             let history_samples = config.window.history_samples;
             Ok(Self {
                 state: SharedState {
@@ -351,6 +369,7 @@ mod windows_overlay {
                     stats: Arc::new(Mutex::new(PerfStats::default())),
                     config: Arc::new(Mutex::new(config)),
                     config_path: config_path.map(Arc::new),
+                    overlay_layer: overlay_layer.map(Arc::new),
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
                     d2d: None,
@@ -515,6 +534,8 @@ mod windows_overlay {
 
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
+                let config = config
+                    .for_overlay_layer(state.overlay_layer.as_ref().map(|layer| layer.as_str()));
                 apply_window_config(hwnd, &config);
                 if let Some(backend) = state.d2d.as_ref() {
                     unsafe {
@@ -722,6 +743,7 @@ mod windows_overlay {
                 paint(hwnd);
                 0
             }
+            WM_ERASEBKGND => 1,
             WM_HOTKEY => {
                 handle_hotkey(hwnd, wparam as i32);
                 0
@@ -986,13 +1008,19 @@ mod windows_overlay {
         }
 
         let state = &*state_ptr;
+        // Validate the update region even when Direct2D owns the actual HDC.
+        // GetDC/ReleaseDC from the Direct2D interop layer does not replace the
+        // BeginPaint/EndPaint contract. Leaving the region invalid causes a
+        // second WM_PAINT to be queued while the frame is still being shown,
+        // which is perceived as a visible flash on layered windows.
+        let paint_hdc = BeginPaint(hwnd, &mut paint);
         let d2d_hdc = state
             .d2d
             .as_ref()
             .and_then(|backend| backend.begin_gdi().ok());
         let using_d2d = d2d_hdc.is_some();
         begin_native_text(using_d2d);
-        let hdc = d2d_hdc.unwrap_or_else(|| BeginPaint(hwnd, &mut paint));
+        let hdc = d2d_hdc.unwrap_or(paint_hdc);
         let mut rect: RECT = zeroed();
         GetClientRect(hwnd, &mut rect);
 
@@ -1075,12 +1103,9 @@ mod windows_overlay {
                 ) {
                     log::warn!("Direct2D frame submission failed: {error}");
                 }
-            } else {
-                EndPaint(hwnd, &paint);
             }
-        } else {
-            EndPaint(hwnd, &paint);
         }
+        EndPaint(hwnd, &paint);
     }
 
     unsafe fn draw_panel(hdc: HDC, config: &OverlayConfig) {
@@ -3044,7 +3069,7 @@ mod windows_overlay {
                         x,
                         y,
                         timing_color(hint, colors),
-                        &format!("BRAKE {}", timing_hint(hint)),
+                        &format!("BRAKE POINT {}", timing_hint(hint)),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -3062,7 +3087,7 @@ mod windows_overlay {
                         x,
                         y,
                         timing_color(hint, colors),
-                        &format!("THROTTLE {}", timing_hint(hint)),
+                        &format!("THROTTLE POINT {}", timing_hint(hint)),
                     );
                     hints += 1;
                     y += scale_size(config, 18);
@@ -3099,18 +3124,19 @@ mod windows_overlay {
             }
         }
         if config.coaching.gear && hints < max_hints {
-            if let Some(reference_gear) = snapshot.reference_gear {
-                let gear = gear_number(snapshot.gear);
-                if reference_gear != gear {
-                    draw_text(
-                        hdc,
-                        x,
-                        y,
-                        colors.secondary_text,
-                        &format!("USE {reference_gear}{}", gear_suffix(reference_gear)),
-                    );
-                }
+            if let Some(message) = gear_coaching_message(&snapshot) {
+                draw_text(hdc, x, y, colors.coaching_warning, &message);
+                hints += 1;
+                y += scale_size(config, 18);
             }
+        }
+        if hints == 0 {
+            let message = if snapshot.reference_lap_seconds.is_some() {
+                "COACH READY  HOLD YOUR REFERENCE LINE"
+            } else {
+                "COACH WAITING FOR A VALID REFERENCE LAP"
+            };
+            draw_text(hdc, x, y, colors.secondary_text, message);
         }
     }
 
@@ -3622,11 +3648,25 @@ mod windows_overlay {
         }
 
         if snapshot
+            .reference_brake
+            .is_some_and(|reference| snapshot.brake + 0.12 < reference)
+        {
+            return Some("brake more");
+        }
+
+        if snapshot
             .reference_throttle
             .is_some_and(|reference| snapshot.throttle + 0.12 < reference)
             && snapshot.brake < 0.08
         {
             return Some("more throttle");
+        }
+
+        if snapshot
+            .reference_throttle
+            .is_some_and(|reference| snapshot.throttle > reference + 0.12)
+        {
+            return Some("lift throttle");
         }
 
         if snapshot
@@ -3636,7 +3676,43 @@ mod windows_overlay {
             return Some("carry speed");
         }
 
+        if snapshot
+            .reference_speed_kph
+            .is_some_and(|reference| snapshot.speed_kph > reference + 8.0)
+        {
+            return Some("slow down");
+        }
+
+        if snapshot
+            .reference_steering
+            .is_some_and(|reference| snapshot.steering.abs() > reference.abs() + 0.12)
+        {
+            return Some("unwind steering");
+        }
+
         None
+    }
+
+    fn gear_coaching_message(snapshot: &TelemetrySnapshot) -> Option<String> {
+        let reference = snapshot.reference_gear?;
+        let current = gear_number(snapshot.gear);
+        if reference == current {
+            return None;
+        }
+        let action = if reference < current {
+            "SHIFT DOWN TO"
+        } else {
+            "SHIFT UP TO"
+        };
+        Some(format!("{action} {}", gear_label(reference)))
+    }
+
+    fn gear_label(gear: i32) -> String {
+        match gear {
+            -1 => "REVERSE".to_string(),
+            0 => "NEUTRAL".to_string(),
+            value => format!("{value}{}", gear_suffix(value)),
+        }
     }
 
     fn gear_number(gear: telemetry_engine::Gear) -> i32 {
@@ -3762,6 +3838,24 @@ mod windows_overlay {
             speed.speed_kph = 180.0;
             speed.reference_speed_kph = Some(200.0);
             assert_eq!(input_coaching_message(speed), Some("carry speed"));
+
+            let mut lift = snapshot();
+            lift.throttle = 0.9;
+            lift.reference_throttle = Some(0.5);
+            assert_eq!(input_coaching_message(lift), Some("lift throttle"));
+
+            let mut speed = snapshot();
+            speed.speed_kph = 220.0;
+            speed.reference_speed_kph = Some(200.0);
+            assert_eq!(input_coaching_message(speed), Some("slow down"));
+
+            let mut gear = snapshot();
+            gear.gear = Gear::Forward(5);
+            gear.reference_gear = Some(3);
+            assert_eq!(
+                gear_coaching_message(&gear),
+                Some("SHIFT DOWN TO 3RD".to_string())
+            );
         }
 
         #[test]

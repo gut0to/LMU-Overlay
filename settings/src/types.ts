@@ -223,6 +223,16 @@ export type OverlayConfig = {
   hotkeys: HotkeyConfig;
   performance: PerformanceConfig;
   presets: PresetConfig;
+  overlays: OverlayLayerConfig[];
+};
+
+export type OverlayLayerConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  window: WindowConfig;
+  widgets: string[];
+  layout_overrides: Record<string, WidgetLayout>;
 };
 
 export type LoadResponse = { path: string; config: OverlayConfig };
