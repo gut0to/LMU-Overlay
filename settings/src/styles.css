@@ -109,6 +109,14 @@ h1 {
   padding: 0 14px;
   background: #3a1717;
   border-color: #bd4b4b;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .buttonRow {
@@ -181,6 +189,72 @@ h1 {
 .sceneChoices button.customScene {
   border-style: dashed;
   color: #88d0d8;
+}
+
+.layersBar {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(136, 208, 216, 0.28);
+  border-left: 3px solid #88d0d8;
+  background: rgba(12, 28, 40, 0.82);
+}
+
+.layerChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.layerChoices button {
+  display: grid;
+  gap: 2px;
+  min-width: 128px;
+  min-height: 42px;
+  padding: 7px 12px;
+  border: 1px solid #315365;
+  border-radius: 4px;
+  background: #102231;
+  color: #c9dbe1;
+  text-align: left;
+}
+
+.layerChoices button small {
+  color: #8fa9b3;
+  font-size: 11px;
+}
+
+.layerChoices button.selected {
+  border-color: #88d0d8;
+  background: #183a45;
+  color: #f2fbfc;
+}
+
+.layerChoices .addLayerButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #f4d18a;
+  border-style: dashed;
+  text-align: center;
+}
+
+.layerControls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.layerControls > input {
+  min-height: 36px;
+  width: 190px;
+  padding: 0 10px;
+  border: 1px solid #40515d;
+  border-radius: 4px;
+  background: #0b161f;
+  color: #eef3f5;
 }
 
 .tabs {

@@ -1,4 +1,9 @@
-use std::{fs, path::PathBuf, process::Command};
+use std::{
+    fs,
+    path::PathBuf,
+    process::{Child, Command},
+    sync::Mutex,
+};
 
 use overlay_renderer::{
     config::{default_config_text, OverlayConfig},
@@ -6,6 +11,9 @@ use overlay_renderer::{
 };
 use serde::Serialize;
 use tauri::Manager;
+
+#[derive(Default)]
+struct OverlayProcesses(Mutex<Vec<Child>>);
 
 #[derive(Debug, Serialize)]
 struct ConfigResponse {
@@ -63,7 +71,21 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 }
 
 #[tauri::command]
-fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
+fn start_overlay(app: tauri::AppHandle, processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
+    let mut running = processes
+        .0
+        .lock()
+        .map_err(|_| "Overlay process state is unavailable".to_string())?;
+    running.retain_mut(|child| {
+        child
+            .try_wait()
+            .map(|status| status.is_none())
+            .unwrap_or(true)
+    });
+    if !running.is_empty() {
+        return Ok(());
+    }
+
     let mut candidates = Vec::new();
     if let Ok(resource_dir) = app.path().resource_dir() {
         candidates.push(resource_dir.join("hashoverlay.exe"));
@@ -84,11 +106,60 @@ fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
             "Could not find the bundled HashOverlay executable. Reinstall HashOverlay Settings or build the overlay first.".to_string()
         })?;
 
-    Command::new(executable)
-        .arg("--overlay")
-        .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Could not start HashOverlay: {error}"))
+    let config = OverlayConfig::load(overlay_config_path())
+        .map_err(|error| format!("Could not load overlay layers: {error}"))?;
+    let layers = config
+        .overlays
+        .iter()
+        .filter(|layer| layer.enabled)
+        .map(|layer| layer.id.as_str())
+        .collect::<Vec<_>>();
+    if layers.is_empty() {
+        running.push(
+            Command::new(&executable)
+                .arg("--overlay")
+                .spawn()
+                .map_err(|error| format!("Could not start HashOverlay: {error}"))?,
+        );
+    } else {
+        for layer in layers {
+            running.push(
+                Command::new(&executable)
+                    .args(["--overlay", "--overlay-layer", layer])
+                    .spawn()
+                    .map_err(|error| format!("Could not start HashOverlay layer: {error}"))?,
+            );
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_overlay(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
+    let mut running = processes
+        .0
+        .lock()
+        .map_err(|_| "Overlay process state is unavailable".to_string())?;
+    for mut child in running.drain(..) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn overlay_status(processes: tauri::State<'_, OverlayProcesses>) -> Result<bool, String> {
+    let mut running = processes
+        .0
+        .lock()
+        .map_err(|_| "Overlay process state is unavailable".to_string())?;
+    running.retain_mut(|child| {
+        child
+            .try_wait()
+            .map(|status| status.is_none())
+            .unwrap_or(true)
+    });
+    Ok(!running.is_empty())
 }
 
 #[tauri::command]
@@ -124,6 +195,7 @@ fn overlay_config_path() -> PathBuf {
 
 fn main() {
     tauri::Builder::default()
+        .manage(OverlayProcesses::default())
         .invoke_handler(tauri::generate_handler![
             load_config,
             save_config,
@@ -133,6 +205,8 @@ fn main() {
             reset_config,
             widget_catalog,
             start_overlay,
+            stop_overlay,
+            overlay_status,
             open_config_folder
         ])
         .setup(|_| {

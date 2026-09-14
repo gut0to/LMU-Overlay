@@ -32,6 +32,7 @@ pub struct OverlayConfig {
     pub hotkeys: HotkeyConfig,
     pub performance: PerformanceConfig,
     pub presets: PresetConfig,
+    pub overlays: Vec<OverlayLayerConfig>,
 }
 
 impl OverlayConfig {
@@ -125,6 +126,144 @@ impl OverlayConfig {
         self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
         self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
         self.presets.normalize();
+        normalize_overlay_layers(self);
+    }
+
+    /// Returns the runtime view for one independent overlay surface.
+    /// The persisted config remains the source of truth; each process only
+    /// receives the widgets and window belonging to its selected layer.
+    pub fn for_overlay_layer(&self, layer_id: Option<&str>) -> Self {
+        let Some(layer_id) = layer_id else {
+            return self.clone();
+        };
+        let Some(layer) = self.overlays.iter().find(|layer| layer.id == layer_id) else {
+            return self.clone();
+        };
+
+        let mut next = self.clone();
+        next.window = layer.window.clone();
+        let has = |id: &str| layer.widgets.iter().any(|widget| widget == id);
+        next.widgets.title = next.widgets.title && has("telemetry");
+        next.widgets.speed_gear_rpm = next.widgets.speed_gear_rpm && has("telemetry");
+        next.widgets.pedals = next.widgets.pedals && has("inputs");
+        next.widgets.steering = next.widgets.steering && has("inputs");
+        next.widgets.input_history = next.widgets.input_history && has("inputs");
+        next.widgets.lap_info = next.widgets.lap_info && has("lap_timing");
+        next.widgets.lap_timing = next.widgets.lap_timing && has("lap_timing");
+        next.widgets.delta_timing = next.widgets.delta_timing && has("timing");
+        next.widgets.sectors = next.widgets.sectors && has("sectors");
+        next.widgets.mini_sector_widget = next.widgets.mini_sector_widget && has("mini_sectors");
+        next.widgets.coaching = next.widgets.coaching && has("coaching");
+        next.widgets.performance_monitor = next.widgets.performance_monitor && has("performance");
+        for (id, widget) in &mut next.extra_widgets {
+            widget.enabled = widget.enabled && has(id);
+        }
+
+        for (id, layout) in &layer.layout_overrides {
+            match id.as_str() {
+                "telemetry" => next.layout.telemetry = layout.clone(),
+                "inputs" => next.layout.inputs = layout.clone(),
+                "lap_timing" => next.layout.lap_timing = layout.clone(),
+                "timing" => next.layout.timing = layout.clone(),
+                "sectors" => next.layout.sectors = layout.clone(),
+                "mini_sectors" => next.layout.mini_sectors = layout.clone(),
+                "coaching" => next.layout.coaching = layout.clone(),
+                "performance" => next.layout.performance = layout.clone(),
+                _ => {
+                    if let Some(widget) = next.extra_widgets.get_mut(id) {
+                        widget.layout = layout.clone();
+                    }
+                }
+            }
+        }
+        next.overlays.clear();
+        next
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OverlayLayerConfig {
+    pub id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub window: WindowConfig,
+    pub widgets: Vec<String>,
+    pub layout_overrides: BTreeMap<String, WidgetLayout>,
+}
+
+impl Default for OverlayLayerConfig {
+    fn default() -> Self {
+        Self {
+            id: "main".to_string(),
+            name: "Main overlay".to_string(),
+            enabled: true,
+            window: WindowConfig::default(),
+            widgets: default_overlay_widget_ids(),
+            layout_overrides: BTreeMap::new(),
+        }
+    }
+}
+
+fn default_overlay_widget_ids() -> Vec<String> {
+    [
+        "telemetry",
+        "inputs",
+        "lap_timing",
+        "timing",
+        "sectors",
+        "mini_sectors",
+        "coaching",
+        "speed",
+        "rpm",
+        "lap_history",
+        "position",
+        "relative",
+        "standings",
+        "flags",
+        "fuel",
+        "tyres",
+        "brakes",
+        "electronics",
+        "energy",
+        "engine",
+        "damage",
+        "weather",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn normalize_overlay_layers(config: &mut OverlayConfig) {
+    if config.overlays.is_empty() {
+        config.overlays.push(OverlayLayerConfig::default());
+    }
+    let mut used_ids = std::collections::BTreeSet::new();
+    let allowed: std::collections::BTreeSet<String> =
+        default_overlay_widget_ids().into_iter().collect();
+    for (index, overlay) in config.overlays.iter_mut().enumerate() {
+        overlay.id = overlay.id.trim().to_ascii_lowercase();
+        if overlay.id.is_empty() || !used_ids.insert(overlay.id.clone()) {
+            overlay.id = format!("overlay-{}", index + 1);
+            used_ids.insert(overlay.id.clone());
+        }
+        if overlay.name.trim().is_empty() {
+            overlay.name = format!("Overlay {}", index + 1);
+        }
+        overlay.window.width = overlay.window.width.clamp(280, 1200);
+        overlay.window.height = overlay.window.height.clamp(140, 800);
+        overlay.window.refresh_hz = overlay.window.refresh_hz.clamp(15, 144);
+        overlay.window.sample_ms = overlay.window.sample_ms.clamp(5, 250);
+        overlay.widgets.retain(|id| allowed.contains(id));
+        overlay.widgets.sort();
+        overlay.widgets.dedup();
+        overlay.layout_overrides.retain(|id, layout| {
+            allowed.contains(id) && {
+                layout.normalize();
+                true
+            }
+        });
     }
 }
 
@@ -1610,6 +1749,7 @@ mod tests {
                 mode: "custom".to_string(),
             },
             presets: PresetConfig::default(),
+            overlays: Vec::new(),
         };
 
         config.normalize();
@@ -1684,6 +1824,27 @@ mod tests {
         assert!(!config.extra_widgets.contains_key("unknown-widget"));
         assert!(config.extra_widgets.contains_key("fuel"));
         assert!(config.extra_widgets.contains_key("weather"));
+    }
+
+    #[test]
+    fn creates_and_filters_independent_overlay_layers() {
+        let mut config = OverlayConfig::default();
+        config.normalize();
+        config.overlays.push(OverlayLayerConfig {
+            id: "coach".to_string(),
+            name: "Coach panel".to_string(),
+            enabled: true,
+            widgets: vec!["coaching".to_string()],
+            ..OverlayLayerConfig::default()
+        });
+        config.normalize();
+
+        let coach = config.for_overlay_layer(Some("coach"));
+        assert_eq!(coach.window.width, WindowConfig::default().width);
+        assert!(coach.widgets.coaching);
+        assert!(!coach.widgets.speed_gear_rpm);
+        assert!(!coach.extra_widgets["fuel"].enabled);
+        assert!(config.overlays.iter().any(|layer| layer.id == "main"));
     }
 
     #[test]

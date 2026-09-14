@@ -20,6 +20,7 @@ use telemetry_engine::{FuelEngine, TelemetrySnapshot};
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Cli {
     overlay: bool,
+    overlay_layer: Option<String>,
     configure: bool,
     print_config_path: bool,
     config_path: Option<PathBuf>,
@@ -51,7 +52,7 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     if cli.overlay {
-        return run_overlay(cli.config_path);
+        return run_overlay(cli.config_path, cli.overlay_layer);
     }
 
     let mut source = SharedMemoryTelemetrySource::open()?;
@@ -98,6 +99,7 @@ impl Cli {
     fn parse(args: impl IntoIterator<Item = String>) -> Self {
         let mut cli = Self {
             overlay: false,
+            overlay_layer: None,
             configure: false,
             print_config_path: false,
             config_path: None,
@@ -110,6 +112,7 @@ impl Cli {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--overlay" => cli.overlay = true,
+                "--overlay-layer" => cli.overlay_layer = args.next(),
                 "--configure" => cli.configure = true,
                 "--print-config-path" => cli.print_config_path = true,
                 "--config" => {
@@ -142,10 +145,11 @@ fn print_help() {
 LMU Overlay telemetry probe
 
 Usage:
-  hashoverlay [--overlay] [--configure] [--config <path>] [--once] [--wait] [--interval-ms <milliseconds>]
+  hashoverlay [--overlay] [--overlay-layer <id>] [--configure] [--config <path>] [--once] [--wait] [--interval-ms <milliseconds>]
 
 Options:
   --overlay                 Open the transparent always-on-top telemetry overlay.
+  --overlay-layer <id>     Open only one configured overlay surface.
   --configure               Create and open the user overlay config.
   --print-config-path       Print the default overlay config path.
   --config <path>           Use a custom overlay config path.
@@ -156,13 +160,18 @@ Options:
     );
 }
 
-fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
+fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> Result<()> {
     let mut source = SharedMemoryTelemetrySource::open()?;
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
-    let mut lap_config = lap_engine_config(&config);
-    let overlay = TelemetryOverlay::with_config_path(config, config_path.clone())?;
+    let runtime_config = config.for_overlay_layer(overlay_layer.as_deref());
+    let mut lap_config = lap_engine_config(&runtime_config);
+    let overlay = TelemetryOverlay::with_config_path_and_layer(
+        runtime_config,
+        config_path.clone(),
+        overlay_layer.clone(),
+    )?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
     let mut current_lap_key = None;
@@ -182,7 +191,9 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
 
     overlay.run(move || {
         if last_config_check.elapsed() >= Duration::from_millis(500) {
-            if let Some((config, mtime)) = load_config_if_changed(&config_path, config_mtime) {
+            if let Some((config, mtime)) =
+                load_config_if_changed(&config_path, config_mtime, overlay_layer.as_deref())
+            {
                 let next_lap_config = lap_engine_config(&config);
                 if next_lap_config != lap_config {
                     lap_config = next_lap_config;
@@ -244,13 +255,14 @@ fn run_overlay(config_path: Option<PathBuf>) -> Result<()> {
 fn load_config_if_changed(
     config_path: &PathBuf,
     previous_mtime: Option<SystemTime>,
+    overlay_layer: Option<&str>,
 ) -> Option<(OverlayConfig, SystemTime)> {
     let mtime = modified_time(config_path)?;
     if previous_mtime.is_some_and(|previous| previous >= mtime) {
         return None;
     }
     match OverlayConfig::load(config_path) {
-        Ok(config) => Some((config, mtime)),
+        Ok(config) => Some((config.for_overlay_layer(overlay_layer), mtime)),
         Err(error) => {
             warn!("Could not hot reload overlay timing config: {error}");
             None
