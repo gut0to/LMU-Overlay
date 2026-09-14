@@ -6,6 +6,7 @@ use crate::config::OverlayConfig;
 use telemetry_engine::TelemetrySnapshot;
 
 #[cfg(windows)]
+#[allow(dead_code)]
 #[path = "d2d_backend.rs"]
 mod d2d_backend;
 
@@ -59,10 +60,11 @@ mod windows_overlay {
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
-            BeginPaint, CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
+            BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW,
+            CreatePen, CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, FillRect,
             GetStockObject, InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient,
             SelectObject, SetBkMode, SetTextColor, TextOutW, HDC, NULL_BRUSH, PAINTSTRUCT,
-            PS_SOLID, TRANSPARENT,
+            PS_SOLID, SRCCOPY, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -185,10 +187,12 @@ mod windows_overlay {
         NATIVE_SHAPE_COMMANDS.with(|commands| commands.borrow_mut().push(command));
     }
 
+    #[allow(dead_code)]
     fn take_native_shape_commands() -> Vec<d2d_backend::ShapeCommand> {
         NATIVE_SHAPE_COMMANDS.with(|commands| std::mem::take(&mut *commands.borrow_mut()))
     }
 
+    #[allow(dead_code)]
     fn take_native_text_commands() -> Vec<d2d_backend::TextCommand> {
         NATIVE_TEXT_ENABLED.with(|state| state.set(false));
         NATIVE_TEXT_COMMANDS.with(|commands| std::mem::take(&mut *commands.borrow_mut()))
@@ -1008,38 +1012,30 @@ mod windows_overlay {
         }
 
         let state = &*state_ptr;
-        // Validate the update region even when Direct2D owns the actual HDC.
-        // GetDC/ReleaseDC from the Direct2D interop layer does not replace the
-        // BeginPaint/EndPaint contract. Leaving the region invalid causes a
-        // second WM_PAINT to be queued while the frame is still being shown,
-        // which is perceived as a visible flash on layered windows.
         let paint_hdc = BeginPaint(hwnd, &mut paint);
-        let d2d_hdc = state
-            .d2d
-            .as_ref()
-            .and_then(|backend| backend.begin_gdi().ok());
-        let using_d2d = d2d_hdc.is_some();
-        begin_native_text(using_d2d);
-        let hdc = d2d_hdc.unwrap_or(paint_hdc);
         let mut rect: RECT = zeroed();
         GetClientRect(hwnd, &mut rect);
-
-        if using_d2d {
-            queue_shape(d2d_backend::ShapeCommand::Rectangle {
-                left: 0.0,
-                top: 0.0,
-                right: rect.right as f32,
-                bottom: rect.bottom as f32,
-                fill: Some(COLOR_KEY),
-                stroke: None,
-                stroke_width: 0.0,
-                radius: 0.0,
-            });
+        let width = (rect.right - rect.left).max(1);
+        let height = (rect.bottom - rect.top).max(1);
+        let buffer_dc = CreateCompatibleDC(paint_hdc);
+        let buffer_bitmap = CreateCompatibleBitmap(paint_hdc, width, height);
+        let use_back_buffer = !buffer_dc.is_null() && !buffer_bitmap.is_null();
+        let old_bitmap = if use_back_buffer {
+            let old_bitmap = SelectObject(buffer_dc, buffer_bitmap);
+            old_bitmap
         } else {
-            let black = CreateSolidBrush(COLOR_KEY);
-            FillRect(hdc, &rect, black);
-            DeleteObject(black);
-        }
+            ptr::null_mut()
+        };
+        let hdc = if use_back_buffer {
+            buffer_dc
+        } else {
+            paint_hdc
+        };
+        begin_native_text(false);
+
+        let black = CreateSolidBrush(COLOR_KEY);
+        FillRect(hdc, &rect, black);
+        DeleteObject(black);
 
         let config = state
             .config
@@ -1088,21 +1084,17 @@ mod windows_overlay {
             stats.render_micros += render_started.elapsed().as_micros() as u64;
         }
 
-        if let Some(backend) = state.d2d.as_ref() {
-            if using_d2d {
-                let texts = take_native_text_commands();
-                let shapes = take_native_shape_commands();
-                if let Err(error) = backend.end_gdi(
-                    &shapes,
-                    &texts,
-                    &config.style.font_family,
-                    config.style.font_size as f32 * config.style.scale as f32,
-                    config.style.font_weight,
-                    config.window.width,
-                    config.window.height,
-                ) {
-                    log::warn!("Direct2D frame submission failed: {error}");
-                }
+        if use_back_buffer {
+            BitBlt(paint_hdc, 0, 0, width, height, hdc, 0, 0, SRCCOPY);
+            SelectObject(buffer_dc, old_bitmap);
+            DeleteObject(buffer_bitmap);
+            DeleteDC(buffer_dc);
+        } else {
+            if !buffer_bitmap.is_null() {
+                DeleteObject(buffer_bitmap);
+            }
+            if !buffer_dc.is_null() {
+                DeleteDC(buffer_dc);
             }
         }
         EndPaint(hwnd, &paint);
