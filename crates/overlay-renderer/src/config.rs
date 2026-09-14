@@ -641,7 +641,10 @@ pub struct WidgetInstanceConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+// Widget options evolve independently from the top-level config. Ignore newer
+// option fields so a Settings/overlay version mismatch cannot reject the whole
+// configuration; known fields still use their defaults and are normalized.
+#[serde(default)]
 pub struct WidgetOptions {
     pub cars_ahead: u8,
     pub cars_behind: u8,
