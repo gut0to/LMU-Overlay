@@ -110,6 +110,29 @@ mod windows_overlay {
         previous: (f64, u32),
     }
 
+    struct WidgetFontScope {
+        previous: (i32, i32),
+    }
+
+    impl WidgetFontScope {
+        fn new(config: &OverlayConfig, style: Option<&WidgetStyleConfig>) -> Self {
+            let previous = TEXT_RENDER_STATE.with(|state| {
+                let previous = state.get();
+                let widget_scale = style.map_or(1.0, |value| value.font_scale);
+                let height = text_font_height_with_scale(config, widget_scale);
+                state.set((height, config.style.font_weight));
+                previous
+            });
+            Self { previous }
+        }
+    }
+
+    impl Drop for WidgetFontScope {
+        fn drop(&mut self) {
+            TEXT_RENDER_STATE.with(|state| state.set(self.previous));
+        }
+    }
+
     impl WidgetOpacityScope {
         fn new(opacity: f64) -> Self {
             let previous = WIDGET_RENDER_STATE.with(|state| {
@@ -1231,6 +1254,7 @@ mod windows_overlay {
     ) {
         let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
         let widget_options = config.extra_widgets.get(id).map(|widget| &widget.options);
+        let _font = WidgetFontScope::new(config, widget_style);
         let options = widget_options.cloned().unwrap_or_default();
         draw_extra_widget_panel(hdc, area, config, widget_style);
         let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
@@ -3639,7 +3663,11 @@ mod windows_overlay {
     }
 
     fn text_font_height(config: &OverlayConfig) -> i32 {
-        (config.style.font_size as f64 * config.style.scale)
+        text_font_height_with_scale(config, 1.0)
+    }
+
+    fn text_font_height_with_scale(config: &OverlayConfig, widget_scale: f64) -> i32 {
+        (config.style.font_size as f64 * config.style.scale * widget_scale)
             .round()
             .max(1.0) as i32
     }
@@ -3693,6 +3721,7 @@ mod windows_overlay {
             assert_eq!(text_font_height(&config), 14);
             config.style.scale = 1.5;
             assert_eq!(text_font_height(&config), 21);
+            assert_eq!(text_font_height_with_scale(&config, 1.25), 26);
         }
 
         #[test]
