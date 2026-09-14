@@ -3828,6 +3828,31 @@ mod windows_overlay {
         }
 
         #[test]
+        fn formats_relative_time_and_lap_gaps_with_directional_signs() {
+            let mut player = scoring_car(42, 5, "Hypercar", true);
+            player.lap_number = 12;
+            player.gap_to_leader_seconds = Some(10.0);
+
+            let mut ahead = scoring_car(7, 4, "Hypercar", false);
+            ahead.lap_number = 12;
+            ahead.gap_to_leader_seconds = Some(8.25);
+            assert_eq!(relative_gap(&ahead, &player), "-1.750");
+
+            let mut behind = scoring_car(9, 6, "Hypercar", false);
+            behind.lap_number = 12;
+            behind.gap_to_leader_seconds = Some(10.75);
+            assert_eq!(relative_gap(&behind, &player), "+0.750");
+
+            let mut lap_ahead = scoring_car(11, 3, "Hypercar", false);
+            lap_ahead.lap_number = 13;
+            assert_eq!(relative_gap(&lap_ahead, &player), "+1L");
+
+            let mut lap_behind = scoring_car(12, 7, "Hypercar", false);
+            lap_behind.lap_number = 11;
+            assert_eq!(relative_gap(&lap_behind, &player), "-1L");
+        }
+
+        #[test]
         fn formats_overall_and_class_position() {
             let mut sample = snapshot();
             sample.session.position = Some(5);
