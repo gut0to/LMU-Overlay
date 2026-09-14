@@ -368,7 +368,7 @@ function App() {
         return current;
       }
       const preset = current.presets[name];
-      return applyProfile(current, preset);
+      return applyProfile(current, preset, activeOverlayId);
     });
   }
 
@@ -532,7 +532,7 @@ function App() {
             </button>
           ))}
           {config.presets.custom.map((preset, index) => (
-            <button key={`custom-${index}`} className="customScene" onClick={() => setConfig(applyCustomPreset(config, index))}>
+            <button key={`custom-${index}`} className="customScene" onClick={() => setConfig(applyCustomPreset(config, index, activeOverlayId))}>
               {preset.name || `Custom ${index + 1}`}
             </button>
           ))}
@@ -788,7 +788,7 @@ function App() {
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
                 />
-                <button title="Apply preset" onClick={() => setConfig(applyCustomPreset(config, index))}>
+                <button title="Apply preset" onClick={() => setConfig(applyCustomPreset(config, index, activeOverlayId))}>
                   Apply
                 </button>
                 <button title="Save current into preset" onClick={() => setConfig(saveCurrentIntoCustomPreset(config, index))}>
@@ -1431,12 +1431,12 @@ function deleteCustomPreset(config: OverlayConfig, index: number): OverlayConfig
   };
 }
 
-function applyCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
+function applyCustomPreset(config: OverlayConfig, index: number, overlayId?: string): OverlayConfig {
   const preset = config.presets.custom[index];
   if (!preset) {
     return config;
   }
-  return applyProfile(config, preset.profile);
+  return applyProfile(config, preset.profile, overlayId);
 }
 
 function updateCustomPreset(
@@ -1471,9 +1471,9 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
   };
 }
 
-function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): OverlayConfig {
+function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
   const arranged = arrangeExtraWidgets(profile.extra_widgets);
-  return {
+  const next: OverlayConfig = {
     ...config,
     performance: { mode: profile.performance_mode },
     timing: {
@@ -1488,6 +1488,27 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig): Over
     layout: structuredClone(profile.layout),
     extra_widgets: arranged.widgets,
     window: { ...config.window, height: Math.max(config.window.height, arranged.height) },
+  };
+  if (!overlayId) {
+    return next;
+  }
+
+  const enabledWidgets = new Set<string>();
+  for (const [id, key] of Object.entries(legacyWidgetById)) {
+    if (key && next.widgets[key]) {
+      enabledWidgets.add(id);
+    }
+  }
+  for (const [id, widget] of Object.entries(next.extra_widgets)) {
+    if (widget.enabled) {
+      enabledWidgets.add(id);
+    }
+  }
+  return {
+    ...next,
+    overlays: next.overlays.map((overlay) => overlay.id === overlayId
+      ? { ...overlay, widgets: [...enabledWidgets] }
+      : overlay),
   };
 }
 
