@@ -453,11 +453,20 @@ function App() {
   return (
     <main className="shell">
       <header className="topbar">
-        <div>
-          <h1>HashOverlay Settings</h1>
-          <p>{path}</p>
+        <div className="brandBlock">
+          <div className="brandMark">H</div>
+          <div>
+            <div className="brandKicker">LMU / race control</div>
+            <h1>HashOverlay <span>settings</span></h1>
+            <p>{path}</p>
+          </div>
         </div>
-        <div className="actions">
+        <div className="topbarRight">
+          <div className={`statusPill ${overlayRunning ? "live" : ""}`}>
+            <span className="statusDot" />
+            {overlayRunning ? "Overlay live" : "Overlay stopped"}
+          </div>
+          <div className="actions">
           <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
           </button>
@@ -476,12 +485,13 @@ function App() {
             <Save size={18} />
             {saving ? "Saving" : "Save"}
           </button>
+          </div>
         </div>
       </header>
 
       <section className="sceneBar">
         <div className="sceneHeading">
-          <span className="eyebrow">OVERLAY SCENES</span>
+          <span className="eyebrow">Overlay scenes</span>
           <strong>Choose a cockpit view, then arrange the cards below.</strong>
         </div>
         <div className="sceneChoices">
@@ -504,7 +514,7 @@ function App() {
 
       <section className="layersBar">
         <div className="sceneHeading">
-          <span className="eyebrow">OVERLAY SURFACES</span>
+          <span className="eyebrow">Overlay surfaces</span>
           <strong>Run separate transparent windows and assign widgets to each one.</strong>
         </div>
         <div className="layerChoices">
