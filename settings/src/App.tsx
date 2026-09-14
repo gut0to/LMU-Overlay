@@ -398,16 +398,27 @@ function App() {
         </div>
       </header>
 
-      <section className="presetBar">
-        {presetNames.map((name) => (
-          <button
-            key={name}
-            className={activePreset === name ? "selected" : ""}
-            onClick={() => applyPreset(name)}
-          >
-            {titleCase(name)}
-          </button>
-        ))}
+      <section className="sceneBar">
+        <div className="sceneHeading">
+          <span className="eyebrow">OVERLAY SCENES</span>
+          <strong>Choose a cockpit view, then arrange the cards below.</strong>
+        </div>
+        <div className="sceneChoices">
+          {presetNames.map((name) => (
+            <button
+              key={name}
+              className={activePreset === name ? "selected" : ""}
+              onClick={() => applyPreset(name)}
+            >
+              {titleCase(name)}
+            </button>
+          ))}
+          {config.presets.custom.map((preset, index) => (
+            <button key={`custom-${index}`} className="customScene" onClick={() => setConfig(applyCustomPreset(config, index))}>
+              {preset.name || `Custom ${index + 1}`}
+            </button>
+          ))}
+        </div>
       </section>
 
       <nav className="tabs">

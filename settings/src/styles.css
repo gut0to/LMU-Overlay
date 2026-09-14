@@ -1,6 +1,6 @@
 :root {
-  color: #f7f2e8;
-  background: #151618;
+  color: #eef3f5;
+  background: #0b1118;
   font-family:
     "Bahnschrift",
     "Segoe UI Variable",
@@ -19,8 +19,9 @@ body {
   min-width: 760px;
   min-height: 100vh;
   background:
-    linear-gradient(90deg, rgba(233, 60, 48, 0.14), transparent 34%),
-    linear-gradient(180deg, #1f2327 0%, #111315 100%);
+    radial-gradient(circle at 86% 0%, rgba(26, 103, 135, 0.22), transparent 32%),
+    linear-gradient(115deg, rgba(207, 30, 46, 0.16), transparent 28%),
+    linear-gradient(180deg, #121d2b 0%, #080d13 100%);
 }
 
 button,
@@ -34,7 +35,9 @@ button {
 
 .shell {
   min-height: 100vh;
-  padding: 24px;
+  padding: 26px 30px 30px;
+  max-width: 1560px;
+  margin: 0 auto;
 }
 
 .loading {
@@ -53,7 +56,8 @@ button {
 
 h1 {
   margin: 0;
-  font-size: 30px;
+  font-size: 32px;
+  letter-spacing: -0.03em;
   font-weight: 700;
 }
 
@@ -73,7 +77,6 @@ h1 {
 .iconButton,
 .primaryButton,
 .dangerButton,
-.presetBar button,
 .segmented button {
   border: 1px solid #3a4149;
   background: #242930;
@@ -118,11 +121,66 @@ h1 {
   min-height: 36px;
 }
 
-.presetBar {
+.sceneBar {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(0, 2fr);
+  gap: 18px;
+  align-items: center;
   margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(102, 145, 170, 0.28);
+  border-left: 3px solid #cf1e2e;
+  background: linear-gradient(90deg, rgba(22, 38, 55, 0.95), rgba(16, 26, 39, 0.72));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.sceneHeading {
+  display: grid;
+  gap: 5px;
+}
+
+.sceneHeading strong {
+  color: #d7e1e6;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.eyebrow {
+  color: #e7aa45;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.sceneChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sceneChoices button {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #334b5d;
+  border-radius: 4px;
+  background: #122131;
+  color: #b8c8d1;
+}
+
+.sceneChoices button:hover {
+  border-color: #5fa8b8;
+  color: #f0f6f8;
+}
+
+.sceneChoices button.selected {
+  border-color: #e7aa45;
+  background: #503617;
+  color: #fff0c9;
+}
+
+.sceneChoices button.customScene {
+  border-style: dashed;
+  color: #88d0d8;
 }
 
 .tabs {
@@ -137,8 +195,8 @@ h1 {
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid #3a4149;
-  border-radius: 6px;
-  background: #1c2025;
+  border-radius: 4px;
+  background: #121d2a;
   color: #d8dde2;
 }
 
@@ -162,10 +220,11 @@ h1 {
 }
 
 .panel {
-  border: 1px solid #353c44;
-  border-radius: 8px;
-  background: rgba(24, 27, 30, 0.92);
-  padding: 16px;
+  border: 1px solid rgba(94, 132, 153, 0.28);
+  border-radius: 5px;
+  background: rgba(13, 23, 34, 0.9);
+  padding: 17px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.16);
 }
 
 .panel h2 {
@@ -180,7 +239,7 @@ h1 {
 .panel h2 svg {
   width: 18px;
   height: 18px;
-  color: #f2bc57;
+  color: #e7aa45;
 }
 
 .fields {
