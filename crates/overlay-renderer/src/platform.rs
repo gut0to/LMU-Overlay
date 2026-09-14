@@ -110,6 +110,29 @@ mod windows_overlay {
         previous: (f64, u32),
     }
 
+    struct WidgetFontScope {
+        previous: (i32, i32),
+    }
+
+    impl WidgetFontScope {
+        fn new(config: &OverlayConfig, style: Option<&WidgetStyleConfig>) -> Self {
+            let previous = TEXT_RENDER_STATE.with(|state| {
+                let previous = state.get();
+                let widget_scale = style.map_or(1.0, |value| value.font_scale);
+                let height = text_font_height_with_scale(config, widget_scale);
+                state.set((height, config.style.font_weight));
+                previous
+            });
+            Self { previous }
+        }
+    }
+
+    impl Drop for WidgetFontScope {
+        fn drop(&mut self) {
+            TEXT_RENDER_STATE.with(|state| state.set(self.previous));
+        }
+    }
+
     impl WidgetOpacityScope {
         fn new(opacity: f64) -> Self {
             let previous = WIDGET_RENDER_STATE.with(|state| {
@@ -1231,6 +1254,7 @@ mod windows_overlay {
     ) {
         let widget_style = config.extra_widgets.get(id).map(|widget| &widget.style);
         let widget_options = config.extra_widgets.get(id).map(|widget| &widget.options);
+        let _font = WidgetFontScope::new(config, widget_style);
         let options = widget_options.cloned().unwrap_or_default();
         draw_extra_widget_panel(hdc, area, config, widget_style);
         let padding = widget_style.map_or(scale_px(config, 8), |style| style.padding);
@@ -3467,6 +3491,8 @@ mod windows_overlay {
                     y,
                     color: widget_color(color),
                     text: text.to_string(),
+                    font_size: TEXT_RENDER_STATE.with(|state| state.get().0 as f32),
+                    font_weight: TEXT_RENDER_STATE.with(|state| state.get().1),
                 });
             });
             return;
@@ -3639,7 +3665,11 @@ mod windows_overlay {
     }
 
     fn text_font_height(config: &OverlayConfig) -> i32 {
-        (config.style.font_size as f64 * config.style.scale)
+        text_font_height_with_scale(config, 1.0)
+    }
+
+    fn text_font_height_with_scale(config: &OverlayConfig, widget_scale: f64) -> i32 {
+        (config.style.font_size as f64 * config.style.scale * widget_scale)
             .round()
             .max(1.0) as i32
     }
@@ -3693,6 +3723,7 @@ mod windows_overlay {
             assert_eq!(text_font_height(&config), 14);
             config.style.scale = 1.5;
             assert_eq!(text_font_height(&config), 21);
+            assert_eq!(text_font_height_with_scale(&config, 1.25), 26);
         }
 
         #[test]
@@ -3794,6 +3825,31 @@ mod windows_overlay {
             assert_eq!(standings_gap(&car), "-1L");
             car.laps_behind_leader = Some(2);
             assert_eq!(standings_gap(&car), "+2L");
+        }
+
+        #[test]
+        fn formats_relative_time_and_lap_gaps_with_directional_signs() {
+            let mut player = scoring_car(42, 5, "Hypercar", true);
+            player.lap_number = 12;
+            player.gap_to_leader_seconds = Some(10.0);
+
+            let mut ahead = scoring_car(7, 4, "Hypercar", false);
+            ahead.lap_number = 12;
+            ahead.gap_to_leader_seconds = Some(8.25);
+            assert_eq!(relative_gap(&ahead, &player), "-1.750");
+
+            let mut behind = scoring_car(9, 6, "Hypercar", false);
+            behind.lap_number = 12;
+            behind.gap_to_leader_seconds = Some(10.75);
+            assert_eq!(relative_gap(&behind, &player), "+0.750");
+
+            let mut lap_ahead = scoring_car(11, 3, "Hypercar", false);
+            lap_ahead.lap_number = 13;
+            assert_eq!(relative_gap(&lap_ahead, &player), "+1L");
+
+            let mut lap_behind = scoring_car(12, 7, "Hypercar", false);
+            lap_behind.lap_number = 11;
+            assert_eq!(relative_gap(&lap_behind, &player), "-1L");
         }
 
         #[test]
