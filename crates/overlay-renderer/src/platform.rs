@@ -59,7 +59,7 @@ mod windows_overlay {
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
-            BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
+            BeginPaint, CreateFontW, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
             GetStockObject, InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient,
             SelectObject, SetBkMode, SetTextColor, TextOutW, HDC, NULL_BRUSH, PAINTSTRUCT,
             PS_SOLID, TRANSPARENT,
@@ -100,6 +100,7 @@ mod windows_overlay {
 
     thread_local! {
         static WIDGET_RENDER_STATE: Cell<(f64, u32)> = const { Cell::new((1.0, COLOR_KEY)) };
+        static TEXT_RENDER_STATE: Cell<(i32, i32)> = const { Cell::new((14, 500)) };
         static NATIVE_TEXT_ENABLED: Cell<bool> = const { Cell::new(false) };
         static NATIVE_SHAPE_COMMANDS: RefCell<Vec<d2d_backend::ShapeCommand>> = const { RefCell::new(Vec::new()) };
         static NATIVE_TEXT_COMMANDS: RefCell<Vec<d2d_backend::TextCommand>> = const { RefCell::new(Vec::new()) };
@@ -996,6 +997,9 @@ mod windows_overlay {
             .map(|config| config.clone())
             .unwrap_or_default();
         set_render_background(colors(&config).background);
+        TEXT_RENDER_STATE.with(|state| {
+            state.set((text_font_height(&config), config.style.font_weight));
+        });
         if let Ok(mut stats) = state.stats.lock() {
             stats.render_frames += 1;
         }
@@ -3468,9 +3472,33 @@ mod windows_overlay {
             return;
         }
         let wide: Vec<u16> = text.encode_utf16().collect();
+        let face: Vec<u16> = "Segoe UI"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let (font_size, font_weight) = TEXT_RENDER_STATE.with(|state| state.get());
+        let font = CreateFontW(
+            -font_size,
+            0,
+            0,
+            0,
+            font_weight,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            5,
+            0,
+            face.as_ptr(),
+        );
+        let old_font = SelectObject(hdc, font);
         SetBkMode(hdc, TRANSPARENT as i32);
         SetTextColor(hdc, widget_color(color));
         TextOutW(hdc, x, y, wide.as_ptr(), wide.len() as i32);
+        SelectObject(hdc, old_font);
+        DeleteObject(font);
     }
 
     #[derive(Clone, Copy)]
@@ -3610,6 +3638,12 @@ mod windows_overlay {
         scale_px(config, value).max(1)
     }
 
+    fn text_font_height(config: &OverlayConfig) -> i32 {
+        (config.style.font_size as f64 * config.style.scale)
+            .round()
+            .max(1.0) as i32
+    }
+
     fn hotkey(value: &str) -> Option<(u32, u32)> {
         let mut modifiers = 0;
         let mut key = None;
@@ -3650,6 +3684,16 @@ mod windows_overlay {
     mod tests {
         use super::*;
         use telemetry_engine::{GamePhase, Gear, SessionKind};
+
+        #[test]
+        fn scales_gdi_text_with_global_scale() {
+            let mut config = OverlayConfig::default();
+            config.style.font_size = 14;
+            config.style.scale = 1.0;
+            assert_eq!(text_font_height(&config), 14);
+            config.style.scale = 1.5;
+            assert_eq!(text_font_height(&config), 21);
+        }
 
         #[test]
         fn formats_direct_timing_hints() {
