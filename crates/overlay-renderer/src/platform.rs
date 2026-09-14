@@ -3491,6 +3491,8 @@ mod windows_overlay {
                     y,
                     color: widget_color(color),
                     text: text.to_string(),
+                    font_size: TEXT_RENDER_STATE.with(|state| state.get().0 as f32),
+                    font_weight: TEXT_RENDER_STATE.with(|state| state.get().1),
                 });
             });
             return;

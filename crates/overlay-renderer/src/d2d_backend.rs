@@ -35,10 +35,8 @@ pub struct D2dBackend {
     target: ID2D1HwndRenderTarget,
     gdi: ID2D1GdiInteropRenderTarget,
     brushes: RefCell<HashMap<u32, ID2D1SolidColorBrush>>,
-    text_format: RefCell<TextFormatCache>,
+    text_formats: RefCell<HashMap<(String, u32, i32), IDWriteTextFormat>>,
 }
-
-type TextFormatCache = Option<((String, u32, i32), IDWriteTextFormat)>;
 
 #[derive(Debug, Clone)]
 pub struct TextCommand {
@@ -46,6 +44,8 @@ pub struct TextCommand {
     pub y: i32,
     pub color: u32,
     pub text: String,
+    pub font_size: f32,
+    pub font_weight: i32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -99,7 +99,7 @@ impl D2dBackend {
             target,
             gdi,
             brushes: RefCell::new(HashMap::new()),
-            text_format: RefCell::new(None),
+            text_formats: RefCell::new(HashMap::new()),
         })
     }
 
@@ -186,41 +186,45 @@ impl D2dBackend {
             }
         }
         if !texts.is_empty() {
-            let family = wide_null(font_family);
-            let key = (font_family.to_string(), font_size.to_bits(), font_weight);
-            let format = if self
-                .text_format
-                .borrow()
-                .as_ref()
-                .is_some_and(|(cached_key, _)| *cached_key == key)
-            {
-                self.text_format
-                    .borrow()
-                    .as_ref()
-                    .expect("checked cached text format")
-                    .1
-                    .clone()
-            } else {
-                let format = self.text_factory.CreateTextFormat(
-                    PCWSTR(family.as_ptr()),
-                    None,
-                    DWRITE_FONT_WEIGHT(font_weight.clamp(100, 900)),
-                    DWRITE_FONT_STYLE_NORMAL,
-                    DWRITE_FONT_STRETCH_NORMAL,
-                    font_size.max(1.0),
-                    PCWSTR::null(),
-                )?;
-                *self.text_format.borrow_mut() = Some((key, format.clone()));
-                format
-            };
             for command in texts {
+                let command_size = if command.font_size > 0.0 {
+                    command.font_size
+                } else {
+                    font_size
+                };
+                let command_weight = if command.font_weight > 0 {
+                    command.font_weight
+                } else {
+                    font_weight
+                };
+                let key = (
+                    font_family.to_string(),
+                    command_size.to_bits(),
+                    command_weight,
+                );
+                let format = if let Some(format) = self.text_formats.borrow().get(&key) {
+                    format.clone()
+                } else {
+                    let family = wide_null(font_family);
+                    let format = self.text_factory.CreateTextFormat(
+                        PCWSTR(family.as_ptr()),
+                        None,
+                        DWRITE_FONT_WEIGHT(command_weight.clamp(100, 900)),
+                        DWRITE_FONT_STYLE_NORMAL,
+                        DWRITE_FONT_STRETCH_NORMAL,
+                        command_size.max(1.0),
+                        PCWSTR::null(),
+                    )?;
+                    self.text_formats.borrow_mut().insert(key, format.clone());
+                    format
+                };
                 let brush = self.brush(command.color)?;
                 let text = wide_null(&command.text);
                 let rect = D2D_RECT_F {
                     left: command.x as f32,
                     top: command.y as f32,
                     right: width as f32,
-                    bottom: (command.y as f32 + font_size * 2.0).min(height as f32),
+                    bottom: (command.y as f32 + command_size * 2.0).min(height as f32),
                 };
                 self.target.DrawText(
                     &text[..text.len().saturating_sub(1)],
