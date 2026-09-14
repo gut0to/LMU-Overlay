@@ -266,9 +266,16 @@ h1 {
 }
 
 .previewWrap {
-  min-height: 216px;
+  min-height: 280px;
   display: grid;
   place-items: center;
+}
+
+.previewHint {
+  grid-column: 1 / -1;
+  margin: -2px 0 10px;
+  color: #91a0ad;
+  font-size: 12px;
 }
 
 .preview {
@@ -290,6 +297,11 @@ h1 {
   background: rgba(255, 255, 255, 0.06);
   color: inherit;
   overflow: hidden;
+  cursor: grab;
+}
+
+.previewWidget:active {
+  cursor: grabbing;
 }
 
 .previewWidget.selected {

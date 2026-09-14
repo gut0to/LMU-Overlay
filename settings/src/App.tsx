@@ -420,6 +420,7 @@ function App() {
 
       <div className="grid">
         {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Activity />} title="Live Preview">
+          <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
           <OverlayPreview
             config={config}
             selected={selectedLayout}
@@ -667,7 +668,7 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
-  const scale = Math.min(1, 320 / props.config.window.width);
+  const scale = Math.min(1, 520 / props.config.window.width);
   const previewWidth = props.config.window.width * scale;
   const previewHeight = props.config.window.height * scale;
 
@@ -877,8 +878,6 @@ function WidgetLayoutFields(props: {
 }) {
   return (
     <>
-      <NumberField label="Widget X" value={props.layout.x} onChange={(value) => props.onChange("x", value)} />
-      <NumberField label="Widget Y" value={props.layout.y} onChange={(value) => props.onChange("y", value)} />
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
       <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
       <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
