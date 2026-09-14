@@ -115,20 +115,22 @@ fn start_overlay(app: tauri::AppHandle, processes: tauri::State<'_, OverlayProce
         .map(|layer| layer.id.as_str())
         .collect::<Vec<_>>();
     if layers.is_empty() {
-        running.push(
-            Command::new(&executable)
-                .arg("--overlay")
-                .spawn()
-                .map_err(|error| format!("Could not start HashOverlay: {error}"))?,
-        );
+        match Command::new(&executable).arg("--overlay").spawn() {
+            Ok(child) => running.push(child),
+            Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
+        }
     } else {
         for layer in layers {
-            running.push(
-                Command::new(&executable)
-                    .args(["--overlay", "--overlay-layer", layer])
-                    .spawn()
-                    .map_err(|error| format!("Could not start HashOverlay layer: {error}"))?,
-            );
+            match Command::new(&executable)
+                .args(["--overlay", "--overlay-layer", layer])
+                .spawn()
+            {
+                Ok(child) => running.push(child),
+                Err(error) => {
+                    stop_running_overlays(&mut running);
+                    return Err(format!("Could not start HashOverlay layer: {error}"));
+                }
+            }
         }
     }
     Ok(())
@@ -140,11 +142,15 @@ fn stop_overlay(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), Str
         .0
         .lock()
         .map_err(|_| "Overlay process state is unavailable".to_string())?;
+    stop_running_overlays(&mut running);
+    Ok(())
+}
+
+fn stop_running_overlays(running: &mut Vec<Child>) {
     for mut child in running.drain(..) {
         let _ = child.kill();
         let _ = child.wait();
     }
-    Ok(())
 }
 
 #[tauri::command]

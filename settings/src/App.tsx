@@ -375,6 +375,13 @@ function App() {
         window: { ...defaultConfigState.window, height: arranged.height },
         layout: structuredClone(defaultConfigState.layout),
         extra_widgets: arranged.widgets,
+        overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId
+          ? {
+              ...overlay,
+              window: { ...defaultConfigState.window, height: arranged.height },
+              layout_overrides: {},
+            }
+          : overlay),
       };
     });
     setStatus("Layout reset");
@@ -472,6 +479,12 @@ function App() {
     [config, activeOverlayId],
   );
   const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
+
+  useEffect(() => {
+    if (!availableLayoutEntries.some((entry) => entry.key === selectedLayout)) {
+      setSelectedLayout(availableLayoutEntries[0]?.key ?? "telemetry");
+    }
+  }, [availableLayoutEntries, selectedLayout]);
 
   const activePreset = useMemo(() => {
     if (!config) {
@@ -751,7 +764,7 @@ function App() {
             {filteredWidgetCatalog.map((widget) => {
               const legacy = legacyWidgetById[widget.id];
               const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
-              const globallyEnabled = legacy ? config.widgets[legacy] : config.extra_widgets[widget.id]?.enabled ?? false;
+              const globallyEnabled = legacy ? activeLegacyWidgetEnabled(config, activeOverlayId, legacy) : config.extra_widgets[widget.id]?.enabled ?? false;
               const enabled = activeOverlay
                 ? activeOverlay.widgets.includes(widget.id) && globallyEnabled
                 : globallyEnabled;
@@ -766,7 +779,7 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Appearance") && <Section icon={<Paintbrush />} title="Appearance">
-          <Segmented value={config.style.theme} options={themes} onChange={(value) => setStyle(config, setConfig, "theme", value)} />
+          <Segmented value={config.style.theme} options={themes} onChange={(value) => setConfig(applyTheme(config, value))} />
           <Segmented value={config.units.speed} options={speedUnits} onChange={(value) => setUnits(config, setConfig, "speed", value)} />
           <Segmented value={config.units.temperature} options={temperatureUnits} onChange={(value) => setUnits(config, setConfig, "temperature", value)} />
           <Segmented value={config.units.pressure} options={pressureUnits} onChange={(value) => setUnits(config, setConfig, "pressure", value)} />
@@ -1200,6 +1213,88 @@ function setStyle<K extends keyof StyleConfig>(config: OverlayConfig, setConfig:
   setConfig({ ...config, style: { ...config.style, [key]: value } });
 }
 
+function applyTheme(config: OverlayConfig, theme: string): OverlayConfig {
+  const palettes: Record<string, Partial<StyleConfig>> = {
+    hashoverlay_default: {
+      background: "#101318",
+      border: "#f2bc57",
+      primary_text: "#f8fafc",
+      secondary_text: "#b8c0cc",
+      throttle: "#36d36a",
+      brake: "#ff4f42",
+      clutch: "#31c8d8",
+      steering: "#f8fafc",
+      delta_gain: "#36d36a",
+      delta_loss: "#ff4f42",
+      delta_neutral: "#f2bc57",
+      reference: "#8ea0b8",
+      rpm: "#f2bc57",
+      coaching_warning: "#f2bc57",
+      coaching_positive: "#36d36a",
+    },
+    minimal_dark: {
+      background: "#07090d",
+      border: "#3a4250",
+      primary_text: "#f5f7fb",
+      secondary_text: "#8f9bad",
+      throttle: "#2fd35f",
+      brake: "#ff5148",
+      clutch: "#28bfd2",
+      steering: "#dfe6f0",
+      delta_gain: "#2fd35f",
+      delta_loss: "#ff5148",
+      delta_neutral: "#b7c0ce",
+      reference: "#737f90",
+      rpm: "#f0c24d",
+      coaching_warning: "#f0c24d",
+      coaching_positive: "#2fd35f",
+    },
+    transparent: {
+      background: "#000000",
+      border: "#5d7188",
+      primary_text: "#ffffff",
+      secondary_text: "#c8d3e0",
+      throttle: "#34e676",
+      brake: "#ff5148",
+      clutch: "#2ed7e5",
+      steering: "#ffffff",
+      delta_gain: "#34e676",
+      delta_loss: "#ff5148",
+      delta_neutral: "#ffd166",
+      reference: "#9aa8ba",
+      rpm: "#ffd166",
+      coaching_warning: "#ffd166",
+      coaching_positive: "#34e676",
+    },
+    high_contrast: {
+      background: "#000000",
+      border: "#ffffff",
+      primary_text: "#ffffff",
+      secondary_text: "#e5e7eb",
+      throttle: "#00ff66",
+      brake: "#ff2b2b",
+      clutch: "#00e5ff",
+      steering: "#ffffff",
+      delta_gain: "#00ff66",
+      delta_loss: "#ff2b2b",
+      delta_neutral: "#ffe45e",
+      reference: "#d1d5db",
+      rpm: "#ffe45e",
+      coaching_warning: "#ffe45e",
+      coaching_positive: "#00ff66",
+    },
+  };
+  return {
+    ...config,
+    style: {
+      ...config.style,
+      ...palettes[theme],
+      theme,
+      opacity: theme === "transparent" ? Math.min(config.style.opacity, 190) : config.style.opacity,
+    },
+  };
+}
+
 function setTiming<K extends keyof TimingConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: TimingConfig[K]) {
   setConfig({ ...config, timing: { ...config.timing, [key]: value } });
 }
@@ -1250,8 +1345,16 @@ function overlayIdUsedByOtherLayer(overlays: OverlayLayerConfig[], activeOverlay
 
 function syncExtraWidgetsWithOverlayMembership(config: OverlayConfig): OverlayConfig {
   const usedIds = new Set(config.overlays.flatMap((overlay) => overlay.widgets));
+  const widgets = { ...config.widgets };
+  for (const id of usedIds) {
+    const key = legacyWidgetById[id];
+    if (key) {
+      widgets[key] = true;
+    }
+  }
   return {
     ...config,
+    widgets,
     extra_widgets: Object.fromEntries(Object.entries(config.extra_widgets).map(([id, widget]) => [
       id,
       usedIds.has(id) ? { ...widget, enabled: true } : widget,

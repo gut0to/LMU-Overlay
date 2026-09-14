@@ -43,6 +43,7 @@ impl From<config::ConfigError> for OverlayError {
 mod windows_overlay {
     use std::{
         cell::{Cell, RefCell},
+        collections::BTreeMap,
         ffi::c_void,
         fs,
         mem::zeroed,
@@ -60,11 +61,11 @@ mod windows_overlay {
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
-            BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW,
-            CreatePen, CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, FillRect,
-            GetStockObject, InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient,
-            SelectObject, SetBkMode, SetTextColor, TextOutW, HDC, NULL_BRUSH, PAINTSTRUCT,
-            PS_SOLID, SRCCOPY, TRANSPARENT,
+            BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen,
+            CreateSolidBrush, DeleteDC, DeleteObject, EndPaint, FillRect, GetStockObject,
+            InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient, SelectObject,
+            SetBkMode, SetTextColor, TextOutW, HDC, NULL_BRUSH, PAINTSTRUCT, PS_SOLID, SRCCOPY,
+            TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -936,12 +937,89 @@ mod windows_overlay {
         let Some(path) = &state.config_path else {
             return;
         };
-        if let Ok(config) = state.config.lock() {
-            let mut config = config.clone();
-            if let Err(error) = config.save(path.as_ref()) {
-                log::warn!("Could not save overlay layout: {error}");
+        let Ok(config) = state.config.lock() else {
+            return;
+        };
+        let runtime_config = config.clone();
+        let result = if let Some(layer_id) = state.overlay_layer.as_ref() {
+            OverlayConfig::load(path.as_ref()).and_then(|mut full_config| {
+                merge_runtime_layer(&mut full_config, layer_id, &runtime_config);
+                full_config.save(path.as_ref())
+            })
+        } else {
+            let mut config = runtime_config;
+            config.save(path.as_ref())
+        };
+        if let Err(error) = result {
+            log::warn!("Could not save overlay layout: {error}");
+        }
+    }
+
+    fn merge_runtime_layer(
+        full_config: &mut OverlayConfig,
+        layer_id: &str,
+        runtime_config: &OverlayConfig,
+    ) {
+        let layout_overrides = layout_overrides_from_runtime(runtime_config);
+        let widgets = enabled_widget_ids(runtime_config);
+        if let Some(layer) = full_config
+            .overlays
+            .iter_mut()
+            .find(|layer| layer.id == layer_id)
+        {
+            layer.window = runtime_config.window.clone();
+            layer.widgets = widgets;
+            layer.layout_overrides = layout_overrides;
+        }
+        full_config.style = runtime_config.style.clone();
+        full_config.units = runtime_config.units.clone();
+        full_config.coaching = runtime_config.coaching.clone();
+        full_config.timing = runtime_config.timing.clone();
+        full_config.performance = runtime_config.performance.clone();
+        enable_globals_for_overlay_membership(full_config);
+    }
+
+    fn enable_globals_for_overlay_membership(config: &mut OverlayConfig) {
+        for id in config
+            .overlays
+            .iter()
+            .flat_map(|layer| layer.widgets.iter().map(String::as_str))
+        {
+            match id {
+                "telemetry" => config.widgets.speed_gear_rpm = true,
+                "inputs" => config.widgets.pedals = true,
+                "lap_timing" => config.widgets.lap_timing = true,
+                "timing" => config.widgets.delta_timing = true,
+                "sectors" => config.widgets.sectors = true,
+                "mini_sectors" => config.widgets.mini_sector_widget = true,
+                "coaching" => config.widgets.coaching = true,
+                "performance" => config.widgets.performance_monitor = true,
+                _ => {
+                    if let Some(widget) = config.extra_widgets.get_mut(id) {
+                        widget.enabled = true;
+                    }
+                }
             }
         }
+    }
+
+    fn layout_overrides_from_runtime(config: &OverlayConfig) -> BTreeMap<String, WidgetLayout> {
+        widget_areas(config)
+            .into_iter()
+            .filter_map(|(widget, _)| {
+                Some((
+                    widget_overlay_id(widget)?.to_string(),
+                    widget_layout(config, widget).clone(),
+                ))
+            })
+            .collect()
+    }
+
+    fn enabled_widget_ids(config: &OverlayConfig) -> Vec<String> {
+        widget_areas(config)
+            .into_iter()
+            .filter_map(|(widget, _)| widget_overlay_id(widget).map(str::to_string))
+            .collect()
     }
 
     fn cycle_runtime_preset(config: &mut OverlayConfig) {
@@ -1021,8 +1099,7 @@ mod windows_overlay {
         let buffer_bitmap = CreateCompatibleBitmap(paint_hdc, width, height);
         let use_back_buffer = !buffer_dc.is_null() && !buffer_bitmap.is_null();
         let old_bitmap = if use_back_buffer {
-            let old_bitmap = SelectObject(buffer_dc, buffer_bitmap);
-            old_bitmap
+            SelectObject(buffer_dc, buffer_bitmap)
         } else {
             ptr::null_mut()
         };
@@ -3231,6 +3308,7 @@ mod windows_overlay {
             (WidgetId::Performance, &config.layout.performance),
         ]
         .into_iter()
+        .filter(|(id, _)| widget_enabled(config, *id))
         .map(|(id, layout)| (id, area_from_layout(layout)))
         .collect();
         for id in EXTRA_WIDGET_IDS {
@@ -3244,6 +3322,39 @@ mod windows_overlay {
         }
         areas.sort_by_key(|(id, _)| widget_layout(config, *id).z_index);
         areas
+    }
+
+    fn widget_enabled(config: &OverlayConfig, widget: WidgetId) -> bool {
+        match widget {
+            WidgetId::Telemetry => config.widgets.title || config.widgets.speed_gear_rpm,
+            WidgetId::Inputs => {
+                config.widgets.pedals || config.widgets.steering || config.widgets.input_history
+            }
+            WidgetId::LapTiming => config.widgets.lap_info || config.widgets.lap_timing,
+            WidgetId::Timing => config.widgets.delta_timing,
+            WidgetId::Sectors => config.widgets.sectors,
+            WidgetId::MiniSectors => config.widgets.mini_sector_widget,
+            WidgetId::Coaching => config.widgets.coaching && config.coaching.mode != "off",
+            WidgetId::Performance => config.widgets.performance_monitor,
+            WidgetId::Extra(id) => config
+                .extra_widgets
+                .get(id)
+                .is_some_and(|widget| widget.enabled),
+        }
+    }
+
+    fn widget_overlay_id(widget: WidgetId) -> Option<&'static str> {
+        match widget {
+            WidgetId::Telemetry => Some("telemetry"),
+            WidgetId::Inputs => Some("inputs"),
+            WidgetId::LapTiming => Some("lap_timing"),
+            WidgetId::Timing => Some("timing"),
+            WidgetId::Sectors => Some("sectors"),
+            WidgetId::MiniSectors => Some("mini_sectors"),
+            WidgetId::Coaching => Some("coaching"),
+            WidgetId::Performance => Some("performance"),
+            WidgetId::Extra(id) => Some(id),
+        }
     }
 
     fn area_from_layout(layout: &WidgetLayout) -> Area {
@@ -3781,6 +3892,7 @@ mod windows_overlay {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::config::OverlayLayerConfig;
         use telemetry_engine::{GamePhase, Gear, SessionKind};
 
         #[test]
@@ -3812,6 +3924,76 @@ mod windows_overlay {
             );
             assert_eq!(hotkey("Alt+F10"), Some((MOD_ALT, 0x79)));
             assert_eq!(hotkey("Nope"), None);
+        }
+
+        #[test]
+        fn widget_hit_areas_ignore_disabled_widgets() {
+            let mut config = OverlayConfig::default();
+            config.widgets = crate::config::WidgetConfig {
+                title: false,
+                speed_gear_rpm: false,
+                pedals: true,
+                steering: false,
+                lap_info: false,
+                lap_timing: false,
+                sectors: false,
+                mini_sector_widget: false,
+                input_history: false,
+                delta_timing: false,
+                ghost_inputs: false,
+                coaching: false,
+                performance_monitor: false,
+            };
+            for widget in config.extra_widgets.values_mut() {
+                widget.enabled = false;
+            }
+
+            let areas = widget_areas(&config);
+
+            assert_eq!(areas.len(), 1);
+            assert_eq!(areas[0].0, WidgetId::Inputs);
+            assert!(hit_widget(&config, 20, 20).is_none());
+        }
+
+        #[test]
+        fn runtime_layer_save_preserves_other_overlay_membership() {
+            let mut full = OverlayConfig::default();
+            full.normalize();
+            full.overlays = vec![
+                OverlayLayerConfig {
+                    id: "main".to_string(),
+                    name: "Main".to_string(),
+                    widgets: vec!["telemetry".to_string(), "fuel".to_string()],
+                    ..OverlayLayerConfig::default()
+                },
+                OverlayLayerConfig {
+                    id: "coach".to_string(),
+                    name: "Coach".to_string(),
+                    widgets: vec!["coaching".to_string()],
+                    ..OverlayLayerConfig::default()
+                },
+            ];
+            let mut runtime = full.for_overlay_layer(Some("coach"));
+            runtime.widgets.coaching = true;
+            runtime.layout.coaching.x = 320;
+            runtime.extra_widgets.get_mut("fuel").unwrap().enabled = false;
+
+            merge_runtime_layer(&mut full, "coach", &runtime);
+
+            let main = full
+                .overlays
+                .iter()
+                .find(|layer| layer.id == "main")
+                .unwrap();
+            let coach = full
+                .overlays
+                .iter()
+                .find(|layer| layer.id == "coach")
+                .unwrap();
+            assert!(main.widgets.contains(&"fuel".to_string()));
+            assert!(full.extra_widgets["fuel"].enabled);
+            assert_eq!(coach.widgets, vec!["coaching".to_string()]);
+            assert_eq!(coach.layout_overrides["coaching"].x, 320);
         }
 
         #[test]

@@ -1854,8 +1854,10 @@ mod tests {
             "hashoverlay-missing-overlays-{}.toml",
             std::process::id()
         ));
-        let mut config = OverlayConfig::default();
-        config.config_version = CURRENT_CONFIG_VERSION;
+        let mut config = OverlayConfig {
+            config_version: CURRENT_CONFIG_VERSION,
+            ..OverlayConfig::default()
+        };
         config.overlays.clear();
         fs::write(&temp_path, toml::to_string_pretty(&config).unwrap()).unwrap();
 
