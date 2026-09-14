@@ -424,6 +424,10 @@ function App() {
     () => config ? overlayPreviewConfig(config, activeOverlayId) : null,
     [config, activeOverlayId],
   );
+  const activeOverlay = useMemo(
+    () => config?.overlays.find((overlay) => overlay.id === activeOverlayId),
+    [config, activeOverlayId],
+  );
   const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
 
   const activePreset = useMemo(() => {
@@ -492,7 +496,7 @@ function App() {
       <section className="sceneBar">
         <div className="sceneHeading">
           <span className="eyebrow">Overlay scenes</span>
-          <strong>Choose a cockpit view, then arrange the cards below.</strong>
+          <strong>Choose a cockpit view, then arrange its widgets.</strong>
         </div>
         <div className="sceneChoices">
           {presetNames.map((name) => (
@@ -536,6 +540,26 @@ function App() {
             </div>
           );
         })()}
+      </section>
+
+      <section className="controlStrip" aria-label="Active overlay summary">
+        <div className="controlLead">
+          <span className="stripLabel">Selected surface</span>
+          <strong>{activeOverlay?.name ?? "Main overlay"}</strong>
+        </div>
+        <div className="stripMetric">
+          <span className="stripLabel">Widgets</span>
+          <strong>{activeOverlay?.widgets.length ?? 0}</strong>
+        </div>
+        <div className="stripMetric">
+          <span className="stripLabel">Window</span>
+          <strong>{(activeOverlayConfig ?? config).window.width} × {(activeOverlayConfig ?? config).window.height}</strong>
+        </div>
+        <div className="stripMetric">
+          <span className="stripLabel">Startup</span>
+          <strong className={activeOverlay?.enabled ? "valueLive" : "valueMuted"}>{activeOverlay?.enabled ? "Enabled" : "Disabled"}</strong>
+        </div>
+        <p className="stripHint">Select a surface above to edit its layout and widget set.</p>
       </section>
 
       <nav className="tabs">

@@ -829,6 +829,66 @@ h1 span {
   font-size: 12px;
 }
 
+.controlStrip {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(110px, 0.55fr)) minmax(200px, 1.4fr);
+  align-items: center;
+  gap: 1px;
+  margin: 12px 0 18px;
+  border: 1px solid var(--steel);
+  background: var(--steel);
+}
+
+.controlLead,
+.stripMetric,
+.stripHint {
+  min-height: 58px;
+  padding: 10px 13px;
+  background: #0c1a23;
+}
+
+.controlLead,
+.stripMetric {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.controlLead strong,
+.stripMetric strong {
+  color: var(--ice);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.stripMetric strong {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.stripLabel {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stripHint {
+  display: flex;
+  align-items: center;
+  color: #91aab0;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.valueLive {
+  color: var(--cyan) !important;
+}
+
+.valueMuted {
+  color: var(--muted) !important;
+}
+
 .tabs {
   gap: 0;
   margin: 18px 0 14px;
@@ -988,5 +1048,14 @@ h1 span {
 
   .topbarRight {
     align-items: flex-start;
+  }
+
+  .controlStrip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .controlLead,
+  .stripHint {
+    grid-column: 1 / -1;
   }
 }
