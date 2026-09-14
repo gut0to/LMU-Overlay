@@ -60,8 +60,9 @@ mod windows_overlay {
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
             BeginPaint, CreatePen, CreateSolidBrush, DeleteObject, EndPaint, FillRect,
-            InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient, SelectObject,
-            SetBkMode, SetTextColor, TextOutW, HDC, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+            GetStockObject, InvalidateRect, LineTo, MoveToEx, Rectangle, RoundRect, ScreenToClient,
+            SelectObject, SetBkMode, SetTextColor, TextOutW, HDC, NULL_BRUSH, PAINTSTRUCT,
+            PS_SOLID, TRANSPARENT,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
@@ -1113,6 +1114,8 @@ mod windows_overlay {
             config.style.line_thickness.max(1),
             widget_color(colors.border),
         );
+        let transparent_brush = GetStockObject(NULL_BRUSH);
+        let old_brush = SelectObject(hdc, transparent_brush);
         let old_pen = SelectObject(hdc, border);
         if config.style.border_radius > 0 {
             RoundRect(
@@ -1134,6 +1137,7 @@ mod windows_overlay {
             );
         }
         SelectObject(hdc, old_pen);
+        SelectObject(hdc, old_brush);
         DeleteObject(border);
     }
 
