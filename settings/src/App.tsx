@@ -152,6 +152,22 @@ const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["performance", "Performance"],
 ];
 
+const legacySurfaceByWidgetKey: Record<keyof WidgetConfig, LayoutWidgetKey | null> = {
+  title: "telemetry",
+  speed_gear_rpm: "telemetry",
+  pedals: "inputs",
+  steering: "inputs",
+  lap_info: "lap_timing",
+  lap_timing: "lap_timing",
+  sectors: "sectors",
+  mini_sector_widget: "mini_sectors",
+  input_history: "inputs",
+  delta_timing: "timing",
+  ghost_inputs: "inputs",
+  coaching: "coaching",
+  performance_monitor: "performance",
+};
+
 const colorLabels: Array<[keyof StyleConfig, string]> = [
   ["background", "Background"],
   ["border", "Border"],
@@ -173,14 +189,16 @@ const colorLabels: Array<[keyof StyleConfig, string]> = [
 function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   const incoming = raw as OverlayConfig & { overlays?: OverlayLayerConfig[] };
   if (Array.isArray(incoming.overlays) && incoming.overlays.length > 0) {
-    return raw;
+    return syncExtraWidgetsWithOverlayMembership(raw);
   }
 
   const widgetIds = [
-    ...Object.keys(legacyWidgetById),
-    ...Object.keys(raw.extra_widgets ?? {}),
+    ...enabledLegacySurfaceIds(raw.widgets),
+    ...Object.entries(raw.extra_widgets ?? {})
+      .filter(([, widget]) => widget.enabled)
+      .map(([id]) => id),
   ];
-  return {
+  return syncExtraWidgetsWithOverlayMembership({
     ...raw,
     overlays: [{
       id: "main",
@@ -190,7 +208,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
       widgets: [...new Set(widgetIds)],
       layout_overrides: {},
     }],
-  };
+  });
 }
 
 function App() {
@@ -378,16 +396,18 @@ function App() {
       if (!current) {
         return current;
       }
+      const overlays = current.overlays.map((overlay) => overlay.id === activeOverlayId
+        ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, id])] : overlay.widgets.filter((widget) => widget !== id) }
+        : overlay);
+      const usedElsewhere = overlayIdUsedByOtherLayer(overlays, activeOverlayId, id);
       let next = legacy
-        ? { ...current, widgets: { ...current.widgets, [legacy]: enabled } }
+        ? { ...current, widgets: { ...current.widgets, [legacy]: enabled || usedElsewhere } }
         : current.extra_widgets[id]
-          ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...current.extra_widgets[id], enabled } } }
+          ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...current.extra_widgets[id], enabled: enabled || usedElsewhere } } }
           : current;
       next = {
         ...next,
-        overlays: next.overlays.map((overlay) => overlay.id === activeOverlayId
-          ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, id])] : overlay.widgets.filter((widget) => widget !== id) }
-          : overlay),
+        overlays,
       };
       return next;
     });
@@ -714,8 +734,8 @@ function App() {
               <label className="toggle" key={key}>
                 <input
                   type="checkbox"
-                  checked={config.widgets[key]}
-                  onChange={(event) => setWidget(config, setConfig, key, event.target.checked)}
+                  checked={activeLegacyWidgetEnabled(config, activeOverlayId, key)}
+                  onChange={(event) => setWidget(config, setConfig, activeOverlayId, key, event.target.checked)}
                 />
                 <span>{label}</span>
               </label>
@@ -938,7 +958,9 @@ function clamp(value: number, min: number, max: number) {
 }
 
 function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; label: string; layout: WidgetLayout }> {
-  const legacy = layoutLabels.map(([key, label]) => ({ key, label, layout: config.layout[key] }));
+  const legacy = layoutLabels
+    .filter(([key]) => legacySurfaceEnabled(config.widgets, key))
+    .map(([key, label]) => ({ key, label, layout: config.layout[key] }));
   const extra = Object.entries(config.extra_widgets)
     .filter(([, widget]) => widget.enabled)
     .map(([id, widget]) => ({ key: `extra:${id}` as LayoutSelection, label: id.replace(/_/g, " "), layout: widget.layout }));
@@ -976,6 +998,15 @@ function overlayPreviewConfig(config: OverlayConfig, overlayId: string): Overlay
     }
   }
   return next;
+}
+
+function activeLegacyWidgetEnabled(config: OverlayConfig, overlayId: string, key: keyof WidgetConfig): boolean {
+  const surface = legacySurfaceByWidgetKey[key];
+  if (!surface || !config.widgets[key]) {
+    return config.widgets[key];
+  }
+  const overlay = config.overlays.find((item) => item.id === overlayId);
+  return overlay ? overlay.widgets.includes(surface) : config.widgets[key];
 }
 
 function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): WidgetLayout {
@@ -1173,8 +1204,59 @@ function setTiming<K extends keyof TimingConfig>(config: OverlayConfig, setConfi
   setConfig({ ...config, timing: { ...config.timing, [key]: value } });
 }
 
-function setWidget(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: keyof WidgetConfig, value: boolean) {
-  setConfig({ ...config, widgets: { ...config.widgets, [key]: value } });
+function setWidget(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  activeOverlayId: string,
+  key: keyof WidgetConfig,
+  value: boolean,
+) {
+  const widgets = { ...config.widgets, [key]: value };
+  const surface = legacySurfaceByWidgetKey[key];
+  const overlays = surface
+    ? config.overlays.map((overlay) => overlay.id === activeOverlayId
+      ? {
+          ...overlay,
+          widgets: value
+            ? [...new Set([...overlay.widgets, surface])]
+            : overlay.widgets.filter((widget) => widget !== surface || legacySurfaceEnabled(widgets, surface)),
+        }
+      : overlay)
+    : config.overlays;
+  setConfig({
+    ...config,
+    widgets: surface && !value && overlayIdUsedByOtherLayer(overlays, activeOverlayId, surface)
+      ? { ...widgets, [key]: true }
+      : widgets,
+    overlays,
+  });
+}
+
+function enabledLegacySurfaceIds(widgets: WidgetConfig): LayoutWidgetKey[] {
+  return layoutLabels
+    .map(([key]) => key)
+    .filter((surface) => legacySurfaceEnabled(widgets, surface));
+}
+
+function legacySurfaceEnabled(widgets: WidgetConfig, surface: LayoutWidgetKey): boolean {
+  return Object.entries(legacySurfaceByWidgetKey).some(([key, value]) => (
+    value === surface && widgets[key as keyof WidgetConfig]
+  ));
+}
+
+function overlayIdUsedByOtherLayer(overlays: OverlayLayerConfig[], activeOverlayId: string, id: string): boolean {
+  return overlays.some((overlay) => overlay.id !== activeOverlayId && overlay.widgets.includes(id));
+}
+
+function syncExtraWidgetsWithOverlayMembership(config: OverlayConfig): OverlayConfig {
+  const usedIds = new Set(config.overlays.flatMap((overlay) => overlay.widgets));
+  return {
+    ...config,
+    extra_widgets: Object.fromEntries(Object.entries(config.extra_widgets).map(([id, widget]) => [
+      id,
+      usedIds.has(id) ? { ...widget, enabled: true } : widget,
+    ])),
+  };
 }
 
 function setUnits<K extends keyof UnitsConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: UnitsConfig[K]) {
@@ -1504,12 +1586,10 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overl
       enabledWidgets.add(id);
     }
   }
-  return {
-    ...next,
-    overlays: next.overlays.map((overlay) => overlay.id === overlayId
+  const overlays = next.overlays.map((overlay) => overlay.id === overlayId
       ? { ...overlay, widgets: [...enabledWidgets] }
-      : overlay),
-  };
+      : overlay);
+  return syncExtraWidgetsWithOverlayMembership({ ...next, overlays });
 }
 
 function arrangeExtraWidgets(widgets: Record<string, WidgetInstanceConfig>) {

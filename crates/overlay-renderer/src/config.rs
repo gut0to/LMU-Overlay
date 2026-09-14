@@ -42,12 +42,13 @@ impl OverlayConfig {
         let mut config: Self = toml::from_str(&text)?;
         let original_version = config.config_version;
         let needs_migration = original_version < CURRENT_CONFIG_VERSION;
+        let missing_overlay_layers = config.overlays.is_empty();
         if needs_migration {
             write_migration_backup(path, original_version, &text)?;
             migrate_config(&mut config, original_version);
         }
         config.normalize();
-        if needs_migration {
+        if needs_migration || missing_overlay_layers {
             atomic_write(path, toml::to_string_pretty(&config)?)?;
         }
         Ok(config)
@@ -1845,6 +1846,25 @@ mod tests {
         assert!(!coach.widgets.speed_gear_rpm);
         assert!(!coach.extra_widgets["fuel"].enabled);
         assert!(config.overlays.iter().any(|layer| layer.id == "main"));
+    }
+
+    #[test]
+    fn loading_v7_without_overlay_layers_persists_normalized_layers() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-missing-overlays-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.config_version = CURRENT_CONFIG_VERSION;
+        config.overlays.clear();
+        fs::write(&temp_path, toml::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = OverlayConfig::load(&temp_path).unwrap();
+        let persisted = fs::read_to_string(&temp_path).unwrap();
+        let _ = fs::remove_file(&temp_path);
+
+        assert_eq!(loaded.overlays.len(), 1);
+        assert!(persisted.contains("[[overlays]]"));
     }
 
     #[test]
