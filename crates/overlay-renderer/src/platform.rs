@@ -56,7 +56,7 @@ mod windows_overlay {
         time::{Duration, Instant, SystemTime},
     };
 
-    use telemetry_engine::{order_by_track_proximity, RingBuffer, TelemetrySnapshot};
+    use telemetry_engine::{relative_neighbors, RingBuffer, TelemetrySnapshot};
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
@@ -2020,60 +2020,60 @@ mod windows_overlay {
             title_color,
             "RELATIVE",
         );
-        let player_index = snapshot
-            .field
-            .iter()
-            .position(|car| car.is_player || car.slot_id == snapshot.player_slot_id);
-        let Some(player_index) = player_index else {
+        let Some(relative) = relative_neighbors(
+            &snapshot.field,
+            snapshot.player_slot_id,
+            options.same_class_only,
+            snapshot.track_length_m,
+        ) else {
             draw_text(
                 hdc,
                 area.x + padding,
                 area.y + padding + scale_px(config, 20),
                 text_color,
-                "SCORING DATA --",
+                "RELATIVE DATA --",
             );
             return;
         };
-        let player_class = snapshot.field[player_index].vehicle_class.as_deref();
-        let mut cars: Vec<&_> = snapshot
-            .field
+        let ahead_count = options.cars_ahead as usize;
+        let behind_count = options.cars_behind as usize;
+        let mut indexes = relative
+            .ahead
             .iter()
-            .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
-            .collect();
-        if let Some(order) = order_by_track_proximity(
-            &snapshot.field,
-            snapshot.player_slot_id,
-            options.same_class_only,
-            snapshot.track_length_m,
-        ) {
-            let rank = order
-                .iter()
-                .enumerate()
-                .map(|(rank, index)| (*index, rank))
-                .collect::<std::collections::HashMap<_, _>>();
-            cars.sort_by_key(|car| {
-                rank.get(
-                    &snapshot
-                        .field
-                        .iter()
-                        .position(|candidate| std::ptr::eq(*car, candidate))
-                        .unwrap_or(usize::MAX),
-                )
-                .copied()
-                .unwrap_or(usize::MAX)
-            });
-        } else {
-            cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
-        }
-        let Some(player_position) = cars
-            .iter()
-            .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
-        else {
-            return;
-        };
-        let start = player_position.saturating_sub(options.cars_ahead as usize);
-        let end = (player_position + options.cars_behind as usize + 1).min(cars.len());
-        for (row, car) in cars[start..end].iter().enumerate() {
+            .take(ahead_count)
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
+        indexes.push(relative.player);
+        indexes.extend(relative.behind.iter().take(behind_count).copied());
+        draw_relative_rows(
+            hdc,
+            snapshot,
+            config,
+            area,
+            padding,
+            style,
+            options,
+            &indexes,
+            relative.player,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn draw_relative_rows(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+        options: WidgetOptions,
+        indexes: &[usize],
+        player_index: usize,
+    ) {
+        let text_color = widget_primary_color(config, style);
+        for (row, index) in indexes.iter().copied().enumerate() {
+            let car = &snapshot.field[index];
             let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
             let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
                 ">"
