@@ -847,8 +847,8 @@ mod windows_overlay {
         let Some(state) = shared_state(hwnd) else {
             return;
         };
-        let width = (lparam as u32 & 0xffff) as u32;
-        let height = ((lparam as u32 >> 16) & 0xffff) as u32;
+        let width = lparam as u32 & 0xffff;
+        let height = (lparam as u32 >> 16) & 0xffff;
         if width == 0 || height == 0 {
             return;
         }
@@ -863,7 +863,7 @@ mod windows_overlay {
         let Some(state) = shared_state(hwnd) else {
             return;
         };
-        let dpi = (wparam as u32 & 0xffff) as u32;
+        let dpi = wparam as u32 & 0xffff;
         if let Some(backend) = state.d2d.as_ref() {
             backend.set_dpi(dpi);
         }

@@ -245,7 +245,6 @@ fn default_overlay_widget_ids() -> Vec<String> {
     crate::widgets::OVERLAY_SURFACE_IDS
         .iter()
         .copied()
-        .into_iter()
         .map(str::to_string)
         .collect()
 }
@@ -2025,8 +2024,10 @@ mod tests {
 
     #[test]
     fn historical_migrations_advance_one_schema_version_at_a_time() {
-        let mut config = OverlayConfig::default();
-        config.config_version = 5;
+        let mut config = OverlayConfig {
+            config_version: 5,
+            ..OverlayConfig::default()
+        };
 
         migrate_v5_to_v6(&mut config);
 
