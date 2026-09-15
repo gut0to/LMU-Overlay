@@ -1221,13 +1221,14 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hashoverlay-settings"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "overlay-renderer",
  "serde",
  "tauri",
  "tauri-build",
  "toml 0.8.23",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1758,7 +1759,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "lmu-telemetry"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "windows-sys 0.59.0",
 ]
@@ -2138,7 +2139,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "overlay-renderer"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lmu-telemetry",
  "log",
@@ -3302,7 +3303,7 @@ dependencies = [
 
 [[package]]
 name = "telemetry-engine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "lmu-telemetry",
 ]

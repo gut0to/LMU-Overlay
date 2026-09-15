@@ -78,6 +78,9 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 
 #[tauri::command]
 fn start_overlay(app: tauri::AppHandle, processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
+    if host_is_running() {
+        return Ok(());
+    }
     let mut running = processes
         .0
         .lock()
@@ -139,18 +142,31 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 }
 
 #[tauri::command]
-fn overlay_status(processes: tauri::State<'_, OverlayProcesses>) -> Result<bool, String> {
-    let mut running = processes
-        .0
-        .lock()
-        .map_err(|_| "Overlay process state is unavailable".to_string())?;
-    running.retain_mut(|child| {
-        child
-            .try_wait()
-            .map(|status| status.is_none())
-            .unwrap_or(true)
-    });
-    Ok(!running.is_empty())
+fn overlay_status() -> Result<bool, String> {
+    Ok(host_is_running())
+}
+
+fn host_is_running() -> bool {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, HANDLE},
+            System::Threading::{OpenMutexW, MUTEX_ALL_ACCESS},
+        };
+        let name: Vec<u16> = "Local\\HashOverlay.Host"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let handle: HANDLE = OpenMutexW(MUTEX_ALL_ACCESS, 0, name.as_ptr());
+        if handle.is_null() {
+            return false;
+        }
+        CloseHandle(handle);
+        true
+    }
+
+    #[cfg(not(windows))]
+    false
 }
 
 #[tauri::command]

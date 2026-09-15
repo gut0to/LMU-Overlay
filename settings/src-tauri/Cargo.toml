@@ -1,6 +1,6 @@
 [package]
 name = "hashoverlay-settings"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/gut0to/LMU-Overlay"
@@ -13,3 +13,4 @@ overlay-renderer = { path = "../../crates/overlay-renderer" }
 serde = { version = "1", features = ["derive"] }
 tauri = { version = "2", features = [] }
 toml = "0.8"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading"] }
