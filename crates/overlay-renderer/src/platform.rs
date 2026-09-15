@@ -539,8 +539,15 @@ mod windows_overlay {
 
         match OverlayConfig::load(path.as_ref()) {
             Ok(config) => {
-                let config = config
-                    .for_overlay_layer(state.overlay_layer.as_ref().map(|layer| layer.as_str()));
+                let config = match config
+                    .for_overlay_layer(state.overlay_layer.as_ref().map(|layer| layer.as_str()))
+                {
+                    Ok(config) => config,
+                    Err(error) => {
+                        log::warn!("Could not select overlay layer: {error}");
+                        return;
+                    }
+                };
                 apply_window_config(hwnd, &config);
                 if let Some(backend) = state.d2d.as_ref() {
                     unsafe {
@@ -1915,7 +1922,14 @@ mod windows_overlay {
             .iter()
             .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
             .collect();
-        cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        let player = &snapshot.field[player_index];
+        cars.sort_by(|left, right| {
+            relative_sort_key(left, player, snapshot.track_length_m).total_cmp(&relative_sort_key(
+                right,
+                player,
+                snapshot.track_length_m,
+            ))
+        });
         let Some(player_position) = cars
             .iter()
             .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
@@ -2058,6 +2072,43 @@ mod windows_overlay {
             .zip(player.gap_to_leader_seconds)
             .map(|(other, own)| format!("{:+.3}", other - own))
             .unwrap_or_else(|| "--".to_string())
+    }
+
+    fn relative_sort_key(
+        car: &lmu_telemetry::VehicleScoringSnapshot,
+        player: &lmu_telemetry::VehicleScoringSnapshot,
+        track_length_m: Option<f64>,
+    ) -> f64 {
+        let Some(track_length_m) =
+            track_length_m.filter(|length| length.is_finite() && *length > 0.0)
+        else {
+            return f64::NEG_INFINITY;
+        };
+        let Some(car_distance) = car.lap_distance_m.filter(|distance| distance.is_finite()) else {
+            return f64::NEG_INFINITY;
+        };
+        let Some(player_distance) = player
+            .lap_distance_m
+            .filter(|distance| distance.is_finite())
+        else {
+            return f64::NEG_INFINITY;
+        };
+        let mut delta = f64::from(car.lap_number - player.lap_number) * track_length_m
+            + car_distance
+            - player_distance;
+        if car.lap_number == player.lap_number {
+            if delta > track_length_m / 2.0 {
+                delta -= track_length_m;
+            } else if delta < -track_length_m / 2.0 {
+                delta += track_length_m;
+            }
+        }
+        let ordering_span = track_length_m * 1_000.0;
+        if delta >= 0.0 {
+            ordering_span - delta
+        } else {
+            delta
+        }
     }
 
     unsafe fn draw_standings_widget(
@@ -3973,7 +4024,7 @@ mod windows_overlay {
                     ..OverlayLayerConfig::default()
                 },
             ];
-            let mut runtime = full.for_overlay_layer(Some("coach"));
+            let mut runtime = full.for_overlay_layer(Some("coach")).unwrap();
             runtime.widgets.coaching = true;
             runtime.layout.coaching.x = 320;
             runtime.extra_widgets.get_mut("fuel").unwrap().enabled = false;
@@ -4118,6 +4169,22 @@ mod windows_overlay {
             let mut lap_behind = scoring_car(12, 7, "Hypercar", false);
             lap_behind.lap_number = 11;
             assert_eq!(relative_gap(&lap_behind, &player), "-1L");
+        }
+
+        #[test]
+        fn relative_order_uses_track_proximity_instead_of_classification() {
+            let mut player = scoring_car(42, 3, "Hypercar", true);
+            player.lap_distance_m = Some(100.0);
+            let mut distant_classification = scoring_car(7, 4, "Hypercar", false);
+            distant_classification.lap_distance_m = Some(2_000.0);
+            let mut nearby_lapped = scoring_car(8, 18, "Hypercar", false);
+            nearby_lapped.lap_number = 1;
+            nearby_lapped.lap_distance_m = Some(120.0);
+
+            assert!(
+                relative_sort_key(&nearby_lapped, &player, Some(5_000.0))
+                    > relative_sort_key(&distant_classification, &player, Some(5_000.0))
+            );
         }
 
         #[test]
