@@ -2147,6 +2147,28 @@ mod tests {
     }
 
     #[test]
+    fn saves_when_revision_matches_and_returns_new_revision() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-config-revision-success-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.save(&temp_path).unwrap();
+        let revision = OverlayConfig::revision(&temp_path).unwrap();
+
+        let mut updated = config.clone();
+        updated.style.theme = "high_contrast".to_string();
+        let new_revision = updated.save_if_revision(&temp_path, revision).unwrap();
+
+        assert_ne!(new_revision, revision);
+        assert_eq!(
+            OverlayConfig::load(&temp_path).unwrap().style.theme,
+            "high_contrast"
+        );
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
     fn loading_v7_without_overlay_layers_persists_normalized_layers() {
         let temp_path = std::env::temp_dir().join(format!(
             "hashoverlay-missing-overlays-{}.toml",
