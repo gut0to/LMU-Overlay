@@ -57,7 +57,7 @@ mod windows_overlay {
         time::{Duration, Instant, SystemTime},
     };
 
-    use telemetry_engine::{RingBuffer, TelemetrySnapshot};
+    use telemetry_engine::{order_by_track_proximity, RingBuffer, TelemetrySnapshot};
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
@@ -1922,14 +1922,31 @@ mod windows_overlay {
             .iter()
             .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
             .collect();
-        let player = &snapshot.field[player_index];
-        cars.sort_by(|left, right| {
-            relative_sort_key(left, player, snapshot.track_length_m).total_cmp(&relative_sort_key(
-                right,
-                player,
-                snapshot.track_length_m,
-            ))
-        });
+        if let Some(order) = order_by_track_proximity(
+            &snapshot.field,
+            snapshot.player_slot_id,
+            options.same_class_only,
+            snapshot.track_length_m,
+        ) {
+            let rank = order
+                .iter()
+                .enumerate()
+                .map(|(rank, index)| (*index, rank))
+                .collect::<std::collections::HashMap<_, _>>();
+            cars.sort_by_key(|car| {
+                rank.get(
+                    &snapshot
+                        .field
+                        .iter()
+                        .position(|candidate| std::ptr::eq(*car, candidate))
+                        .unwrap_or(usize::MAX),
+                )
+                .copied()
+                .unwrap_or(usize::MAX)
+            });
+        } else {
+            cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        }
         let Some(player_position) = cars
             .iter()
             .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
@@ -2072,43 +2089,6 @@ mod windows_overlay {
             .zip(player.gap_to_leader_seconds)
             .map(|(other, own)| format!("{:+.3}", other - own))
             .unwrap_or_else(|| "--".to_string())
-    }
-
-    fn relative_sort_key(
-        car: &lmu_telemetry::VehicleScoringSnapshot,
-        player: &lmu_telemetry::VehicleScoringSnapshot,
-        track_length_m: Option<f64>,
-    ) -> f64 {
-        let Some(track_length_m) =
-            track_length_m.filter(|length| length.is_finite() && *length > 0.0)
-        else {
-            return f64::NEG_INFINITY;
-        };
-        let Some(car_distance) = car.lap_distance_m.filter(|distance| distance.is_finite()) else {
-            return f64::NEG_INFINITY;
-        };
-        let Some(player_distance) = player
-            .lap_distance_m
-            .filter(|distance| distance.is_finite())
-        else {
-            return f64::NEG_INFINITY;
-        };
-        let mut delta = f64::from(car.lap_number - player.lap_number) * track_length_m
-            + car_distance
-            - player_distance;
-        if car.lap_number == player.lap_number {
-            if delta > track_length_m / 2.0 {
-                delta -= track_length_m;
-            } else if delta < -track_length_m / 2.0 {
-                delta += track_length_m;
-            }
-        }
-        let ordering_span = track_length_m * 1_000.0;
-        if delta >= 0.0 {
-            ordering_span - delta
-        } else {
-            delta
-        }
     }
 
     unsafe fn draw_standings_widget(
@@ -4169,22 +4149,6 @@ mod windows_overlay {
             let mut lap_behind = scoring_car(12, 7, "Hypercar", false);
             lap_behind.lap_number = 11;
             assert_eq!(relative_gap(&lap_behind, &player), "-1L");
-        }
-
-        #[test]
-        fn relative_order_uses_track_proximity_instead_of_classification() {
-            let mut player = scoring_car(42, 3, "Hypercar", true);
-            player.lap_distance_m = Some(100.0);
-            let mut distant_classification = scoring_car(7, 4, "Hypercar", false);
-            distant_classification.lap_distance_m = Some(2_000.0);
-            let mut nearby_lapped = scoring_car(8, 18, "Hypercar", false);
-            nearby_lapped.lap_number = 1;
-            nearby_lapped.lap_distance_m = Some(120.0);
-
-            assert!(
-                relative_sort_key(&nearby_lapped, &player, Some(5_000.0))
-                    > relative_sort_key(&distant_classification, &player, Some(5_000.0))
-            );
         }
 
         #[test]
