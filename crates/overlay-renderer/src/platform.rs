@@ -249,6 +249,7 @@ mod windows_overlay {
         "engine",
         "damage",
         "weather",
+        "track_map",
     ];
 
     #[derive(Clone, Copy)]
@@ -1566,6 +1567,7 @@ mod windows_overlay {
                 ),
                 _ => "WEATHER --".to_string(),
             },
+            "track_map" => "TRACK DATA --".to_string(),
             "damage" => {
                 let wheel_damage = [
                     snapshot.wheels.front_left,
