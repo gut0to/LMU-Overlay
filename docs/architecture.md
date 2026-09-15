@@ -21,7 +21,7 @@ The rFactor 2 shared memory plugin path is considered legacy/fallback for LMU an
 
 ## Renderer
 
-The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, timing, coaching, engineering and performance widgets. Direct2D owns the frame surface and shape primitives, while DirectWrite owns text layout. The central widget catalog supplies stable IDs, categories, descriptions and data requirements to the Settings app. Window placement, layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visibility are loaded from one config file.
+The current renderer creates a lightweight Win32 transparent, always-on-top, click-through window and draws telemetry, input, timing, coaching, engineering and performance widgets. Direct2D owns the frame surface and shape primitives, while DirectWrite owns text layout. The central widget catalog supplies stable IDs, categories, descriptions and data requirements to the Settings app. Window placement, layout, scale, opacity, colors, refresh rate, performance mode, hotkeys and visibility are loaded from one config file. Settings starts one overlay host process, which owns the shared telemetry loop and avoids one process per configured layer.
 
 F9 toggles visibility by default. F10 toggles edit mode by default, which makes the overlay clickable so each unlocked widget can be selected, moved, resized and saved back to the config file.
 

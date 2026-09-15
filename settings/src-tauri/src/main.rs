@@ -19,6 +19,7 @@ struct OverlayProcesses(Mutex<Vec<Child>>);
 struct ConfigResponse {
     path: String,
     config: OverlayConfig,
+    revision: u64,
 }
 
 #[tauri::command]
@@ -30,9 +31,11 @@ fn load_config() -> Result<ConfigResponse, String> {
 }
 
 #[tauri::command]
-fn save_config(mut config: OverlayConfig) -> Result<ConfigResponse, String> {
+fn save_config(mut config: OverlayConfig, expected_revision: u64) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
-    config.save(&path).map_err(|error| error.to_string())?;
+    config
+        .save_if_revision(&path, expected_revision)
+        .map_err(|error| error.to_string())?;
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -51,10 +54,12 @@ fn export_config(mut config: OverlayConfig) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn import_config(text: String) -> Result<ConfigResponse, String> {
+fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse, String> {
     let mut config: OverlayConfig = toml::from_str(&text).map_err(|error| error.to_string())?;
     let path = overlay_config_path();
-    config.save(&path).map_err(|error| error.to_string())?;
+    config
+        .save_if_revision(&path, expected_revision)
+        .map_err(|error| error.to_string())?;
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -62,7 +67,8 @@ fn import_config(text: String) -> Result<ConfigResponse, String> {
 #[tauri::command]
 fn reset_config() -> Result<ConfigResponse, String> {
     let config: OverlayConfig = toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
-    save_config(config)
+    let revision = OverlayConfig::revision(&overlay_config_path()).unwrap_or_default();
+    save_config(config, revision)
 }
 
 #[tauri::command]
@@ -106,32 +112,11 @@ fn start_overlay(app: tauri::AppHandle, processes: tauri::State<'_, OverlayProce
             "Could not find the bundled HashOverlay executable. Reinstall HashOverlay Settings or build the overlay first.".to_string()
         })?;
 
-    let config = OverlayConfig::load(overlay_config_path())
-        .map_err(|error| format!("Could not load overlay layers: {error}"))?;
-    let layers = config
-        .overlays
-        .iter()
-        .filter(|layer| layer.enabled)
-        .map(|layer| layer.id.as_str())
-        .collect::<Vec<_>>();
-    if layers.is_empty() {
-        match Command::new(&executable).arg("--overlay").spawn() {
-            Ok(child) => running.push(child),
-            Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
-        }
-    } else {
-        for layer in layers {
-            match Command::new(&executable)
-                .args(["--overlay", "--overlay-layer", layer])
-                .spawn()
-            {
-                Ok(child) => running.push(child),
-                Err(error) => {
-                    stop_running_overlays(&mut running);
-                    return Err(format!("Could not start HashOverlay layer: {error}"));
-                }
-            }
-        }
+    OverlayConfig::load(overlay_config_path())
+        .map_err(|error| format!("Could not load overlay configuration: {error}"))?;
+    match Command::new(&executable).arg("--overlay").spawn() {
+        Ok(child) => running.push(child),
+        Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
     }
     Ok(())
 }
@@ -187,6 +172,7 @@ impl ConfigResponse {
         Self {
             path: path.display().to_string(),
             config,
+            revision: OverlayConfig::revision(&path).unwrap_or_default(),
         }
     }
 }

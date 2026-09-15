@@ -214,6 +214,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 function App() {
   const [config, setConfig] = useState<OverlayConfig | null>(null);
   const [path, setPath] = useState("");
+  const [revision, setRevision] = useState(0);
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
@@ -252,6 +253,7 @@ function App() {
       const response = await invoke<LoadResponse>("load_config");
       setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
+      setRevision(response.revision);
       setStatus("Config loaded");
     } catch (error) {
       setStatus(String(error));
@@ -264,9 +266,13 @@ function App() {
     }
     setSaving(true);
     try {
-      const response = await invoke<LoadResponse>("save_config", { config });
+      const response = await invoke<LoadResponse>("save_config", {
+        config,
+        expected_revision: revision,
+      });
       setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
+      setRevision(response.revision);
       setStatus("Saved");
       return true;
     } catch (error) {
@@ -301,9 +307,14 @@ function App() {
 
   async function importConfigText() {
     try {
-      const response = await invoke<LoadResponse>("import_config", { text: configText });
+      const response = await invoke<LoadResponse>("import_config", {
+        text: configText,
+        expected_revision: revision,
+      });
       setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
+      setRevision(response.revision);
+      setRevision(response.revision);
       setStatus("Config imported");
     } catch (error) {
       setStatus(String(error));

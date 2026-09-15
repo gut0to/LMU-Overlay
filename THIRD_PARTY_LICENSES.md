@@ -9,7 +9,8 @@ which is based on Studio 397's LMU `SharedMemoryInterface`.
 The referenced library is MIT licensed:
 
 ```text
-Copyright (c) 2024 TinyPedal
+Copyright (c) 2021 Tony Whitley
+Copyright (c) 2025 Xiang
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

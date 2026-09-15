@@ -2,7 +2,10 @@ use std::{
     collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        OnceLock,
+    },
 };
 
 #[cfg(windows)]
@@ -16,6 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use serde::{Deserialize, Serialize};
 
 const CURRENT_CONFIG_VERSION: u32 = 7;
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -79,6 +83,31 @@ impl OverlayConfig {
         }
         atomic_write(path, toml::to_string_pretty(self)?)?;
         Ok(())
+    }
+
+    pub fn revision(path: impl AsRef<Path>) -> Result<u64, ConfigError> {
+        let bytes = fs::read(path)?;
+        Ok(config_revision(&bytes))
+    }
+
+    pub fn save_if_revision(
+        &mut self,
+        path: impl AsRef<Path>,
+        expected_revision: u64,
+    ) -> Result<u64, ConfigError> {
+        let path = path.as_ref();
+        let current_revision = Self::revision(path)?;
+        if current_revision != expected_revision {
+            return Err(ConfigError::Conflict {
+                expected: expected_revision,
+                actual: current_revision,
+            });
+        }
+        self.normalize();
+        let text = toml::to_string_pretty(self)?;
+        let next_revision = config_revision(text.as_bytes());
+        atomic_write(path, text)?;
+        Ok(next_revision)
     }
 
     pub fn normalize(&mut self) {
@@ -213,34 +242,11 @@ impl Default for OverlayLayerConfig {
 }
 
 fn default_overlay_widget_ids() -> Vec<String> {
-    [
-        "telemetry",
-        "inputs",
-        "lap_timing",
-        "timing",
-        "sectors",
-        "mini_sectors",
-        "coaching",
-        "speed",
-        "rpm",
-        "lap_history",
-        "position",
-        "relative",
-        "standings",
-        "flags",
-        "fuel",
-        "tyres",
-        "brakes",
-        "electronics",
-        "energy",
-        "engine",
-        "damage",
-        "weather",
-        "performance",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+    crate::widgets::OVERLAY_SURFACE_IDS
+        .iter()
+        .copied()
+        .map(str::to_string)
+        .collect()
 }
 
 fn normalize_overlay_layers(config: &mut OverlayConfig) {
@@ -248,8 +254,10 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
         config.overlays.push(OverlayLayerConfig::default());
     }
     let mut used_ids = std::collections::BTreeSet::new();
-    let allowed: std::collections::BTreeSet<String> =
-        default_overlay_widget_ids().into_iter().collect();
+    let allowed: std::collections::BTreeSet<&str> = crate::widgets::OVERLAY_SURFACE_IDS
+        .iter()
+        .copied()
+        .collect();
     for (index, overlay) in config.overlays.iter_mut().enumerate() {
         overlay.id = overlay.id.trim().to_ascii_lowercase();
         if overlay.id.is_empty() || !used_ids.insert(overlay.id.clone()) {
@@ -263,11 +271,11 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
         overlay.window.height = overlay.window.height.clamp(140, 800);
         overlay.window.refresh_hz = overlay.window.refresh_hz.clamp(15, 144);
         overlay.window.sample_ms = overlay.window.sample_ms.clamp(5, 250);
-        overlay.widgets.retain(|id| allowed.contains(id));
+        overlay.widgets.retain(|id| allowed.contains(id.as_str()));
         overlay.widgets.sort();
         overlay.widgets.dedup();
         overlay.layout_overrides.retain(|id, layout| {
-            allowed.contains(id) && {
+            allowed.contains(id.as_str()) && {
                 layout.normalize();
                 true
             }
@@ -393,8 +401,19 @@ fn temp_config_path(path: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .map(|value| format!("{value}.tmp"))
         .unwrap_or_else(|| "tmp".to_string());
-    temp_path.set_extension(extension);
+    temp_path.set_extension(format!(
+        "{extension}.{}.{}",
+        std::process::id(),
+        TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     temp_path
+}
+
+fn config_revision(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 #[cfg(windows)]
@@ -811,6 +830,7 @@ pub struct WidgetOptions {
     pub show_wear: bool,
     pub show_brake_temperature: bool,
     pub show_brake_pressure: bool,
+    pub show_bias: bool,
     pub shift_start_percent: u8,
     pub shift_warning_percent: u8,
     pub limiter_percent: u8,
@@ -839,6 +859,7 @@ impl Default for WidgetOptions {
             show_wear: true,
             show_brake_temperature: true,
             show_brake_pressure: true,
+            show_bias: true,
             shift_start_percent: 70,
             shift_warning_percent: 85,
             limiter_percent: 95,
@@ -1497,6 +1518,7 @@ pub enum ConfigError {
     Io(io::Error),
     Toml(toml::de::Error),
     TomlSer(toml::ser::Error),
+    Conflict { expected: u64, actual: u64 },
     UnsupportedVersion { found: u32, supported: u32 },
     UnknownOverlayLayer(String),
 }
@@ -1525,6 +1547,10 @@ impl std::fmt::Display for ConfigError {
             Self::Io(error) => write!(f, "could not read overlay config: {error}"),
             Self::Toml(error) => write!(f, "overlay config has invalid TOML: {error}"),
             Self::TomlSer(error) => write!(f, "could not write overlay config: {error}"),
+            Self::Conflict { expected, actual } => write!(
+                f,
+                "overlay config changed while editing (expected revision {expected}, found {actual})"
+            ),
             Self::UnsupportedVersion { found, supported } => write!(
                 f,
                 "overlay config version {found} is newer than supported version {supported}"
@@ -1997,6 +2023,20 @@ mod tests {
     }
 
     #[test]
+    fn historical_migrations_advance_one_schema_version_at_a_time() {
+        let mut config = OverlayConfig {
+            config_version: 5,
+            ..OverlayConfig::default()
+        };
+
+        migrate_v5_to_v6(&mut config);
+
+        assert_eq!(config.config_version, 6);
+        migrate_v6_to_v7(&mut config);
+        assert_eq!(config.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
     fn fills_missing_widget_instances_without_preserving_unknown_ids() {
         let mut config = OverlayConfig::default();
         config.extra_widgets.insert(
@@ -2086,6 +2126,46 @@ mod tests {
             })
         ));
         assert_eq!(fs::read_to_string(&temp_path).unwrap(), original);
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn rejects_stale_config_revision() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-config-revision-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.save(&temp_path).unwrap();
+        let revision = OverlayConfig::revision(&temp_path).unwrap();
+        fs::write(&temp_path, "config_version = 7\n").unwrap();
+
+        assert!(matches!(
+            config.save_if_revision(&temp_path, revision),
+            Err(ConfigError::Conflict { .. })
+        ));
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn saves_when_revision_matches_and_returns_new_revision() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-config-revision-success-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.save(&temp_path).unwrap();
+        let revision = OverlayConfig::revision(&temp_path).unwrap();
+
+        let mut updated = config.clone();
+        updated.style.theme = "high_contrast".to_string();
+        let new_revision = updated.save_if_revision(&temp_path, revision).unwrap();
+
+        assert_ne!(new_revision, revision);
+        assert_eq!(
+            OverlayConfig::load(&temp_path).unwrap().style.theme,
+            "high_contrast"
+        );
         let _ = fs::remove_file(&temp_path);
     }
 

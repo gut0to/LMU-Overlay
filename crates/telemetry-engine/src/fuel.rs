@@ -192,6 +192,47 @@ mod tests {
         assert_eq!(engine.update(&sample).last_lap_used, None);
     }
 
+    #[test]
+    fn garage_and_refuel_noise_do_not_contaminate_valid_history() {
+        let mut engine = FuelEngine::default();
+        let mut garage_sample = sample(1, 30.0);
+        engine.update(&garage_sample);
+        garage_sample.metadata.in_garage = true;
+        garage_sample.vehicle.fuel_liters = Some(29.0);
+        engine.update(&garage_sample);
+        garage_sample.lap_number = 2;
+        garage_sample.metadata.in_garage = false;
+        garage_sample.vehicle.fuel_liters = Some(28.0);
+        assert_eq!(engine.update(&garage_sample).last_lap_used, None);
+
+        let mut refuel_sample = sample(1, 30.0);
+        let mut engine = FuelEngine::default();
+        engine.update(&refuel_sample);
+        refuel_sample.vehicle.fuel_liters = Some(30.2);
+        engine.update(&refuel_sample);
+        refuel_sample.lap_number = 2;
+        refuel_sample.vehicle.fuel_liters = Some(29.0);
+        assert_eq!(engine.update(&refuel_sample).last_lap_used, Some(1.0));
+    }
+
+    #[test]
+    fn session_marker_changes_reset_previous_average() {
+        let mut engine = FuelEngine::default();
+        let mut sample = sample(1, 30.0);
+        engine.update(&sample);
+        sample.lap_number = 2;
+        sample.vehicle.fuel_liters = Some(27.0);
+        engine.update(&sample);
+        sample.lap_number = 3;
+        sample.vehicle.fuel_liters = Some(24.0);
+        assert_eq!(engine.update(&sample).average_lap_used, Some(3.0));
+
+        sample.metadata.player_slot_id = 99;
+        sample.lap_number = 1;
+        sample.vehicle.fuel_liters = Some(50.0);
+        assert_eq!(engine.update(&sample).average_lap_used, None);
+    }
+
     fn sample(lap: i32, fuel: f64) -> TelemetrySample {
         TelemetrySample {
             timestamp_seconds: 0.0,

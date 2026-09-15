@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 #[cfg(windows)]
@@ -20,6 +21,7 @@ const MAGIC_V2: &[u8; 8] = b"HOLAP002";
 const SUPPORTED_MAGIC: [&[u8; 8]; 2] = [MAGIC, MAGIC_V2];
 const POINT_SIZE: usize = 52;
 const MAX_STORED_POINTS: usize = 2_001;
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceLapKey {
@@ -251,7 +253,11 @@ fn temp_path(path: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .map(|value| format!("{value}.tmp"))
         .unwrap_or_else(|| "tmp".to_string());
-    temp_path.set_extension(extension);
+    temp_path.set_extension(format!(
+        "{extension}.{}.{}",
+        std::process::id(),
+        TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     temp_path
 }
 

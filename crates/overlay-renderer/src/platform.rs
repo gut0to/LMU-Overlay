@@ -57,7 +57,7 @@ mod windows_overlay {
         time::{Duration, Instant, SystemTime},
     };
 
-    use telemetry_engine::{RingBuffer, TelemetrySnapshot};
+    use telemetry_engine::{order_by_track_proximity, RingBuffer, TelemetrySnapshot};
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
@@ -78,10 +78,10 @@ mod windows_overlay {
                 RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
                 HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_HOTKEY,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WNDCLASSW,
-                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-                WS_EX_TRANSPARENT, WS_POPUP,
+                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+                WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
+                WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -755,6 +755,14 @@ mod windows_overlay {
                 paint(hwnd);
                 0
             }
+            WM_SIZE => {
+                resize_d2d_target(hwnd, lparam);
+                0
+            }
+            WM_DPICHANGED => {
+                update_d2d_dpi(hwnd, wparam);
+                0
+            }
             WM_ERASEBKGND => 1,
             WM_HOTKEY => {
                 handle_hotkey(hwnd, wparam as i32);
@@ -832,6 +840,32 @@ mod windows_overlay {
                 save_runtime_config(state);
             }
             _ => {}
+        }
+    }
+
+    unsafe fn resize_d2d_target(hwnd: HWND, lparam: LPARAM) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+        let width = lparam as u32 & 0xffff;
+        let height = (lparam as u32 >> 16) & 0xffff;
+        if width == 0 || height == 0 {
+            return;
+        }
+        if let Some(backend) = state.d2d.as_ref() {
+            if let Err(error) = backend.resize(width, height) {
+                log::warn!("Could not resize Direct2D render target: {error}");
+            }
+        }
+    }
+
+    unsafe fn update_d2d_dpi(hwnd: HWND, wparam: WPARAM) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+        let dpi = wparam as u32 & 0xffff;
+        if let Some(backend) = state.d2d.as_ref() {
+            backend.set_dpi(dpi);
         }
     }
 
@@ -1437,16 +1471,26 @@ mod windows_overlay {
                 ],
                 pressure_unit_label(config),
             ),
-            "brakes" => wheel_summary(
-                "BRAKES",
-                [
-                    display_temperature_value(snapshot.wheels.front_left.brake_temp_c, config),
-                    display_temperature_value(snapshot.wheels.front_right.brake_temp_c, config),
-                    display_temperature_value(snapshot.wheels.rear_left.brake_temp_c, config),
-                    display_temperature_value(snapshot.wheels.rear_right.brake_temp_c, config),
-                ],
-                temperature_unit_label(config),
-            ),
+            "brakes" => {
+                let summary = wheel_summary(
+                    "BRAKES",
+                    [
+                        display_temperature_value(snapshot.wheels.front_left.brake_temp_c, config),
+                        display_temperature_value(snapshot.wheels.front_right.brake_temp_c, config),
+                        display_temperature_value(snapshot.wheels.rear_left.brake_temp_c, config),
+                        display_temperature_value(snapshot.wheels.rear_right.brake_temp_c, config),
+                    ],
+                    temperature_unit_label(config),
+                );
+                if options.show_bias {
+                    format!(
+                        "{summary}  {}",
+                        brake_bias_summary(snapshot.vehicle.brake_bias_front_percent)
+                    )
+                } else {
+                    summary
+                }
+            }
             "electronics" => electronics_summary(&snapshot),
             "energy" => match (
                 snapshot
@@ -1922,14 +1966,31 @@ mod windows_overlay {
             .iter()
             .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
             .collect();
-        let player = &snapshot.field[player_index];
-        cars.sort_by(|left, right| {
-            relative_sort_key(left, player, snapshot.track_length_m).total_cmp(&relative_sort_key(
-                right,
-                player,
-                snapshot.track_length_m,
-            ))
-        });
+        if let Some(order) = order_by_track_proximity(
+            &snapshot.field,
+            snapshot.player_slot_id,
+            options.same_class_only,
+            snapshot.track_length_m,
+        ) {
+            let rank = order
+                .iter()
+                .enumerate()
+                .map(|(rank, index)| (*index, rank))
+                .collect::<std::collections::HashMap<_, _>>();
+            cars.sort_by_key(|car| {
+                rank.get(
+                    &snapshot
+                        .field
+                        .iter()
+                        .position(|candidate| std::ptr::eq(*car, candidate))
+                        .unwrap_or(usize::MAX),
+                )
+                .copied()
+                .unwrap_or(usize::MAX)
+            });
+        } else {
+            cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
+        }
         let Some(player_position) = cars
             .iter()
             .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
@@ -1960,7 +2021,7 @@ mod windows_overlay {
             } else if car.is_player || car.slot_id == snapshot.player_slot_id {
                 "0.000".to_string()
             } else {
-                relative_gap(car, &snapshot.field[player_index])
+                format_relative_gap(car, &snapshot.field[player_index])
             };
             draw_text(
                 hdc,
@@ -2056,7 +2117,9 @@ mod windows_overlay {
         }
     }
 
-    fn relative_gap(
+    /// Formats a physical-relative row using official same-lap timing when
+    /// available, and an explicit lap delta for traffic on another lap.
+    fn format_relative_gap(
         car: &lmu_telemetry::VehicleScoringSnapshot,
         player: &lmu_telemetry::VehicleScoringSnapshot,
     ) -> String {
@@ -2072,43 +2135,6 @@ mod windows_overlay {
             .zip(player.gap_to_leader_seconds)
             .map(|(other, own)| format!("{:+.3}", other - own))
             .unwrap_or_else(|| "--".to_string())
-    }
-
-    fn relative_sort_key(
-        car: &lmu_telemetry::VehicleScoringSnapshot,
-        player: &lmu_telemetry::VehicleScoringSnapshot,
-        track_length_m: Option<f64>,
-    ) -> f64 {
-        let Some(track_length_m) =
-            track_length_m.filter(|length| length.is_finite() && *length > 0.0)
-        else {
-            return f64::NEG_INFINITY;
-        };
-        let Some(car_distance) = car.lap_distance_m.filter(|distance| distance.is_finite()) else {
-            return f64::NEG_INFINITY;
-        };
-        let Some(player_distance) = player
-            .lap_distance_m
-            .filter(|distance| distance.is_finite())
-        else {
-            return f64::NEG_INFINITY;
-        };
-        let mut delta = f64::from(car.lap_number - player.lap_number) * track_length_m
-            + car_distance
-            - player_distance;
-        if car.lap_number == player.lap_number {
-            if delta > track_length_m / 2.0 {
-                delta -= track_length_m;
-            } else if delta < -track_length_m / 2.0 {
-                delta += track_length_m;
-            }
-        }
-        let ordering_span = track_length_m * 1_000.0;
-        if delta >= 0.0 {
-            ordering_span - delta
-        } else {
-            delta
-        }
     }
 
     unsafe fn draw_standings_widget(
@@ -2640,6 +2666,13 @@ mod windows_overlay {
             values[1].unwrap_or_default(),
             values[2].unwrap_or_default(),
             values[3].unwrap_or_default(),
+        )
+    }
+
+    fn brake_bias_summary(value: Option<f64>) -> String {
+        value.filter(|value| value.is_finite()).map_or_else(
+            || "BIAS --".to_string(),
+            |value| format!("BIAS {value:.1}% F"),
         )
     }
 
@@ -4155,36 +4188,20 @@ mod windows_overlay {
             let mut ahead = scoring_car(7, 4, "Hypercar", false);
             ahead.lap_number = 12;
             ahead.gap_to_leader_seconds = Some(8.25);
-            assert_eq!(relative_gap(&ahead, &player), "-1.750");
+            assert_eq!(format_relative_gap(&ahead, &player), "-1.750");
 
             let mut behind = scoring_car(9, 6, "Hypercar", false);
             behind.lap_number = 12;
             behind.gap_to_leader_seconds = Some(10.75);
-            assert_eq!(relative_gap(&behind, &player), "+0.750");
+            assert_eq!(format_relative_gap(&behind, &player), "+0.750");
 
             let mut lap_ahead = scoring_car(11, 3, "Hypercar", false);
             lap_ahead.lap_number = 13;
-            assert_eq!(relative_gap(&lap_ahead, &player), "+1L");
+            assert_eq!(format_relative_gap(&lap_ahead, &player), "+1L");
 
             let mut lap_behind = scoring_car(12, 7, "Hypercar", false);
             lap_behind.lap_number = 11;
-            assert_eq!(relative_gap(&lap_behind, &player), "-1L");
-        }
-
-        #[test]
-        fn relative_order_uses_track_proximity_instead_of_classification() {
-            let mut player = scoring_car(42, 3, "Hypercar", true);
-            player.lap_distance_m = Some(100.0);
-            let mut distant_classification = scoring_car(7, 4, "Hypercar", false);
-            distant_classification.lap_distance_m = Some(2_000.0);
-            let mut nearby_lapped = scoring_car(8, 18, "Hypercar", false);
-            nearby_lapped.lap_number = 1;
-            nearby_lapped.lap_distance_m = Some(120.0);
-
-            assert!(
-                relative_sort_key(&nearby_lapped, &player, Some(5_000.0))
-                    > relative_sort_key(&distant_classification, &player, Some(5_000.0))
-            );
+            assert_eq!(format_relative_gap(&lap_behind, &player), "-1L");
         }
 
         #[test]
@@ -4211,6 +4228,12 @@ mod windows_overlay {
                 "TC ACTIVE  ABS READY  LIMITER"
             );
             assert!(electronics_intervention_active(&sample));
+        }
+
+        #[test]
+        fn formats_official_brake_bias_without_faking_unavailable_data() {
+            assert_eq!(brake_bias_summary(Some(54.26)), "BIAS 54.3% F");
+            assert_eq!(brake_bias_summary(None), "BIAS --");
         }
 
         fn scoring_car(

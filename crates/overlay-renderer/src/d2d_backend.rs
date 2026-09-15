@@ -25,6 +25,7 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_MEASURING_MODE_NATURAL,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows_numerics::Vector2;
 
 pub struct D2dBackend {
@@ -74,6 +75,7 @@ impl D2dBackend {
     pub unsafe fn new(hwnd: HWND, width: u32, height: u32) -> Result<Self> {
         let factory: ID2D1Factory = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
         let text_factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+        let dpi = GetDpiForWindow(hwnd).max(1) as f32;
         let properties = D2D1_RENDER_TARGET_PROPERTIES {
             r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
             pixelFormat: D2D1_PIXEL_FORMAT {
@@ -81,8 +83,8 @@ impl D2dBackend {
                 alphaMode:
                     windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED,
             },
-            dpiX: 96.0,
-            dpiY: 96.0,
+            dpiX: dpi,
+            dpiY: dpi,
             usage: D2D1_RENDER_TARGET_USAGE_NONE,
             minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
         };
@@ -236,7 +238,15 @@ impl D2dBackend {
                 );
             }
         }
-        self.target.EndDraw(None, None)
+        let result = self.target.EndDraw(None, None);
+        if result.is_err() {
+            // Brushes and text formats are tied to the render target's device
+            // resources. Drop the caches after a failed frame so the next
+            // recovery attempt cannot reuse stale COM objects.
+            self.brushes.borrow_mut().clear();
+            self.text_formats.borrow_mut().clear();
+        }
+        result
     }
 
     unsafe fn brush(&self, color: u32) -> Result<ID2D1SolidColorBrush> {
@@ -251,6 +261,11 @@ impl D2dBackend {
     pub unsafe fn resize(&self, width: u32, height: u32) -> Result<()> {
         let size = D2D_SIZE_U { width, height };
         self.target.Resize(&size)
+    }
+
+    pub unsafe fn set_dpi(&self, dpi: u32) {
+        let dpi = dpi.max(1) as f32;
+        self.target.SetDpi(dpi, dpi);
     }
 
     #[allow(dead_code)]
