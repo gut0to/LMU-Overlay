@@ -76,6 +76,7 @@ impl OverlayConfig {
     }
 
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
+        self.validate_for_save()?;
         self.normalize();
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
@@ -95,6 +96,7 @@ impl OverlayConfig {
         path: impl AsRef<Path>,
         expected_revision: u64,
     ) -> Result<u64, ConfigError> {
+        self.validate_for_save()?;
         let path = path.as_ref();
         let current_revision = Self::revision(path)?;
         if current_revision != expected_revision {
@@ -108,6 +110,29 @@ impl OverlayConfig {
         let next_revision = config_revision(text.as_bytes());
         atomic_write(path, text)?;
         Ok(next_revision)
+    }
+
+    /// Validate a candidate before any persistence operation can replace the
+    /// user's working configuration. Normalization is applied to a clone so
+    /// recoverable legacy/range issues remain repairable while future schemas
+    /// are rejected without touching the destination file.
+    pub fn validate_for_save(&self) -> Result<(), ConfigError> {
+        if self.config_version > CURRENT_CONFIG_VERSION {
+            return Err(ConfigError::UnsupportedVersion {
+                found: self.config_version,
+                supported: CURRENT_CONFIG_VERSION,
+            });
+        }
+        let mut normalized = self.clone();
+        normalized.normalize();
+        if normalized.config_version > CURRENT_CONFIG_VERSION {
+            return Err(ConfigError::UnsupportedVersion {
+                found: normalized.config_version,
+                supported: CURRENT_CONFIG_VERSION,
+            });
+        }
+        toml::to_string_pretty(&normalized)?;
+        Ok(())
     }
 
     pub fn normalize(&mut self) {
@@ -2126,6 +2151,34 @@ mod tests {
             })
         ));
         assert_eq!(fs::read_to_string(&temp_path).unwrap(), original);
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn rejects_future_config_before_save_or_revision_check() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-future-save-{}.toml",
+            std::process::id()
+        ));
+        let mut current = OverlayConfig::default();
+        current.save(&temp_path).unwrap();
+        let original = fs::read_to_string(&temp_path).unwrap();
+        let revision = OverlayConfig::revision(&temp_path).unwrap();
+        let mut future = OverlayConfig {
+            config_version: 999,
+            ..OverlayConfig::default()
+        };
+
+        assert!(matches!(
+            future.save(&temp_path),
+            Err(ConfigError::UnsupportedVersion { found: 999, .. })
+        ));
+        assert!(matches!(
+            future.save_if_revision(&temp_path, revision),
+            Err(ConfigError::UnsupportedVersion { found: 999, .. })
+        ));
+        assert_eq!(fs::read_to_string(&temp_path).unwrap(), original);
+        assert_eq!(OverlayConfig::revision(&temp_path).unwrap(), revision);
         let _ = fs::remove_file(&temp_path);
     }
 
