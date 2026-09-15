@@ -20,6 +20,7 @@ use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
 use storage::{ReferenceLapKey, ReferenceLapStore};
 use telemetry_engine::{FuelEngine, TelemetrySnapshot};
 
+mod host_control;
 mod host_instance;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +183,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
 
     let shared_latest = Arc::new(Mutex::new(None));
     let host_running = Arc::new(AtomicBool::new(true));
+    let host_control = host_control::HostControl::start(host_running.clone())?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
     let (lap_writer, lap_receiver) = mpsc::channel();
@@ -298,6 +300,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     if let Err(error) = lap_writer_handle.join() {
         warn!("Could not join personal best storage worker: {error:?}");
     }
+    host_control.shutdown();
 
     Ok(())
 }
