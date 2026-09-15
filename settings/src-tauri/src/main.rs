@@ -106,32 +106,11 @@ fn start_overlay(app: tauri::AppHandle, processes: tauri::State<'_, OverlayProce
             "Could not find the bundled HashOverlay executable. Reinstall HashOverlay Settings or build the overlay first.".to_string()
         })?;
 
-    let config = OverlayConfig::load(overlay_config_path())
-        .map_err(|error| format!("Could not load overlay layers: {error}"))?;
-    let layers = config
-        .overlays
-        .iter()
-        .filter(|layer| layer.enabled)
-        .map(|layer| layer.id.as_str())
-        .collect::<Vec<_>>();
-    if layers.is_empty() {
-        match Command::new(&executable).arg("--overlay").spawn() {
-            Ok(child) => running.push(child),
-            Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
-        }
-    } else {
-        for layer in layers {
-            match Command::new(&executable)
-                .args(["--overlay", "--overlay-layer", layer])
-                .spawn()
-            {
-                Ok(child) => running.push(child),
-                Err(error) => {
-                    stop_running_overlays(&mut running);
-                    return Err(format!("Could not start HashOverlay layer: {error}"));
-                }
-            }
-        }
+    OverlayConfig::load(overlay_config_path())
+        .map_err(|error| format!("Could not load overlay configuration: {error}"))?;
+    match Command::new(&executable).arg("--overlay").spawn() {
+        Ok(child) => running.push(child),
+        Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
     }
     Ok(())
 }
