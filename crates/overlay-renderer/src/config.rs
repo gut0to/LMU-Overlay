@@ -2,7 +2,10 @@ use std::{
     collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
-    sync::OnceLock,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        OnceLock,
+    },
 };
 
 #[cfg(windows)]
@@ -16,6 +19,7 @@ use windows_sys::Win32::Storage::FileSystem::{
 use serde::{Deserialize, Serialize};
 
 const CURRENT_CONFIG_VERSION: u32 = 7;
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -79,6 +83,31 @@ impl OverlayConfig {
         }
         atomic_write(path, toml::to_string_pretty(self)?)?;
         Ok(())
+    }
+
+    pub fn revision(path: impl AsRef<Path>) -> Result<u64, ConfigError> {
+        let bytes = fs::read(path)?;
+        Ok(config_revision(&bytes))
+    }
+
+    pub fn save_if_revision(
+        &mut self,
+        path: impl AsRef<Path>,
+        expected_revision: u64,
+    ) -> Result<u64, ConfigError> {
+        let path = path.as_ref();
+        let current_revision = Self::revision(path)?;
+        if current_revision != expected_revision {
+            return Err(ConfigError::Conflict {
+                expected: expected_revision,
+                actual: current_revision,
+            });
+        }
+        self.normalize();
+        let text = toml::to_string_pretty(self)?;
+        let next_revision = config_revision(text.as_bytes());
+        atomic_write(path, text)?;
+        Ok(next_revision)
     }
 
     pub fn normalize(&mut self) {
@@ -393,8 +422,19 @@ fn temp_config_path(path: &Path) -> PathBuf {
         .and_then(|value| value.to_str())
         .map(|value| format!("{value}.tmp"))
         .unwrap_or_else(|| "tmp".to_string());
-    temp_path.set_extension(extension);
+    temp_path.set_extension(format!(
+        "{extension}.{}.{}",
+        std::process::id(),
+        TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     temp_path
+}
+
+fn config_revision(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 #[cfg(windows)]
@@ -1499,6 +1539,7 @@ pub enum ConfigError {
     Io(io::Error),
     Toml(toml::de::Error),
     TomlSer(toml::ser::Error),
+    Conflict { expected: u64, actual: u64 },
     UnsupportedVersion { found: u32, supported: u32 },
     UnknownOverlayLayer(String),
 }
@@ -1527,6 +1568,10 @@ impl std::fmt::Display for ConfigError {
             Self::Io(error) => write!(f, "could not read overlay config: {error}"),
             Self::Toml(error) => write!(f, "overlay config has invalid TOML: {error}"),
             Self::TomlSer(error) => write!(f, "could not write overlay config: {error}"),
+            Self::Conflict { expected, actual } => write!(
+                f,
+                "overlay config changed while editing (expected revision {expected}, found {actual})"
+            ),
             Self::UnsupportedVersion { found, supported } => write!(
                 f,
                 "overlay config version {found} is newer than supported version {supported}"
@@ -2088,6 +2133,24 @@ mod tests {
             })
         ));
         assert_eq!(fs::read_to_string(&temp_path).unwrap(), original);
+        let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn rejects_stale_config_revision() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-config-revision-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.save(&temp_path).unwrap();
+        let revision = OverlayConfig::revision(&temp_path).unwrap();
+        fs::write(&temp_path, "config_version = 7\n").unwrap();
+
+        assert!(matches!(
+            config.save_if_revision(&temp_path, revision),
+            Err(ConfigError::Conflict { .. })
+        ));
         let _ = fs::remove_file(&temp_path);
     }
 
