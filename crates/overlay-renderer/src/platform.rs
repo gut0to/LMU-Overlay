@@ -43,7 +43,6 @@ impl From<config::ConfigError> for OverlayError {
 mod windows_overlay {
     use std::{
         cell::{Cell, RefCell},
-        collections::BTreeMap,
         ffi::c_void,
         fs,
         mem::zeroed,
@@ -880,14 +879,14 @@ mod windows_overlay {
                     };
                 }
                 InvalidateRect(hwnd, ptr::null(), 0);
-                save_runtime_config(state);
+                save_runtime_config(state, None);
             }
             HOTKEY_CYCLE_PRESET => {
                 if let Ok(mut config) = state.config.lock() {
                     cycle_runtime_preset(&mut config);
                 }
                 InvalidateRect(hwnd, ptr::null(), 0);
-                save_runtime_config(state);
+                save_runtime_config(state, None);
             }
             _ => {}
         }
@@ -1012,105 +1011,83 @@ mod windows_overlay {
         let Some(state) = shared_state(hwnd) else {
             return;
         };
-        let had_drag = state
-            .drag
-            .lock()
-            .ok()
-            .and_then(|mut value| value.take())
-            .is_some();
-        if had_drag {
-            save_runtime_config(state);
+        let drag = state.drag.lock().ok().and_then(|mut value| value.take());
+        if let Some(drag) = drag {
+            save_runtime_config(state, Some(drag.widget));
             InvalidateRect(hwnd, ptr::null(), 0);
         }
     }
 
-    fn save_runtime_config(state: &SharedState) {
+    fn save_runtime_config(state: &SharedState, widget: Option<WidgetId>) {
         let Some(path) = &state.config_path else {
             return;
         };
-        let Ok(config) = state.config.lock() else {
+        let Ok(runtime_config) = state.config.lock().map(|config| config.clone()) else {
             return;
         };
-        let runtime_config = config.clone();
-        let result = if let Some(layer_id) = state.overlay_layer.as_ref() {
-            OverlayConfig::load(path.as_ref()).and_then(|mut full_config| {
-                merge_runtime_layer(&mut full_config, layer_id, &runtime_config);
-                full_config.save(path.as_ref())
-            })
-        } else {
-            let mut config = runtime_config;
-            config.save(path.as_ref())
-        };
+
+        let mut result = Ok(());
+        for attempt in 0..3 {
+            let mut latest = match OverlayConfig::load(path.as_ref()) {
+                Ok(config) => config,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            let revision = match OverlayConfig::revision(path.as_ref()) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            apply_runtime_layout_mutation(
+                &mut latest,
+                state.overlay_layer.as_ref().map(|layer| layer.as_str()),
+                &runtime_config,
+                widget,
+            );
+            match latest.save_if_revision(path.as_ref(), revision) {
+                Ok(_) => {
+                    result = Ok(());
+                    break;
+                }
+                Err(crate::config::ConfigError::Conflict { .. }) if attempt < 2 => continue,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
         if let Err(error) = result {
             log::warn!("Could not save overlay layout: {error}");
         }
     }
 
-    fn merge_runtime_layer(
-        full_config: &mut OverlayConfig,
-        layer_id: &str,
+    fn apply_runtime_layout_mutation(
+        latest: &mut OverlayConfig,
+        layer_id: Option<&str>,
         runtime_config: &OverlayConfig,
+        widget: Option<WidgetId>,
     ) {
-        let layout_overrides = layout_overrides_from_runtime(runtime_config);
-        let widgets = enabled_widget_ids(runtime_config);
-        if let Some(layer) = full_config
-            .overlays
-            .iter_mut()
-            .find(|layer| layer.id == layer_id)
-        {
-            layer.window = runtime_config.window.clone();
-            layer.widgets = widgets;
-            layer.layout_overrides = layout_overrides;
-        }
-        full_config.style = runtime_config.style.clone();
-        full_config.units = runtime_config.units.clone();
-        full_config.coaching = runtime_config.coaching.clone();
-        full_config.timing = runtime_config.timing.clone();
-        full_config.performance = runtime_config.performance.clone();
-        enable_globals_for_overlay_membership(full_config);
-    }
-
-    fn enable_globals_for_overlay_membership(config: &mut OverlayConfig) {
-        for id in config
-            .overlays
-            .iter()
-            .flat_map(|layer| layer.widgets.iter().map(String::as_str))
-        {
-            match id {
-                "telemetry" => config.widgets.speed_gear_rpm = true,
-                "inputs" => config.widgets.pedals = true,
-                "lap_timing" => config.widgets.lap_timing = true,
-                "timing" => config.widgets.delta_timing = true,
-                "sectors" => config.widgets.sectors = true,
-                "mini_sectors" => config.widgets.mini_sector_widget = true,
-                "coaching" => config.widgets.coaching = true,
-                "performance" => config.widgets.performance_monitor = true,
-                _ => {
-                    if let Some(widget) = config.extra_widgets.get_mut(id) {
-                        widget.enabled = true;
-                    }
+        let Some(widget) = widget else {
+            return;
+        };
+        let layout = widget_layout(runtime_config, widget).clone();
+        if let Some(layer_id) = layer_id {
+            if let Some(layer) = latest
+                .overlays
+                .iter_mut()
+                .find(|layer| layer.id == layer_id)
+            {
+                if let Some(widget_id) = widget_overlay_id(widget) {
+                    layer.layout_overrides.insert(widget_id.to_string(), layout);
                 }
             }
+        } else {
+            *widget_layout_mut(latest, widget) = layout;
         }
-    }
-
-    fn layout_overrides_from_runtime(config: &OverlayConfig) -> BTreeMap<String, WidgetLayout> {
-        widget_areas(config)
-            .into_iter()
-            .filter_map(|(widget, _)| {
-                Some((
-                    widget_overlay_id(widget)?.to_string(),
-                    widget_layout(config, widget).clone(),
-                ))
-            })
-            .collect()
-    }
-
-    fn enabled_widget_ids(config: &OverlayConfig) -> Vec<String> {
-        widget_areas(config)
-            .into_iter()
-            .filter_map(|(widget, _)| widget_overlay_id(widget).map(str::to_string))
-            .collect()
     }
 
     fn cycle_runtime_preset(config: &mut OverlayConfig) {
@@ -4112,7 +4089,12 @@ mod windows_overlay {
             runtime.layout.coaching.x = 320;
             runtime.extra_widgets.get_mut("fuel").unwrap().enabled = false;
 
-            merge_runtime_layer(&mut full, "coach", &runtime);
+            apply_runtime_layout_mutation(
+                &mut full,
+                Some("coach"),
+                &runtime,
+                Some(WidgetId::Coaching),
+            );
 
             let main = full
                 .overlays
@@ -4125,9 +4107,29 @@ mod windows_overlay {
                 .find(|layer| layer.id == "coach")
                 .unwrap();
             assert!(main.widgets.contains(&"fuel".to_string()));
-            assert!(full.extra_widgets["fuel"].enabled);
-            assert_eq!(coach.widgets, vec!["coaching".to_string()]);
+            assert!(!full.extra_widgets["fuel"].enabled);
             assert_eq!(coach.layout_overrides["coaching"].x, 320);
+        }
+
+        #[test]
+        fn narrow_runtime_layout_mutation_preserves_newer_global_settings() {
+            let mut latest = OverlayConfig::default();
+            latest.normalize();
+            latest.style.theme = "settings-newer".to_string();
+            latest.overlays[0].id = "coach".to_string();
+            let mut runtime = latest.for_overlay_layer(Some("coach")).unwrap();
+            runtime.style.theme = "stale-runtime".to_string();
+            runtime.layout.coaching.x = 444;
+
+            apply_runtime_layout_mutation(
+                &mut latest,
+                Some("coach"),
+                &runtime,
+                Some(WidgetId::Coaching),
+            );
+
+            assert_eq!(latest.style.theme, "settings-newer");
+            assert_eq!(latest.overlays[0].layout_overrides["coaching"].x, 444);
         }
 
         #[test]
