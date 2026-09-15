@@ -238,7 +238,15 @@ impl D2dBackend {
                 );
             }
         }
-        self.target.EndDraw(None, None)
+        let result = self.target.EndDraw(None, None);
+        if result.is_err() {
+            // Brushes and text formats are tied to the render target's device
+            // resources. Drop the caches after a failed frame so the next
+            // recovery attempt cannot reuse stale COM objects.
+            self.brushes.borrow_mut().clear();
+            self.text_formats.borrow_mut().clear();
+        }
+        result
     }
 
     unsafe fn brush(&self, color: u32) -> Result<ID2D1SolidColorBrush> {
