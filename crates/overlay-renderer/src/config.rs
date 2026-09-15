@@ -2044,6 +2044,18 @@ mod tests {
     }
 
     #[test]
+    fn historical_migrations_advance_one_schema_version_at_a_time() {
+        let mut config = OverlayConfig::default();
+        config.config_version = 5;
+
+        migrate_v5_to_v6(&mut config);
+
+        assert_eq!(config.config_version, 6);
+        migrate_v6_to_v7(&mut config);
+        assert_eq!(config.config_version, CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
     fn fills_missing_widget_instances_without_preserving_unknown_ids() {
         let mut config = OverlayConfig::default();
         config.extra_widgets.insert(
