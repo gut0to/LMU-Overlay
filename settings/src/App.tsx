@@ -369,17 +369,17 @@ function App() {
       if (!current) {
         return current;
       }
-      const arranged = arrangeExtraWidgets(current.extra_widgets);
+      const arranged = arrangeProfileLayout(currentProfile(current));
       return {
         ...current,
         window: { ...defaultConfigState.window, height: arranged.height },
-        layout: structuredClone(defaultConfigState.layout),
+        layout: arranged.layout,
         extra_widgets: arranged.widgets,
         overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId
           ? {
               ...overlay,
               window: { ...defaultConfigState.window, height: arranged.height },
-              layout_overrides: {},
+              layout_overrides: layoutOverridesFromArrangedProfile(arranged.layout, arranged.widgets),
             }
           : overlay),
       };
@@ -399,14 +399,15 @@ function App() {
 
   function setCatalogWidget(id: string, enabled: boolean) {
     const legacy = legacyWidgetById[id];
+    const surface = catalogSurfaceId(id);
     setConfig((current) => {
       if (!current) {
         return current;
       }
       const overlays = current.overlays.map((overlay) => overlay.id === activeOverlayId
-        ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, id])] : overlay.widgets.filter((widget) => widget !== id) }
+        ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, surface])] : overlay.widgets.filter((widget) => widget !== surface) }
         : overlay);
-      const usedElsewhere = overlayIdUsedByOtherLayer(overlays, activeOverlayId, id);
+      const usedElsewhere = overlayIdUsedByOtherLayer(overlays, activeOverlayId, surface);
       let next = legacy
         ? { ...current, widgets: { ...current.widgets, [legacy]: enabled || usedElsewhere } }
         : current.extra_widgets[id]
@@ -764,9 +765,10 @@ function App() {
             {filteredWidgetCatalog.map((widget) => {
               const legacy = legacyWidgetById[widget.id];
               const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
+              const surface = catalogSurfaceId(widget.id);
               const globallyEnabled = legacy ? activeLegacyWidgetEnabled(config, activeOverlayId, legacy) : config.extra_widgets[widget.id]?.enabled ?? false;
               const enabled = activeOverlay
-                ? activeOverlay.widgets.includes(widget.id) && globallyEnabled
+                ? activeOverlay.widgets.includes(surface) && globallyEnabled
                 : globallyEnabled;
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
@@ -1022,6 +1024,11 @@ function activeLegacyWidgetEnabled(config: OverlayConfig, overlayId: string, key
   return overlay ? overlay.widgets.includes(surface) : config.widgets[key];
 }
 
+function catalogSurfaceId(id: string): string {
+  const key = legacyWidgetById[id];
+  return key ? legacySurfaceByWidgetKey[key] ?? id : id;
+}
+
 function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): WidgetLayout {
   if (selection.startsWith("extra:")) {
     return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
@@ -1046,6 +1053,18 @@ function updateOverlayLayoutSelection(config: OverlayConfig, overlayId: string, 
     overlays: next.overlays.map((overlay) => overlay.id === overlayId
       ? { ...overlay, layout_overrides: { ...overlay.layout_overrides, [key]: layout } }
       : overlay),
+  };
+}
+
+function layoutOverridesFromArrangedProfile(
+  layout: LayoutConfig,
+  widgets: Record<string, WidgetInstanceConfig>,
+): Record<string, WidgetLayout> {
+  return {
+    ...Object.fromEntries(layoutLabels.map(([key]) => [key, structuredClone(layout[key])])),
+    ...Object.fromEntries(Object.entries(widgets)
+      .filter(([, widget]) => widget.enabled)
+      .map(([id, widget]) => [id, structuredClone(widget.layout)])),
   };
 }
 
@@ -1657,7 +1676,7 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
 }
 
 function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
-  const arranged = arrangeExtraWidgets(profile.extra_widgets);
+  const arranged = arrangeProfileLayout(profile);
   const next: OverlayConfig = {
     ...config,
     performance: { mode: profile.performance_mode },
@@ -1670,19 +1689,17 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overl
     style: structuredClone(profile.style),
     units: structuredClone(profile.units),
     coaching: structuredClone(profile.coaching_config),
-    layout: structuredClone(profile.layout),
+    layout: arranged.layout,
     extra_widgets: arranged.widgets,
-    window: { ...config.window, height: Math.max(config.window.height, arranged.height) },
+    window: { ...config.window, height: arranged.height },
   };
   if (!overlayId) {
     return next;
   }
 
   const enabledWidgets = new Set<string>();
-  for (const [id, key] of Object.entries(legacyWidgetById)) {
-    if (key && next.widgets[key]) {
-      enabledWidgets.add(id);
-    }
+  for (const id of enabledLegacySurfaceIds(next.widgets)) {
+    enabledWidgets.add(id);
   }
   for (const [id, widget] of Object.entries(next.extra_widgets)) {
     if (widget.enabled) {
@@ -1690,12 +1707,80 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overl
     }
   }
   const overlays = next.overlays.map((overlay) => overlay.id === overlayId
-      ? { ...overlay, widgets: [...enabledWidgets] }
+      ? {
+          ...overlay,
+          window: { ...overlay.window, height: arranged.height },
+          widgets: [...enabledWidgets],
+          layout_overrides: layoutOverridesFromArrangedProfile(arranged.layout, arranged.widgets),
+        }
       : overlay);
   return syncExtraWidgetsWithOverlayMembership({ ...next, overlays });
 }
 
-function arrangeExtraWidgets(widgets: Record<string, WidgetInstanceConfig>) {
+function arrangeProfileLayout(profile: PresetProfileConfig) {
+  const layout = structuredClone(profile.layout);
+  const widgets = structuredClone(profile.extra_widgets);
+  const left = 14;
+  const width = 392;
+  const gap = 10;
+  let y = 10;
+  let z = 10;
+
+  const place = (key: LayoutWidgetKey, x: number, nextY: number, nextWidth: number, height: number) => {
+    layout[key] = {
+      ...layout[key],
+      x,
+      y: nextY,
+      width: nextWidth,
+      height,
+      z_index: z,
+    };
+    z += 10;
+  };
+  const full = (key: LayoutWidgetKey, height: number) => {
+    place(key, left, y, width, height);
+    y += height + gap;
+  };
+  const row = (items: Array<[LayoutWidgetKey, number]>) => {
+    if (items.length === 0) {
+      return;
+    }
+    if (items.length === 1) {
+      full(items[0][0], items[0][1]);
+      return;
+    }
+    const columnWidth = Math.floor((width - gap) / 2);
+    const rowHeight = Math.max(...items.map(([, height]) => height));
+    items.forEach(([key, height], index) => {
+      place(key, left + index * (columnWidth + gap), y, columnWidth, height);
+    });
+    y += rowHeight + gap;
+  };
+
+  if (legacySurfaceEnabled(profile, "telemetry")) {
+    full("telemetry", 52);
+  }
+  row([
+    ...(legacySurfaceEnabled(profile, "inputs") ? [["inputs", 96] as [LayoutWidgetKey, number]] : []),
+    ...(legacySurfaceEnabled(profile, "lap_timing") ? [["lap_timing", 44] as [LayoutWidgetKey, number]] : []),
+  ]);
+  row([
+    ...(legacySurfaceEnabled(profile, "timing") ? [["timing", 54] as [LayoutWidgetKey, number]] : []),
+    ...(legacySurfaceEnabled(profile, "sectors") ? [["sectors", 44] as [LayoutWidgetKey, number]] : []),
+  ]);
+  row([
+    ...(legacySurfaceEnabled(profile, "mini_sectors") ? [["mini_sectors", 44] as [LayoutWidgetKey, number]] : []),
+    ...(legacySurfaceEnabled(profile, "performance") ? [["performance", 28] as [LayoutWidgetKey, number]] : []),
+  ]);
+  if (legacySurfaceEnabled(profile, "coaching")) {
+    full("coaching", 58);
+  }
+
+  const extra = arrangeExtraWidgets(widgets, y, z);
+  return { layout, widgets: extra.widgets, height: Math.max(220, extra.height) };
+}
+
+function arrangeExtraWidgets(widgets: Record<string, WidgetInstanceConfig>, startY = 326, startZ = 100) {
   const next = structuredClone(widgets);
   const enabled = Object.entries(next)
     .filter(([, widget]) => widget.enabled)
@@ -1704,13 +1789,13 @@ function arrangeExtraWidgets(widgets: Record<string, WidgetInstanceConfig>) {
   const rowHeight = 52;
   const gap = 10;
   const left = 14;
-  const top = 326;
+  const top = startY;
   let slot = 0;
 
   for (const [id, widget] of enabled) {
     const isStandings = id === "standings";
     if (isStandings) {
-      widget.layout = { ...widget.layout, x: left, y: top, width: 392, height: 120, z_index: 100 + slot };
+      widget.layout = { ...widget.layout, x: left, y: top, width: 392, height: 120, z_index: startZ + slot };
       slot += 4;
       continue;
     }
@@ -1722,7 +1807,7 @@ function arrangeExtraWidgets(widgets: Record<string, WidgetInstanceConfig>) {
       y: top + row * (rowHeight + gap),
       width: columnWidth,
       height: rowHeight,
-      z_index: 100 + slot,
+      z_index: startZ + slot,
     };
     slot += 1;
   }

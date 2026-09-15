@@ -1043,26 +1043,34 @@ impl Default for PresetConfig {
             "fuel",
             "flags",
         ]);
-        place_default_race_widget_layouts(&mut race.extra_widgets);
+        arrange_preset_profile_layout(&mut race);
+        let mut practice = PresetProfileConfig::practice()
+            .with_extra_widgets(&["tyres", "brakes", "fuel", "engine", "weather"]);
+        arrange_preset_profile_layout(&mut practice);
+        let mut qualifying =
+            PresetProfileConfig::qualifying().with_extra_widgets(&["tyres", "brakes", "engine"]);
+        arrange_preset_profile_layout(&mut qualifying);
+        let mut endurance = PresetProfileConfig::endurance().with_extra_widgets(&[
+            "position",
+            "relative",
+            "standings",
+            "fuel",
+            "energy",
+            "tyres",
+            "brakes",
+            "engine",
+            "weather",
+            "damage",
+        ]);
+        arrange_preset_profile_layout(&mut endurance);
+        let mut minimal = PresetProfileConfig::minimal();
+        arrange_preset_profile_layout(&mut minimal);
         Self {
-            practice: PresetProfileConfig::practice()
-                .with_extra_widgets(&["tyres", "brakes", "fuel", "engine", "weather"]),
-            qualifying: PresetProfileConfig::qualifying()
-                .with_extra_widgets(&["tyres", "brakes", "engine"]),
+            practice,
+            qualifying,
             race,
-            endurance: PresetProfileConfig::endurance().with_extra_widgets(&[
-                "position",
-                "relative",
-                "standings",
-                "fuel",
-                "energy",
-                "tyres",
-                "brakes",
-                "engine",
-                "weather",
-                "damage",
-            ]),
-            minimal: PresetProfileConfig::minimal(),
+            endurance,
+            minimal,
             custom: Vec::new(),
         }
     }
@@ -1286,6 +1294,186 @@ impl Default for PresetProfileConfig {
     }
 }
 
+fn arrange_preset_profile_layout(profile: &mut PresetProfileConfig) {
+    let left = 14;
+    let width = 392;
+    let gap = 10;
+    let mut y = 10;
+    let mut z = 10;
+
+    if preset_surface_enabled(profile, "telemetry") {
+        place_profile_layout(&mut profile.layout, "telemetry", left, y, width, 52, z);
+        y += 52 + gap;
+        z += 10;
+    }
+    let top_row = enabled_profile_row(profile, &[("inputs", 96), ("lap_timing", 44)]);
+    place_profile_row(
+        &mut profile.layout,
+        &top_row,
+        left,
+        width,
+        gap,
+        &mut y,
+        &mut z,
+    );
+    let middle_row = enabled_profile_row(profile, &[("timing", 54), ("sectors", 44)]);
+    place_profile_row(
+        &mut profile.layout,
+        &middle_row,
+        left,
+        width,
+        gap,
+        &mut y,
+        &mut z,
+    );
+    let lower_row = enabled_profile_row(profile, &[("mini_sectors", 44), ("performance", 28)]);
+    place_profile_row(
+        &mut profile.layout,
+        &lower_row,
+        left,
+        width,
+        gap,
+        &mut y,
+        &mut z,
+    );
+    if preset_surface_enabled(profile, "coaching") {
+        place_profile_layout(&mut profile.layout, "coaching", left, y, width, 58, z);
+        y += 58 + gap;
+        z += 10;
+    }
+    place_profile_extra_widgets(&mut profile.extra_widgets, y, z);
+}
+
+fn place_profile_row(
+    layout: &mut LayoutConfig,
+    items: &[(&str, i32)],
+    left: i32,
+    width: i32,
+    gap: i32,
+    y: &mut i32,
+    z: &mut i32,
+) {
+    if items.is_empty() {
+        return;
+    }
+    if items.len() == 1 {
+        let (key, height) = items[0];
+        place_profile_layout(layout, key, left, *y, width, height, *z);
+        *y += height + gap;
+        *z += 10;
+        return;
+    }
+
+    let column_width = (width - gap) / 2;
+    let row_height = items.iter().map(|(_, height)| *height).max().unwrap_or(44);
+    for (index, (key, height)) in items.iter().copied().enumerate() {
+        place_profile_layout(
+            layout,
+            key,
+            left + index as i32 * (column_width + gap),
+            *y,
+            column_width,
+            height,
+            *z,
+        );
+        *z += 10;
+    }
+    *y += row_height + gap;
+}
+
+fn enabled_profile_row<'a>(
+    profile: &PresetProfileConfig,
+    candidates: &'a [(&'a str, i32)],
+) -> Vec<(&'a str, i32)> {
+    candidates
+        .iter()
+        .copied()
+        .filter(|(key, _)| preset_surface_enabled(profile, key))
+        .collect()
+}
+
+fn place_profile_layout(
+    layout: &mut LayoutConfig,
+    key: &str,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    z_index: i32,
+) {
+    let target = match key {
+        "telemetry" => &mut layout.telemetry,
+        "inputs" => &mut layout.inputs,
+        "lap_timing" => &mut layout.lap_timing,
+        "timing" => &mut layout.timing,
+        "sectors" => &mut layout.sectors,
+        "mini_sectors" => &mut layout.mini_sectors,
+        "coaching" => &mut layout.coaching,
+        "performance" => &mut layout.performance,
+        _ => return,
+    };
+    target.x = x;
+    target.y = y;
+    target.width = width;
+    target.height = height;
+    target.z_index = z_index;
+}
+
+fn place_profile_extra_widgets(
+    extra_widgets: &mut BTreeMap<String, WidgetInstanceConfig>,
+    top: i32,
+    start_z: i32,
+) {
+    let mut enabled = extra_widgets
+        .iter()
+        .filter(|(_, widget)| widget.enabled)
+        .map(|(id, _)| id.clone())
+        .collect::<Vec<_>>();
+    enabled.sort_by_key(|id| (id != "standings", id.clone()));
+
+    let left = 14;
+    let column_width = 196;
+    let row_height = 52;
+    let gap = 10;
+    let mut slot = 0;
+    for id in enabled {
+        let Some(widget) = extra_widgets.get_mut(&id) else {
+            continue;
+        };
+        if id == "standings" {
+            widget.layout.x = left;
+            widget.layout.y = top;
+            widget.layout.width = 392;
+            widget.layout.height = 120;
+            widget.layout.z_index = start_z + slot;
+            slot += 4;
+            continue;
+        }
+        let column = slot % 2;
+        let row = slot / 2;
+        widget.layout.x = left + column * (column_width + gap);
+        widget.layout.y = top + row * (row_height + gap);
+        widget.layout.width = column_width;
+        widget.layout.height = row_height;
+        widget.layout.z_index = start_z + slot;
+        slot += 1;
+    }
+}
+
+fn preset_surface_enabled(profile: &PresetProfileConfig, surface: &str) -> bool {
+    match surface {
+        "telemetry" => profile.title || profile.speed_gear_rpm,
+        "inputs" => profile.pedals || profile.steering || profile.input_history,
+        "lap_timing" => profile.lap_info || profile.lap_timing,
+        "timing" => profile.delta_timing,
+        "sectors" => profile.sectors,
+        "mini_sectors" => profile.mini_sector_widget,
+        "coaching" => profile.coaching && profile.coaching_config.mode != "off",
+        "performance" => profile.performance_monitor,
+        _ => false,
+    }
+}
+
 impl Default for TimingConfig {
     fn default() -> Self {
         Self {
@@ -1346,6 +1534,7 @@ pub fn default_config_text() -> &'static str {
         config.style = race.style.clone();
         config.units = race.units.clone();
         config.coaching = race.coaching_config.clone();
+        config.layout = race.layout.clone();
         config.timing.reference_mode = race.reference_mode.clone();
         config.timing.mini_sectors = race.mini_sectors;
         config.widgets = WidgetConfig {
@@ -1367,28 +1556,9 @@ pub fn default_config_text() -> &'static str {
         if let Some(standings) = config.extra_widgets.get_mut("standings") {
             standings.enabled = false;
         }
-        place_default_race_widget_layouts(&mut config.extra_widgets);
         toml::to_string_pretty(&config)
             .expect("the built-in HashOverlay configuration must serialize")
     })
-}
-
-fn place_default_race_widget_layouts(extra_widgets: &mut BTreeMap<String, WidgetInstanceConfig>) {
-    let placements = [
-        ("relative", 14, 326, 196, 52),
-        ("fuel", 210, 326, 196, 52),
-        ("position", 14, 386, 196, 52),
-        ("flags", 210, 386, 196, 52),
-        ("standings", 14, 326, 392, 120),
-    ];
-    for (id, x, y, width, height) in placements {
-        if let Some(widget) = extra_widgets.get_mut(id) {
-            widget.layout.x = x;
-            widget.layout.y = y;
-            widget.layout.width = width;
-            widget.layout.height = height;
-        }
-    }
 }
 
 const DEFAULT_CONFIG_TEMPLATE: &str = r##"# HashOverlay configuration
@@ -1673,7 +1843,7 @@ mod tests {
         assert_eq!(config.layout.grid_size, 10);
         assert_eq!(config.layout.telemetry.z_index, 10);
         assert_eq!(config.layout.telemetry.opacity, 1.0);
-        assert_eq!(config.layout.inputs.width, 240);
+        assert_eq!(config.layout.inputs.width, 191);
         assert!(config.extra_widgets["relative"].enabled);
         assert!(config.extra_widgets["fuel"].enabled);
         assert!(config.extra_widgets["flags"].enabled);
@@ -1889,5 +2059,79 @@ mod tests {
         assert!(presets.endurance.extra_widgets["energy"].enabled);
         assert!(presets.practice.extra_widgets["tyres"].enabled);
         assert!(!presets.minimal.extra_widgets["relative"].enabled);
+    }
+
+    #[test]
+    fn shipped_presets_do_not_overlap_enabled_widgets() {
+        let presets = PresetConfig::default();
+        for (name, profile) in [
+            ("practice", &presets.practice),
+            ("qualifying", &presets.qualifying),
+            ("race", &presets.race),
+            ("endurance", &presets.endurance),
+            ("minimal", &presets.minimal),
+        ] {
+            let areas = enabled_profile_areas(profile);
+            for (left_index, left) in areas.iter().enumerate() {
+                for right in areas.iter().skip(left_index + 1) {
+                    assert!(
+                        !areas_overlap(left, right),
+                        "{name} preset overlaps {} and {}",
+                        left.id,
+                        right.id
+                    );
+                }
+            }
+        }
+    }
+
+    struct TestArea {
+        id: String,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+    }
+
+    fn enabled_profile_areas(profile: &PresetProfileConfig) -> Vec<TestArea> {
+        let mut areas = [
+            ("telemetry", &profile.layout.telemetry),
+            ("inputs", &profile.layout.inputs),
+            ("lap_timing", &profile.layout.lap_timing),
+            ("timing", &profile.layout.timing),
+            ("sectors", &profile.layout.sectors),
+            ("mini_sectors", &profile.layout.mini_sectors),
+            ("coaching", &profile.layout.coaching),
+            ("performance", &profile.layout.performance),
+        ]
+        .into_iter()
+        .filter(|(id, _)| preset_surface_enabled(profile, id))
+        .map(|(id, layout)| test_area(id, layout))
+        .collect::<Vec<_>>();
+        areas.extend(
+            profile
+                .extra_widgets
+                .iter()
+                .filter(|(_, widget)| widget.enabled)
+                .map(|(id, widget)| test_area(id, &widget.layout)),
+        );
+        areas
+    }
+
+    fn test_area(id: &str, layout: &WidgetLayout) -> TestArea {
+        TestArea {
+            id: id.to_string(),
+            x: layout.x,
+            y: layout.y,
+            width: layout.width,
+            height: layout.height,
+        }
+    }
+
+    fn areas_overlap(left: &TestArea, right: &TestArea) -> bool {
+        left.x < right.x + right.width
+            && left.x + left.width > right.x
+            && left.y < right.y + right.height
+            && left.y + left.height > right.y
     }
 }
