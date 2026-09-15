@@ -242,34 +242,12 @@ impl Default for OverlayLayerConfig {
 }
 
 fn default_overlay_widget_ids() -> Vec<String> {
-    [
-        "telemetry",
-        "inputs",
-        "lap_timing",
-        "timing",
-        "sectors",
-        "mini_sectors",
-        "coaching",
-        "speed",
-        "rpm",
-        "lap_history",
-        "position",
-        "relative",
-        "standings",
-        "flags",
-        "fuel",
-        "tyres",
-        "brakes",
-        "electronics",
-        "energy",
-        "engine",
-        "damage",
-        "weather",
-        "performance",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+    crate::widgets::OVERLAY_SURFACE_IDS
+        .iter()
+        .copied()
+        .into_iter()
+        .map(str::to_string)
+        .collect()
 }
 
 fn normalize_overlay_layers(config: &mut OverlayConfig) {
@@ -277,8 +255,10 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
         config.overlays.push(OverlayLayerConfig::default());
     }
     let mut used_ids = std::collections::BTreeSet::new();
-    let allowed: std::collections::BTreeSet<String> =
-        default_overlay_widget_ids().into_iter().collect();
+    let allowed: std::collections::BTreeSet<&str> = crate::widgets::OVERLAY_SURFACE_IDS
+        .iter()
+        .copied()
+        .collect();
     for (index, overlay) in config.overlays.iter_mut().enumerate() {
         overlay.id = overlay.id.trim().to_ascii_lowercase();
         if overlay.id.is_empty() || !used_ids.insert(overlay.id.clone()) {
@@ -292,11 +272,11 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
         overlay.window.height = overlay.window.height.clamp(140, 800);
         overlay.window.refresh_hz = overlay.window.refresh_hz.clamp(15, 144);
         overlay.window.sample_ms = overlay.window.sample_ms.clamp(5, 250);
-        overlay.widgets.retain(|id| allowed.contains(id));
+        overlay.widgets.retain(|id| allowed.contains(id.as_str()));
         overlay.widgets.sort();
         overlay.widgets.dedup();
         overlay.layout_overrides.retain(|id, layout| {
-            allowed.contains(id) && {
+            allowed.contains(id.as_str()) && {
                 layout.normalize();
                 true
             }

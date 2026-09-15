@@ -219,6 +219,33 @@ pub fn widget_catalog() -> &'static [WidgetDefinition] {
     WIDGET_CATALOG
 }
 
+/// Canonical surface identifiers accepted by overlay layers.
+pub const OVERLAY_SURFACE_IDS: &[&str] = &[
+    "telemetry",
+    "inputs",
+    "lap_timing",
+    "timing",
+    "sectors",
+    "mini_sectors",
+    "coaching",
+    "speed",
+    "rpm",
+    "lap_history",
+    "position",
+    "relative",
+    "standings",
+    "flags",
+    "fuel",
+    "tyres",
+    "brakes",
+    "electronics",
+    "energy",
+    "engine",
+    "damage",
+    "weather",
+    "performance",
+];
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -240,5 +267,19 @@ mod tests {
         assert!(WIDGET_CATALOG
             .iter()
             .any(|widget| widget.category == "Race"));
+    }
+
+    #[test]
+    fn overlay_surface_registry_has_unique_ids_and_matches_catalog_or_runtime_surfaces() {
+        let ids = OVERLAY_SURFACE_IDS.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(ids.len(), OVERLAY_SURFACE_IDS.len());
+        assert!(ids.contains("performance"));
+        assert!(ids.iter().all(|id| {
+            WIDGET_CATALOG.iter().any(|widget| widget.id == *id)
+                || matches!(
+                    *id,
+                    "telemetry" | "inputs" | "lap_timing" | "timing" | "sectors" | "mini_sectors"
+                )
+        }));
     }
 }
