@@ -112,11 +112,29 @@ pub struct ReferenceLap {
     pub total_time_seconds: f64,
     pub points: Vec<ReferencePoint>,
     pub events: Vec<DrivingEvent>,
+    pub brake_threshold: f64,
+    pub throttle_threshold: f64,
 }
 
 impl ReferenceLap {
-    pub fn new(total_time_seconds: f64, mut points: Vec<ReferencePoint>) -> Option<Self> {
+    pub fn new(total_time_seconds: f64, points: Vec<ReferencePoint>) -> Option<Self> {
+        Self::from_points(total_time_seconds, points, 0.10, 0.10)
+    }
+
+    pub fn from_points(
+        total_time_seconds: f64,
+        mut points: Vec<ReferencePoint>,
+        brake_threshold: f64,
+        throttle_threshold: f64,
+    ) -> Option<Self> {
         if !total_time_seconds.is_finite() || total_time_seconds <= 0.0 {
+            return None;
+        }
+        if !brake_threshold.is_finite()
+            || !throttle_threshold.is_finite()
+            || !(0.0..=1.0).contains(&brake_threshold)
+            || !(0.0..=1.0).contains(&throttle_threshold)
+        {
             return None;
         }
 
@@ -136,12 +154,14 @@ impl ReferenceLap {
 
         let points = normalize_reference_points(&points);
 
-        let events = driving_events_from_points(&points);
+        let events = driving_events_from_points(&points, brake_threshold, throttle_threshold);
 
         Some(Self {
             total_time_seconds,
             points,
             events,
+            brake_threshold,
+            throttle_threshold,
         })
     }
 
@@ -312,6 +332,7 @@ pub struct LapEngine {
     completed_mini_sectors: Vec<MiniSectorResult>,
     completed_mini_sector_snapshot: Arc<[MiniSectorResult]>,
     lap_history: std::collections::VecDeque<LapHistoryEntry>,
+    lap_history_snapshot: Arc<[LapHistoryEntry]>,
     current_lap_valid: bool,
     last_lap: Option<ReferenceLap>,
     last_valid_lap: Option<ReferenceLap>,
@@ -339,6 +360,7 @@ impl LapEngine {
             completed_mini_sectors: Vec::with_capacity(MAX_MINI_SECTORS),
             completed_mini_sector_snapshot: Arc::from(Vec::new()),
             lap_history: std::collections::VecDeque::with_capacity(10),
+            lap_history_snapshot: Arc::from(Vec::new()),
             current_lap_valid: false,
             last_lap: None,
             last_valid_lap: None,
@@ -439,7 +461,7 @@ impl LapEngine {
             reference_throttle: reference_point.map(|point| point.throttle),
             reference_brake: reference_point.map(|point| point.brake),
             reference_speed_kph: reference_point.map(|point| point.speed_kph),
-            lap_history: std::sync::Arc::from(self.lap_history.iter().cloned().collect::<Vec<_>>()),
+            lap_history: Arc::clone(&self.lap_history_snapshot),
         }
     }
 
@@ -456,26 +478,38 @@ impl LapEngine {
     }
 
     fn finish_current_lap(&mut self, snapshot: &TelemetrySnapshot) {
-        if let Some(lap_time) = self.current_points.last().map(|point| point.time_seconds) {
+        let lap_time = self
+            .current_points
+            .last()
+            .map(|point| point.time_seconds)
+            .or_else(|| official_last_lap_time(snapshot));
+        if let Some(lap_number) = self.current_lap_number {
+            let delta_to_best = lap_time
+                .zip(self.session_best.as_ref())
+                .map(|(time, best)| time - best.total_time_seconds);
+            if self.lap_history.len() == 10 {
+                self.lap_history.pop_front();
+            }
+            self.lap_history.push_back(LapHistoryEntry {
+                lap: lap_number,
+                time_seconds: lap_time,
+                valid: self.current_lap_valid,
+                delta_to_best,
+            });
+            self.lap_history_snapshot =
+                Arc::from(self.lap_history.iter().cloned().collect::<Vec<_>>());
+        }
+
+        if let Some(lap_time) = lap_time {
             if self.current_points.len() >= self.config.min_reference_points {
-                if let Some(mut lap) = ReferenceLap::new(lap_time, self.current_points.clone()) {
+                if let Some(mut lap) = ReferenceLap::from_points(
+                    lap_time,
+                    self.current_points.clone(),
+                    self.config.brake_threshold,
+                    self.config.throttle_threshold,
+                ) {
                     lap.events = self.current_events.clone();
                     self.last_lap = Some(lap.clone());
-                    if let Some(lap_number) = self.current_lap_number {
-                        if self.lap_history.len() == 10 {
-                            self.lap_history.pop_front();
-                        }
-                        let delta_to_best = self
-                            .session_best
-                            .as_ref()
-                            .map(|best| lap.total_time_seconds - best.total_time_seconds);
-                        self.lap_history.push_back(LapHistoryEntry {
-                            lap: lap_number,
-                            time_seconds: Some(lap.total_time_seconds),
-                            valid: self.current_lap_valid,
-                            delta_to_best,
-                        });
-                    }
                     if self.current_lap_valid {
                         self.last_valid_lap = Some(lap.clone());
                         if is_better(&self.best_valid_lap, &lap) {
@@ -504,7 +538,7 @@ impl LapEngine {
         self.previous_boundary_delta = None;
         self.completed_mini_sector_delta = None;
         self.completed_mini_sectors.clear();
-        self.lap_history.clear();
+        self.completed_mini_sector_snapshot = Arc::from(Vec::new());
         self.current_lap_valid = is_lap_sample_valid(snapshot);
     }
 
@@ -702,12 +736,23 @@ impl LapEngine {
         self.completed_mini_sector_delta = None;
         self.completed_mini_sectors.clear();
         self.completed_mini_sector_snapshot = Arc::from(Vec::new());
+        self.lap_history.clear();
+        self.lap_history_snapshot = Arc::from(Vec::new());
         self.current_lap_valid = false;
         self.last_lap = None;
         self.last_valid_lap = None;
         self.best_valid_lap = None;
         self.session_best = None;
     }
+}
+
+fn official_last_lap_time(snapshot: &TelemetrySnapshot) -> Option<f64> {
+    snapshot
+        .field
+        .iter()
+        .find(|car| car.is_player || car.slot_id == snapshot.player_slot_id)
+        .and_then(|car| car.last_lap_seconds)
+        .filter(|time| time.is_finite() && *time > 0.0)
 }
 
 impl Default for LapEngine {
@@ -725,7 +770,11 @@ fn normalize_reference_points(points: &[ReferencePoint]) -> Vec<ReferencePoint> 
     normalized
 }
 
-fn driving_events_from_points(points: &[ReferencePoint]) -> Vec<DrivingEvent> {
+fn driving_events_from_points(
+    points: &[ReferencePoint],
+    brake_threshold: f64,
+    throttle_threshold: f64,
+) -> Vec<DrivingEvent> {
     let mut events = Vec::new();
     let mut previous_brake = points.first().map(|point| point.brake).unwrap_or_default();
     let mut previous_throttle = points
@@ -736,21 +785,21 @@ fn driving_events_from_points(points: &[ReferencePoint]) -> Vec<DrivingEvent> {
     let mut previous_gear = points.first().map(|point| point.gear).unwrap_or_default();
 
     for point in points.iter().copied().skip(1) {
-        if crossed_up(previous_brake, point.brake, 0.10) {
+        if crossed_up(previous_brake, point.brake, brake_threshold) {
             events.push(event_from_point(
                 point,
                 DrivingEventKind::BrakeStart,
                 point.brake,
             ));
         }
-        if crossed_down(previous_brake, point.brake, 0.10) {
+        if crossed_down(previous_brake, point.brake, brake_threshold) {
             events.push(event_from_point(
                 point,
                 DrivingEventKind::BrakeRelease,
                 point.brake,
             ));
         }
-        if crossed_up(previous_throttle, point.throttle, 0.10) {
+        if crossed_up(previous_throttle, point.throttle, throttle_threshold) {
             events.push(event_from_point(
                 point,
                 DrivingEventKind::ThrottleStart,
@@ -1072,6 +1121,29 @@ mod tests {
 
         assert_eq!(analysis.reference_lap_seconds, Some(90.0));
         assert_eq!(analysis.delta_seconds, Some(0.0));
+    }
+
+    #[test]
+    fn lap_history_survives_lap_boundaries_and_snapshot_is_cached() {
+        let mut engine = LapEngine::new(LapEngineConfig {
+            min_reference_points: 2,
+            ..LapEngineConfig::default()
+        });
+
+        engine.update(snapshot(1, 0.1, 10.0, 0.0, 0.0));
+        engine.update(snapshot(1, 0.9, 90.0, 0.0, 0.0));
+        engine.update(snapshot(2, 0.1, 8.0, 0.0, 0.0));
+        engine.update(snapshot(2, 0.9, 88.0, 0.0, 0.0));
+        engine.update(snapshot(3, 0.1, 9.0, 0.0, 0.0));
+        engine.update(snapshot(3, 0.9, 89.0, 0.0, 0.0));
+        let completed = engine.update(snapshot(4, 0.1, 7.0, 0.0, 0.0));
+
+        assert_eq!(completed.lap_history.len(), 3);
+        assert_eq!(completed.lap_history[0].lap, 1);
+        assert_eq!(completed.lap_history[2].lap, 3);
+
+        let unchanged = engine.update(snapshot(4, 0.2, 14.0, 0.0, 0.0));
+        assert!(Arc::ptr_eq(&completed.lap_history, &unchanged.lap_history));
     }
 
     #[test]
