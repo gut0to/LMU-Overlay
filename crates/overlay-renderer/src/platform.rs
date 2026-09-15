@@ -283,6 +283,8 @@ mod windows_overlay {
         config: Arc<Mutex<OverlayConfig>>,
         config_path: Option<Arc<PathBuf>>,
         overlay_layer: Option<Arc<String>>,
+        shared_latest: Option<Arc<Mutex<Option<TelemetrySnapshot>>>>,
+        host_running: Option<Arc<AtomicBool>>,
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
         d2d: Option<Arc<d2d_backend::D2dBackend>>,
@@ -375,6 +377,8 @@ mod windows_overlay {
                     config: Arc::new(Mutex::new(config)),
                     config_path: config_path.map(Arc::new),
                     overlay_layer: overlay_layer.map(Arc::new),
+                    shared_latest: None,
+                    host_running: None,
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
                     d2d: None,
@@ -388,57 +392,64 @@ mod windows_overlay {
         {
             let hwnd = create_window(self.state.clone())?;
             let telemetry_state = self.state.clone();
-            let telemetry_worker = thread::spawn(move || {
-                let mut next_sample = Instant::now();
-                while telemetry_state.running.load(Ordering::Relaxed) {
-                    let sample_interval = telemetry_state
-                        .config
-                        .lock()
-                        .ok()
-                        .map(|config| Duration::from_millis(config.window.sample_ms))
-                        .unwrap_or_else(|| Duration::from_millis(10));
+            let telemetry_worker = self.state.shared_latest.is_none().then(|| {
+                thread::spawn(move || {
+                    let mut next_sample = Instant::now();
+                    while telemetry_state.running.load(Ordering::Relaxed) {
+                        let sample_interval = telemetry_state
+                            .config
+                            .lock()
+                            .ok()
+                            .map(|config| Duration::from_millis(config.window.sample_ms))
+                            .unwrap_or_else(|| Duration::from_millis(10));
 
-                    let now = Instant::now();
-                    if now < next_sample {
-                        thread::sleep(next_sample - now);
-                        continue;
-                    }
+                        let now = Instant::now();
+                        if now < next_sample {
+                            thread::sleep(next_sample - now);
+                            continue;
+                        }
 
-                    let acquisition_started = Instant::now();
-                    if let Some(snapshot) = next_snapshot() {
-                        if let Ok(mut latest) = telemetry_state.latest.lock() {
-                            *latest = Some(snapshot.clone());
+                        let acquisition_started = Instant::now();
+                        if let Some(snapshot) = next_snapshot() {
+                            if let Ok(mut latest) = telemetry_state.latest.lock() {
+                                *latest = Some(snapshot.clone());
+                            }
+                            if let Ok(mut history) = telemetry_state.history.lock() {
+                                history.push(snapshot);
+                            }
+                            if let Ok(mut stats) = telemetry_state.stats.lock() {
+                                stats.telemetry_samples += 1;
+                                stats.acquisition_micros +=
+                                    acquisition_started.elapsed().as_micros() as u64;
+                            }
                         }
-                        if let Ok(mut history) = telemetry_state.history.lock() {
-                            history.push(snapshot);
-                        }
-                        if let Ok(mut stats) = telemetry_state.stats.lock() {
-                            stats.telemetry_samples += 1;
-                            stats.acquisition_micros +=
-                                acquisition_started.elapsed().as_micros() as u64;
+                        next_sample += sample_interval;
+                        if next_sample < Instant::now() {
+                            if let Ok(mut stats) = telemetry_state.stats.lock() {
+                                stats.skipped_samples += 1;
+                            }
+                            next_sample = Instant::now() + sample_interval;
                         }
                     }
-                    next_sample += sample_interval;
-                    if next_sample < Instant::now() {
-                        if let Ok(mut stats) = telemetry_state.stats.lock() {
-                            stats.skipped_samples += 1;
-                        }
-                        next_sample = Instant::now() + sample_interval;
-                    }
-                }
+                })
             });
 
             let repaint_running = self.state.running.clone();
             let repaint_config = self.state.config.clone();
             let repaint_visible = self.state.visible.clone();
             let repaint_edit_mode = self.state.edit_mode.clone();
+            let repaint_host_running = self.state.host_running.clone();
             let repaint_hwnd = hwnd as isize;
 
             let repaint_stats = self.state.stats.clone();
             let repaint_worker = thread::spawn(move || {
                 let hwnd = repaint_hwnd as HWND;
                 let mut next_frame = Instant::now();
-                while repaint_running.load(Ordering::Relaxed) {
+                while repaint_running.load(Ordering::Relaxed)
+                    && repaint_host_running
+                        .as_ref()
+                        .is_none_or(|running| running.load(Ordering::Relaxed))
+                {
                     if !repaint_visible.load(Ordering::Relaxed)
                         && !repaint_edit_mode.load(Ordering::Relaxed)
                     {
@@ -479,6 +490,14 @@ mod windows_overlay {
             let mut message: MSG = unsafe { zeroed() };
 
             'message_loop: loop {
+                if self
+                    .state
+                    .host_running
+                    .as_ref()
+                    .is_some_and(|running| !running.load(Ordering::Relaxed))
+                {
+                    break 'message_loop;
+                }
                 unsafe {
                     while windows_sys::Win32::UI::WindowsAndMessaging::PeekMessageW(
                         &mut message,
@@ -490,6 +509,9 @@ mod windows_overlay {
                     {
                         if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT {
                             self.state.running.store(false, Ordering::Relaxed);
+                            if let Some(host_running) = &self.state.host_running {
+                                host_running.store(false, Ordering::Relaxed);
+                            }
                             break 'message_loop;
                         }
                         TranslateMessage(&message);
@@ -509,13 +531,36 @@ mod windows_overlay {
                     last_config_check = Instant::now();
                 }
 
+                if let Some(shared_latest) = &self.state.shared_latest {
+                    if let Ok(shared) = shared_latest.lock() {
+                        if let Ok(mut latest) = self.state.latest.lock() {
+                            *latest = shared.clone();
+                        }
+                    }
+                }
+
                 thread::sleep(Duration::from_millis(1));
             }
 
             self.state.running.store(false, Ordering::Relaxed);
-            let _ = telemetry_worker.join();
+            if let Some(telemetry_worker) = telemetry_worker {
+                let _ = telemetry_worker.join();
+            }
             let _ = repaint_worker.join();
             Ok(())
+        }
+
+        /// Run this surface from a host-owned immutable snapshot stream. The
+        /// surface renders and reloads its own configuration, but never reads
+        /// LMU memory or owns analysis/storage workers.
+        pub fn run_shared(
+            mut self,
+            shared_latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
+            host_running: Arc<AtomicBool>,
+        ) -> Result<(), OverlayError> {
+            self.state.shared_latest = Some(shared_latest);
+            self.state.host_running = Some(host_running);
+            self.run(|| None)
         }
     }
 
@@ -4354,6 +4399,14 @@ impl TelemetryOverlay {
     where
         F: FnMut() -> Option<TelemetrySnapshot> + Send + 'static,
     {
+        Err(OverlayError::UnsupportedPlatform)
+    }
+
+    pub fn run_shared(
+        self,
+        _shared_latest: std::sync::Arc<std::sync::Mutex<Option<TelemetrySnapshot>>>,
+        _host_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<(), OverlayError> {
         Err(OverlayError::UnsupportedPlatform)
     }
 }
