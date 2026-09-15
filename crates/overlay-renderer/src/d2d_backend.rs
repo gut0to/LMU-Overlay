@@ -253,6 +253,11 @@ impl D2dBackend {
         self.target.Resize(&size)
     }
 
+    pub unsafe fn set_dpi(&self, dpi: u32) {
+        let dpi = dpi.max(1) as f32;
+        self.target.SetDpi(dpi, dpi);
+    }
+
     #[allow(dead_code)]
     pub fn factory(&self) -> &ID2D1Factory {
         &self.factory

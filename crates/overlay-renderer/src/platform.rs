@@ -78,10 +78,10 @@ mod windows_overlay {
                 RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
                 HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_HOTKEY,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_SIZE,
-                WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-                WS_EX_TRANSPARENT, WS_POPUP,
+                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+                WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
+                WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -759,6 +759,10 @@ mod windows_overlay {
                 resize_d2d_target(hwnd, lparam);
                 0
             }
+            WM_DPICHANGED => {
+                update_d2d_dpi(hwnd, wparam);
+                0
+            }
             WM_ERASEBKGND => 1,
             WM_HOTKEY => {
                 handle_hotkey(hwnd, wparam as i32);
@@ -852,6 +856,16 @@ mod windows_overlay {
             if let Err(error) = backend.resize(width, height) {
                 log::warn!("Could not resize Direct2D render target: {error}");
             }
+        }
+    }
+
+    unsafe fn update_d2d_dpi(hwnd: HWND, wparam: WPARAM) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+        let dpi = (wparam as u32 & 0xffff) as u32;
+        if let Some(backend) = state.d2d.as_ref() {
+            backend.set_dpi(dpi);
         }
     }
 
