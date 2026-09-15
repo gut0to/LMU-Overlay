@@ -16,7 +16,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 
 const MAGIC: &[u8; 8] = b"HOLAP001";
-const SUPPORTED_MAGIC: [&[u8; 8]; 1] = [MAGIC];
+const MAGIC_V2: &[u8; 8] = b"HOLAP002";
+const SUPPORTED_MAGIC: [&[u8; 8]; 2] = [MAGIC, MAGIC_V2];
 const POINT_SIZE: usize = 52;
 const MAX_STORED_POINTS: usize = 2_001;
 
@@ -161,9 +162,11 @@ impl std::error::Error for StorageError {}
 
 fn write_reference_lap(path: &Path, lap: &ReferenceLap) -> Result<(), StorageError> {
     let mut bytes = Vec::with_capacity(16 + lap.points.len() * POINT_SIZE);
-    bytes.extend_from_slice(MAGIC);
+    bytes.extend_from_slice(MAGIC_V2);
     bytes.extend_from_slice(&lap.total_time_seconds.to_le_bytes());
     bytes.extend_from_slice(&(lap.points.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&lap.brake_threshold.to_le_bytes());
+    bytes.extend_from_slice(&lap.throttle_threshold.to_le_bytes());
 
     for point in &lap.points {
         bytes.extend_from_slice(&point.progress.to_le_bytes());
@@ -197,13 +200,19 @@ fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
     if point_count == 0 || point_count > MAX_STORED_POINTS {
         return Err(StorageError::InvalidFormat);
     }
-    let expected_len = 20 + point_count * POINT_SIZE;
+    let header_len = if magic == MAGIC_V2 { 36 } else { 20 };
+    let expected_len = header_len + point_count * POINT_SIZE;
     if bytes.len() != expected_len {
         return Err(StorageError::InvalidFormat);
     }
 
+    let (brake_threshold, throttle_threshold) = if magic == MAGIC_V2 {
+        (read_f64(&bytes, 20)?, read_f64(&bytes, 28)?)
+    } else {
+        (0.10, 0.10)
+    };
     let mut points = Vec::with_capacity(point_count);
-    let mut offset = 20;
+    let mut offset = header_len;
     for _ in 0..point_count {
         points.push(ReferencePoint {
             progress: read_f64(&bytes, offset)?,
@@ -217,7 +226,13 @@ fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
         offset += POINT_SIZE;
     }
 
-    ReferenceLap::new(total_time_seconds, points).ok_or(StorageError::InvalidFormat)
+    ReferenceLap::from_points(
+        total_time_seconds,
+        points,
+        brake_threshold,
+        throttle_threshold,
+    )
+    .ok_or(StorageError::InvalidFormat)
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -308,9 +323,11 @@ mod tests {
         let root = env::temp_dir().join(format!("hashoverlay-storage-test-{}", std::process::id()));
         let store = ReferenceLapStore::new(&root);
         let key = ReferenceLapKey::fallback();
-        let lap = ReferenceLap::new(
+        let lap = ReferenceLap::from_points(
             90.0,
             vec![point(0.0, 0.0), point(0.5, 45.0), point(1.0, 90.0)],
+            0.22,
+            0.31,
         )
         .unwrap();
 
@@ -319,6 +336,8 @@ mod tests {
 
         assert_eq!(loaded.total_time_seconds, 90.0);
         assert_eq!(loaded.points.len(), 2_001);
+        assert_eq!(loaded.brake_threshold, 0.22);
+        assert_eq!(loaded.throttle_threshold, 0.31);
     }
 
     #[test]
