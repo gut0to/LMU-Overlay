@@ -29,6 +29,9 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
+      - name: Verify release build
+        run: cargo build --workspace --release
+
   settings:
     name: Settings App
     runs-on: windows-latest
