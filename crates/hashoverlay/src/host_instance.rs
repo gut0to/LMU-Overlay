@@ -33,7 +33,7 @@ impl HostInstance {
                 CloseHandle(handle);
                 return Ok(None);
             }
-            return Ok(Some(Self { handle }));
+            Ok(Some(Self { handle }))
         }
 
         #[cfg(not(windows))]

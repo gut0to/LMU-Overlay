@@ -157,6 +157,7 @@ dependencies = [
  "overlay-renderer",
  "storage",
  "telemetry-engine",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

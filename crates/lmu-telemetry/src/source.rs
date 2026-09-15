@@ -159,21 +159,11 @@ pub struct SharedMemoryTelemetrySource {
 
 const PRODUCER_STALE_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ProducerLiveness {
     last_marker: Option<f64>,
     last_progress_at: Option<Instant>,
     stale: bool,
-}
-
-impl Default for ProducerLiveness {
-    fn default() -> Self {
-        Self {
-            last_marker: None,
-            last_progress_at: None,
-            stale: false,
-        }
-    }
 }
 
 impl ProducerLiveness {

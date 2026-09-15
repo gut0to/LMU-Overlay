@@ -1080,8 +1080,10 @@ mod tests {
 
     #[test]
     fn valid_reference_modes_never_fall_back_to_invalid_last_lap() {
-        let mut engine = LapEngine::default();
-        engine.last_lap = Some(reference_lap(95.0));
+        let mut engine = LapEngine {
+            last_lap: Some(reference_lap(95.0)),
+            ..LapEngine::default()
+        };
         engine.config.reference_mode = ReferenceMode::PersonalBest;
 
         assert!(engine.selected_reference().is_none());
@@ -1089,9 +1091,11 @@ mod tests {
 
     #[test]
     fn timing_config_reload_preserves_session_state() {
-        let mut engine = LapEngine::default();
-        engine.session_best = Some(reference_lap(90.0));
-        engine.last_valid_lap = Some(reference_lap(91.0));
+        let mut engine = LapEngine {
+            session_best: Some(reference_lap(90.0)),
+            last_valid_lap: Some(reference_lap(91.0)),
+            ..LapEngine::default()
+        };
         engine.config.reference_mode = ReferenceMode::PersonalBest;
 
         let mut next = engine.config.clone();

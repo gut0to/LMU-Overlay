@@ -303,7 +303,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     for handle in surface_handles {
         if let Err(error) = handle
             .join()
-            .unwrap_or_else(|_| Err(overlay_renderer::OverlayError::UnsupportedPlatform))
+            .unwrap_or(Err(overlay_renderer::OverlayError::UnsupportedPlatform))
         {
             warn!("Overlay surface stopped: {error}");
             host_running.store(false, Ordering::Relaxed);
