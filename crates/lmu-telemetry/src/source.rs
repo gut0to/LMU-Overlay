@@ -154,6 +154,47 @@ const OFFSET_WHEELS: usize = raw::telemetry::WHEELS;
 pub struct SharedMemoryTelemetrySource {
     inner: PlatformTelemetrySource,
     next_reconnect_attempt: Instant,
+    liveness: ProducerLiveness,
+}
+
+const PRODUCER_STALE_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Clone, Default)]
+pub struct ProducerLiveness {
+    last_marker: Option<f64>,
+    last_progress_at: Option<Instant>,
+    stale: bool,
+}
+
+impl ProducerLiveness {
+    pub fn observe(&mut self, marker: f64, phase: GamePhase, now: Instant) -> bool {
+        let progressed = marker.is_finite()
+            && self.last_marker.is_none_or(|previous| {
+                (marker - previous).abs() > f64::EPSILON || marker < previous
+            });
+        if progressed {
+            self.last_marker = Some(marker);
+            self.last_progress_at = Some(now);
+            self.stale = false;
+        } else if !matches!(
+            phase,
+            GamePhase::BeforeSession | GamePhase::SessionStopped | GamePhase::SessionOver
+        ) && self
+            .last_progress_at
+            .is_some_and(|last| now.duration_since(last) >= PRODUCER_STALE_TIMEOUT)
+        {
+            self.stale = true;
+        }
+        self.stale
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn is_stale(&self) -> bool {
+        self.stale
+    }
 }
 
 impl SharedMemoryTelemetrySource {
@@ -161,13 +202,14 @@ impl SharedMemoryTelemetrySource {
         Ok(Self {
             inner: PlatformTelemetrySource::open()?,
             next_reconnect_attempt: Instant::now(),
+            liveness: ProducerLiveness::default(),
         })
     }
 }
 
 impl TelemetrySource for SharedMemoryTelemetrySource {
     fn is_available(&self) -> bool {
-        self.inner.is_available()
+        self.inner.is_available() && !self.liveness.is_stale()
     }
 
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
@@ -177,9 +219,23 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
             }
             self.inner = PlatformTelemetrySource::open()?;
             self.next_reconnect_attempt = Instant::now() + Duration::from_millis(500);
+            self.liveness.reset();
         }
 
-        self.inner.read_sample()
+        let sample = self.inner.read_sample()?;
+        if let Some(sample) = &sample {
+            if self.liveness.observe(
+                sample.timestamp_seconds,
+                sample.metadata.game_phase,
+                Instant::now(),
+            ) {
+                self.inner = PlatformTelemetrySource::open()?;
+                self.next_reconnect_attempt = Instant::now() + Duration::from_millis(500);
+                self.liveness.reset();
+                return Ok(None);
+            }
+        }
+        Ok(sample)
     }
 }
 
@@ -931,6 +987,23 @@ fn read_string(bytes: &[u8], offset: usize, len: usize) -> Result<Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn producer_liveness_requires_frozen_progress_outside_idle_phases() {
+        let start = Instant::now();
+        let mut liveness = ProducerLiveness::default();
+        assert!(!liveness.observe(10.0, GamePhase::GreenFlag, start));
+        assert!(!liveness.observe(
+            10.0,
+            GamePhase::BeforeSession,
+            start + Duration::from_secs(6)
+        ));
+        assert!(liveness.observe(10.0, GamePhase::GreenFlag, start + Duration::from_secs(6)));
+
+        liveness.reset();
+        assert!(!liveness.observe(10.0, GamePhase::GreenFlag, start));
+        assert!(!liveness.observe(11.0, GamePhase::GreenFlag, start + Duration::from_secs(6)));
+    }
 
     #[test]
     fn empty_buffer_has_no_sample() {

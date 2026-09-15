@@ -67,3 +67,13 @@ jobs:
 
       - name: Check settings shell
         run: cargo check --manifest-path settings/src-tauri/Cargo.toml
+
+      - name: Build Windows installer candidate
+        run: npm run tauri build
+        working-directory: settings
+
+      - name: Verify NSIS installer output
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem settings\src-tauri\target\release\bundle\nsis -Filter *.exe | Select-Object -First 1
+          if (-not $installer) { throw 'Tauri NSIS installer was not produced' }

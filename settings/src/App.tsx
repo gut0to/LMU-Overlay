@@ -326,6 +326,7 @@ function App() {
       const response = await invoke<LoadResponse>("reset_config");
       setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
+      setRevision(response.revision);
       setStatus("Config reset");
     } catch (error) {
       setStatus(String(error));

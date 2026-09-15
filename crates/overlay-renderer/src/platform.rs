@@ -43,7 +43,6 @@ impl From<config::ConfigError> for OverlayError {
 mod windows_overlay {
     use std::{
         cell::{Cell, RefCell},
-        collections::BTreeMap,
         ffi::c_void,
         fs,
         mem::zeroed,
@@ -57,7 +56,7 @@ mod windows_overlay {
         time::{Duration, Instant, SystemTime},
     };
 
-    use telemetry_engine::{order_by_track_proximity, RingBuffer, TelemetrySnapshot};
+    use telemetry_engine::{relative_neighbors, RingBuffer, TelemetrySnapshot};
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
@@ -250,6 +249,7 @@ mod windows_overlay {
         "engine",
         "damage",
         "weather",
+        "track_map",
     ];
 
     #[derive(Clone, Copy)]
@@ -283,6 +283,8 @@ mod windows_overlay {
         config: Arc<Mutex<OverlayConfig>>,
         config_path: Option<Arc<PathBuf>>,
         overlay_layer: Option<Arc<String>>,
+        shared_latest: Option<Arc<Mutex<Option<TelemetrySnapshot>>>>,
+        host_running: Option<Arc<AtomicBool>>,
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
         d2d: Option<Arc<d2d_backend::D2dBackend>>,
@@ -326,6 +328,11 @@ mod windows_overlay {
     pub struct TelemetryOverlay {
         state: SharedState,
     }
+
+    // A surface is moved into its dedicated UI thread before its Direct2D
+    // target is created. No surface instance is shared between threads; this
+    // marker documents that ownership boundary for the host coordinator.
+    unsafe impl Send for TelemetryOverlay {}
 
     impl TelemetryOverlay {
         pub fn new() -> Result<Self, OverlayError> {
@@ -375,6 +382,8 @@ mod windows_overlay {
                     config: Arc::new(Mutex::new(config)),
                     config_path: config_path.map(Arc::new),
                     overlay_layer: overlay_layer.map(Arc::new),
+                    shared_latest: None,
+                    host_running: None,
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
                     d2d: None,
@@ -388,57 +397,64 @@ mod windows_overlay {
         {
             let hwnd = create_window(self.state.clone())?;
             let telemetry_state = self.state.clone();
-            let telemetry_worker = thread::spawn(move || {
-                let mut next_sample = Instant::now();
-                while telemetry_state.running.load(Ordering::Relaxed) {
-                    let sample_interval = telemetry_state
-                        .config
-                        .lock()
-                        .ok()
-                        .map(|config| Duration::from_millis(config.window.sample_ms))
-                        .unwrap_or_else(|| Duration::from_millis(10));
+            let telemetry_worker = self.state.shared_latest.is_none().then(|| {
+                thread::spawn(move || {
+                    let mut next_sample = Instant::now();
+                    while telemetry_state.running.load(Ordering::Relaxed) {
+                        let sample_interval = telemetry_state
+                            .config
+                            .lock()
+                            .ok()
+                            .map(|config| Duration::from_millis(config.window.sample_ms))
+                            .unwrap_or_else(|| Duration::from_millis(10));
 
-                    let now = Instant::now();
-                    if now < next_sample {
-                        thread::sleep(next_sample - now);
-                        continue;
-                    }
+                        let now = Instant::now();
+                        if now < next_sample {
+                            thread::sleep(next_sample - now);
+                            continue;
+                        }
 
-                    let acquisition_started = Instant::now();
-                    if let Some(snapshot) = next_snapshot() {
-                        if let Ok(mut latest) = telemetry_state.latest.lock() {
-                            *latest = Some(snapshot.clone());
+                        let acquisition_started = Instant::now();
+                        if let Some(snapshot) = next_snapshot() {
+                            if let Ok(mut latest) = telemetry_state.latest.lock() {
+                                *latest = Some(snapshot.clone());
+                            }
+                            if let Ok(mut history) = telemetry_state.history.lock() {
+                                history.push(snapshot);
+                            }
+                            if let Ok(mut stats) = telemetry_state.stats.lock() {
+                                stats.telemetry_samples += 1;
+                                stats.acquisition_micros +=
+                                    acquisition_started.elapsed().as_micros() as u64;
+                            }
                         }
-                        if let Ok(mut history) = telemetry_state.history.lock() {
-                            history.push(snapshot);
-                        }
-                        if let Ok(mut stats) = telemetry_state.stats.lock() {
-                            stats.telemetry_samples += 1;
-                            stats.acquisition_micros +=
-                                acquisition_started.elapsed().as_micros() as u64;
+                        next_sample += sample_interval;
+                        if next_sample < Instant::now() {
+                            if let Ok(mut stats) = telemetry_state.stats.lock() {
+                                stats.skipped_samples += 1;
+                            }
+                            next_sample = Instant::now() + sample_interval;
                         }
                     }
-                    next_sample += sample_interval;
-                    if next_sample < Instant::now() {
-                        if let Ok(mut stats) = telemetry_state.stats.lock() {
-                            stats.skipped_samples += 1;
-                        }
-                        next_sample = Instant::now() + sample_interval;
-                    }
-                }
+                })
             });
 
             let repaint_running = self.state.running.clone();
             let repaint_config = self.state.config.clone();
             let repaint_visible = self.state.visible.clone();
             let repaint_edit_mode = self.state.edit_mode.clone();
+            let repaint_host_running = self.state.host_running.clone();
             let repaint_hwnd = hwnd as isize;
 
             let repaint_stats = self.state.stats.clone();
             let repaint_worker = thread::spawn(move || {
                 let hwnd = repaint_hwnd as HWND;
                 let mut next_frame = Instant::now();
-                while repaint_running.load(Ordering::Relaxed) {
+                while repaint_running.load(Ordering::Relaxed)
+                    && repaint_host_running
+                        .as_ref()
+                        .is_none_or(|running| running.load(Ordering::Relaxed))
+                {
                     if !repaint_visible.load(Ordering::Relaxed)
                         && !repaint_edit_mode.load(Ordering::Relaxed)
                     {
@@ -479,6 +495,14 @@ mod windows_overlay {
             let mut message: MSG = unsafe { zeroed() };
 
             'message_loop: loop {
+                if self
+                    .state
+                    .host_running
+                    .as_ref()
+                    .is_some_and(|running| !running.load(Ordering::Relaxed))
+                {
+                    break 'message_loop;
+                }
                 unsafe {
                     while windows_sys::Win32::UI::WindowsAndMessaging::PeekMessageW(
                         &mut message,
@@ -490,6 +514,9 @@ mod windows_overlay {
                     {
                         if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT {
                             self.state.running.store(false, Ordering::Relaxed);
+                            if let Some(host_running) = &self.state.host_running {
+                                host_running.store(false, Ordering::Relaxed);
+                            }
                             break 'message_loop;
                         }
                         TranslateMessage(&message);
@@ -509,13 +536,36 @@ mod windows_overlay {
                     last_config_check = Instant::now();
                 }
 
+                if let Some(shared_latest) = &self.state.shared_latest {
+                    if let Ok(shared) = shared_latest.lock() {
+                        if let Ok(mut latest) = self.state.latest.lock() {
+                            *latest = shared.clone();
+                        }
+                    }
+                }
+
                 thread::sleep(Duration::from_millis(1));
             }
 
             self.state.running.store(false, Ordering::Relaxed);
-            let _ = telemetry_worker.join();
+            if let Some(telemetry_worker) = telemetry_worker {
+                let _ = telemetry_worker.join();
+            }
             let _ = repaint_worker.join();
             Ok(())
+        }
+
+        /// Run this surface from a host-owned immutable snapshot stream. The
+        /// surface renders and reloads its own configuration, but never reads
+        /// LMU memory or owns analysis/storage workers.
+        pub fn run_shared(
+            mut self,
+            shared_latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
+            host_running: Arc<AtomicBool>,
+        ) -> Result<(), OverlayError> {
+            self.state.shared_latest = Some(shared_latest);
+            self.state.host_running = Some(host_running);
+            self.run(|| None)
         }
     }
 
@@ -830,14 +880,14 @@ mod windows_overlay {
                     };
                 }
                 InvalidateRect(hwnd, ptr::null(), 0);
-                save_runtime_config(state);
+                save_runtime_preferences(state);
             }
             HOTKEY_CYCLE_PRESET => {
                 if let Ok(mut config) = state.config.lock() {
                     cycle_runtime_preset(&mut config);
                 }
                 InvalidateRect(hwnd, ptr::null(), 0);
-                save_runtime_config(state);
+                save_runtime_preferences(state);
             }
             _ => {}
         }
@@ -962,105 +1012,128 @@ mod windows_overlay {
         let Some(state) = shared_state(hwnd) else {
             return;
         };
-        let had_drag = state
-            .drag
-            .lock()
-            .ok()
-            .and_then(|mut value| value.take())
-            .is_some();
-        if had_drag {
-            save_runtime_config(state);
+        let drag = state.drag.lock().ok().and_then(|mut value| value.take());
+        if let Some(drag) = drag {
+            save_runtime_config(state, Some(drag.widget));
             InvalidateRect(hwnd, ptr::null(), 0);
         }
     }
 
-    fn save_runtime_config(state: &SharedState) {
+    fn save_runtime_config(state: &SharedState, widget: Option<WidgetId>) {
         let Some(path) = &state.config_path else {
             return;
         };
-        let Ok(config) = state.config.lock() else {
+        let Ok(runtime_config) = state.config.lock().map(|config| config.clone()) else {
             return;
         };
-        let runtime_config = config.clone();
-        let result = if let Some(layer_id) = state.overlay_layer.as_ref() {
-            OverlayConfig::load(path.as_ref()).and_then(|mut full_config| {
-                merge_runtime_layer(&mut full_config, layer_id, &runtime_config);
-                full_config.save(path.as_ref())
-            })
-        } else {
-            let mut config = runtime_config;
-            config.save(path.as_ref())
-        };
+
+        let mut result = Ok(());
+        for attempt in 0..3 {
+            let mut latest = match OverlayConfig::load(path.as_ref()) {
+                Ok(config) => config,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            let revision = match OverlayConfig::revision(path.as_ref()) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            apply_runtime_layout_mutation(
+                &mut latest,
+                state.overlay_layer.as_ref().map(|layer| layer.as_str()),
+                &runtime_config,
+                widget,
+            );
+            match latest.save_if_revision(path.as_ref(), revision) {
+                Ok(_) => {
+                    result = Ok(());
+                    break;
+                }
+                Err(crate::config::ConfigError::Conflict { .. }) if attempt < 2 => continue,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
         if let Err(error) = result {
             log::warn!("Could not save overlay layout: {error}");
         }
     }
 
-    fn merge_runtime_layer(
-        full_config: &mut OverlayConfig,
-        layer_id: &str,
-        runtime_config: &OverlayConfig,
-    ) {
-        let layout_overrides = layout_overrides_from_runtime(runtime_config);
-        let widgets = enabled_widget_ids(runtime_config);
-        if let Some(layer) = full_config
-            .overlays
-            .iter_mut()
-            .find(|layer| layer.id == layer_id)
-        {
-            layer.window = runtime_config.window.clone();
-            layer.widgets = widgets;
-            layer.layout_overrides = layout_overrides;
-        }
-        full_config.style = runtime_config.style.clone();
-        full_config.units = runtime_config.units.clone();
-        full_config.coaching = runtime_config.coaching.clone();
-        full_config.timing = runtime_config.timing.clone();
-        full_config.performance = runtime_config.performance.clone();
-        enable_globals_for_overlay_membership(full_config);
-    }
-
-    fn enable_globals_for_overlay_membership(config: &mut OverlayConfig) {
-        for id in config
-            .overlays
-            .iter()
-            .flat_map(|layer| layer.widgets.iter().map(String::as_str))
-        {
-            match id {
-                "telemetry" => config.widgets.speed_gear_rpm = true,
-                "inputs" => config.widgets.pedals = true,
-                "lap_timing" => config.widgets.lap_timing = true,
-                "timing" => config.widgets.delta_timing = true,
-                "sectors" => config.widgets.sectors = true,
-                "mini_sectors" => config.widgets.mini_sector_widget = true,
-                "coaching" => config.widgets.coaching = true,
-                "performance" => config.widgets.performance_monitor = true,
-                _ => {
-                    if let Some(widget) = config.extra_widgets.get_mut(id) {
-                        widget.enabled = true;
-                    }
+    fn save_runtime_preferences(state: &SharedState) {
+        let Some(path) = &state.config_path else {
+            return;
+        };
+        let Ok(runtime_config) = state.config.lock().map(|config| config.clone()) else {
+            return;
+        };
+        let mut result = Ok(());
+        for attempt in 0..3 {
+            let mut latest = match OverlayConfig::load(path.as_ref()) {
+                Ok(config) => config,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            let revision = match OverlayConfig::revision(path.as_ref()) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            latest.widgets.coaching = runtime_config.widgets.coaching;
+            latest.coaching = runtime_config.coaching.clone();
+            latest.timing = runtime_config.timing.clone();
+            latest.performance = runtime_config.performance.clone();
+            latest.style = runtime_config.style.clone();
+            match latest.save_if_revision(path.as_ref(), revision) {
+                Ok(_) => {
+                    result = Ok(());
+                    break;
+                }
+                Err(crate::config::ConfigError::Conflict { .. }) if attempt < 2 => continue,
+                Err(error) => {
+                    result = Err(error);
+                    break;
                 }
             }
         }
+        if let Err(error) = result {
+            log::warn!("Could not save overlay preferences: {error}");
+        }
     }
 
-    fn layout_overrides_from_runtime(config: &OverlayConfig) -> BTreeMap<String, WidgetLayout> {
-        widget_areas(config)
-            .into_iter()
-            .filter_map(|(widget, _)| {
-                Some((
-                    widget_overlay_id(widget)?.to_string(),
-                    widget_layout(config, widget).clone(),
-                ))
-            })
-            .collect()
-    }
-
-    fn enabled_widget_ids(config: &OverlayConfig) -> Vec<String> {
-        widget_areas(config)
-            .into_iter()
-            .filter_map(|(widget, _)| widget_overlay_id(widget).map(str::to_string))
-            .collect()
+    fn apply_runtime_layout_mutation(
+        latest: &mut OverlayConfig,
+        layer_id: Option<&str>,
+        runtime_config: &OverlayConfig,
+        widget: Option<WidgetId>,
+    ) {
+        let Some(widget) = widget else {
+            return;
+        };
+        let layout = widget_layout(runtime_config, widget).clone();
+        if let Some(layer_id) = layer_id {
+            if let Some(layer) = latest
+                .overlays
+                .iter_mut()
+                .find(|layer| layer.id == layer_id)
+            {
+                if let Some(widget_id) = widget_overlay_id(widget) {
+                    layer.layout_overrides.insert(widget_id.to_string(), layout);
+                }
+            }
+        } else {
+            *widget_layout_mut(latest, widget) = layout;
+        }
     }
 
     fn cycle_runtime_preset(config: &mut OverlayConfig) {
@@ -1539,6 +1612,7 @@ mod windows_overlay {
                 ),
                 _ => "WEATHER --".to_string(),
             },
+            "track_map" => "TRACK DATA --".to_string(),
             "damage" => {
                 let wheel_damage = [
                     snapshot.wheels.front_left,
@@ -1946,60 +2020,60 @@ mod windows_overlay {
             title_color,
             "RELATIVE",
         );
-        let player_index = snapshot
-            .field
-            .iter()
-            .position(|car| car.is_player || car.slot_id == snapshot.player_slot_id);
-        let Some(player_index) = player_index else {
+        let Some(relative) = relative_neighbors(
+            &snapshot.field,
+            snapshot.player_slot_id,
+            options.same_class_only,
+            snapshot.track_length_m,
+        ) else {
             draw_text(
                 hdc,
                 area.x + padding,
                 area.y + padding + scale_px(config, 20),
                 text_color,
-                "SCORING DATA --",
+                "RELATIVE DATA --",
             );
             return;
         };
-        let player_class = snapshot.field[player_index].vehicle_class.as_deref();
-        let mut cars: Vec<&_> = snapshot
-            .field
+        let ahead_count = options.cars_ahead as usize;
+        let behind_count = options.cars_behind as usize;
+        let mut indexes = relative
+            .ahead
             .iter()
-            .filter(|car| !options.same_class_only || car.vehicle_class.as_deref() == player_class)
-            .collect();
-        if let Some(order) = order_by_track_proximity(
-            &snapshot.field,
-            snapshot.player_slot_id,
-            options.same_class_only,
-            snapshot.track_length_m,
-        ) {
-            let rank = order
-                .iter()
-                .enumerate()
-                .map(|(rank, index)| (*index, rank))
-                .collect::<std::collections::HashMap<_, _>>();
-            cars.sort_by_key(|car| {
-                rank.get(
-                    &snapshot
-                        .field
-                        .iter()
-                        .position(|candidate| std::ptr::eq(*car, candidate))
-                        .unwrap_or(usize::MAX),
-                )
-                .copied()
-                .unwrap_or(usize::MAX)
-            });
-        } else {
-            cars.sort_by_key(|car| car.place.unwrap_or(i32::MAX));
-        }
-        let Some(player_position) = cars
-            .iter()
-            .position(|car| car.slot_id == snapshot.field[player_index].slot_id)
-        else {
-            return;
-        };
-        let start = player_position.saturating_sub(options.cars_ahead as usize);
-        let end = (player_position + options.cars_behind as usize + 1).min(cars.len());
-        for (row, car) in cars[start..end].iter().enumerate() {
+            .take(ahead_count)
+            .rev()
+            .copied()
+            .collect::<Vec<_>>();
+        indexes.push(relative.player);
+        indexes.extend(relative.behind.iter().take(behind_count).copied());
+        draw_relative_rows(
+            hdc,
+            snapshot,
+            config,
+            area,
+            padding,
+            style,
+            options,
+            &indexes,
+            relative.player,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn draw_relative_rows(
+        hdc: HDC,
+        snapshot: &TelemetrySnapshot,
+        config: &OverlayConfig,
+        area: Area,
+        padding: i32,
+        style: Option<&crate::config::WidgetStyleConfig>,
+        options: WidgetOptions,
+        indexes: &[usize],
+        player_index: usize,
+    ) {
+        let text_color = widget_primary_color(config, style);
+        for (row, index) in indexes.iter().copied().enumerate() {
+            let car = &snapshot.field[index];
             let y = area.y + padding + scale_px(config, 20 + (row as i32 * 18));
             let marker = if car.is_player || car.slot_id == snapshot.player_slot_id {
                 ">"
@@ -4062,7 +4136,12 @@ mod windows_overlay {
             runtime.layout.coaching.x = 320;
             runtime.extra_widgets.get_mut("fuel").unwrap().enabled = false;
 
-            merge_runtime_layer(&mut full, "coach", &runtime);
+            apply_runtime_layout_mutation(
+                &mut full,
+                Some("coach"),
+                &runtime,
+                Some(WidgetId::Coaching),
+            );
 
             let main = full
                 .overlays
@@ -4075,9 +4154,29 @@ mod windows_overlay {
                 .find(|layer| layer.id == "coach")
                 .unwrap();
             assert!(main.widgets.contains(&"fuel".to_string()));
-            assert!(full.extra_widgets["fuel"].enabled);
-            assert_eq!(coach.widgets, vec!["coaching".to_string()]);
+            assert!(!full.extra_widgets["fuel"].enabled);
             assert_eq!(coach.layout_overrides["coaching"].x, 320);
+        }
+
+        #[test]
+        fn narrow_runtime_layout_mutation_preserves_newer_global_settings() {
+            let mut latest = OverlayConfig::default();
+            latest.normalize();
+            latest.style.theme = "settings-newer".to_string();
+            latest.overlays[0].id = "coach".to_string();
+            let mut runtime = latest.for_overlay_layer(Some("coach")).unwrap();
+            runtime.style.theme = "stale-runtime".to_string();
+            runtime.layout.coaching.x = 444;
+
+            apply_runtime_layout_mutation(
+                &mut latest,
+                Some("coach"),
+                &runtime,
+                Some(WidgetId::Coaching),
+            );
+
+            assert_eq!(latest.style.theme, "settings-newer");
+            assert_eq!(latest.overlays[0].layout_overrides["coaching"].x, 444);
         }
 
         #[test]
@@ -4354,6 +4453,14 @@ impl TelemetryOverlay {
     where
         F: FnMut() -> Option<TelemetrySnapshot> + Send + 'static,
     {
+        Err(OverlayError::UnsupportedPlatform)
+    }
+
+    pub fn run_shared(
+        self,
+        _shared_latest: std::sync::Arc<std::sync::Mutex<Option<TelemetrySnapshot>>>,
+        _host_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<(), OverlayError> {
         Err(OverlayError::UnsupportedPlatform)
     }
 }

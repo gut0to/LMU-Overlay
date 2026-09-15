@@ -5,7 +5,10 @@
 //! existing widget geometry stable while making the window surface and text
 //! resources owned by Direct2D/DirectWrite.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+};
 
 use windows::core::{Interface, Result, PCWSTR};
 use windows::Win32::Foundation::HWND;
@@ -33,10 +36,17 @@ pub struct D2dBackend {
     factory: ID2D1Factory,
     #[allow(dead_code)]
     text_factory: IDWriteFactory,
-    target: ID2D1HwndRenderTarget,
-    gdi: ID2D1GdiInteropRenderTarget,
+    hwnd: HWND,
+    size: Cell<D2D_SIZE_U>,
+    dpi: Cell<f32>,
+    target: RefCell<TargetResources>,
     brushes: RefCell<HashMap<u32, ID2D1SolidColorBrush>>,
     text_formats: RefCell<HashMap<(String, u32, i32), IDWriteTextFormat>>,
+}
+
+struct TargetResources {
+    target: ID2D1HwndRenderTarget,
+    gdi: ID2D1GdiInteropRenderTarget,
 }
 
 #[derive(Debug, Clone)]
@@ -98,8 +108,10 @@ impl D2dBackend {
         Ok(Self {
             factory,
             text_factory,
-            target,
-            gdi,
+            hwnd,
+            size: Cell::new(D2D_SIZE_U { width, height }),
+            dpi: Cell::new(dpi),
+            target: RefCell::new(TargetResources { target, gdi }),
             brushes: RefCell::new(HashMap::new()),
             text_formats: RefCell::new(HashMap::new()),
         })
@@ -111,8 +123,18 @@ impl D2dBackend {
     }
 
     pub unsafe fn begin_gdi(&self) -> Result<windows_sys::Win32::Graphics::Gdi::HDC> {
-        self.target.BeginDraw();
-        Ok(self.gdi.GetDC(D2D1_DC_INITIALIZE_MODE_COPY)?.0)
+        let resources = self.target.borrow();
+        resources.target.BeginDraw();
+        match resources.gdi.GetDC(D2D1_DC_INITIALIZE_MODE_COPY) {
+            Ok(dc) => Ok(dc.0),
+            Err(error) => {
+                let _ = resources.target.EndDraw(None, None);
+                drop(resources);
+                self.clear_target_caches();
+                let _ = self.recreate_target();
+                Err(error)
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -126,151 +148,209 @@ impl D2dBackend {
         width: i32,
         height: i32,
     ) -> Result<()> {
-        self.gdi.ReleaseDC(None)?;
-        for command in shapes {
-            match *command {
-                ShapeCommand::Rectangle {
-                    left,
-                    top,
-                    right,
-                    bottom,
-                    fill,
-                    stroke,
-                    stroke_width,
-                    radius,
-                } => {
-                    let rect = D2D_RECT_F {
+        // Keep all fallible drawing commands inside one scope. EndDraw is
+        // still attempted when a brush/text format allocation fails, so a
+        // transient COM error cannot leave the target inside an open frame.
+        let draw_result = (|| -> Result<()> {
+            let resources = self.target.borrow();
+            resources.gdi.ReleaseDC(None)?;
+            for command in shapes {
+                match *command {
+                    ShapeCommand::Rectangle {
                         left,
                         top,
                         right,
                         bottom,
-                    };
-                    let rounded = D2D1_ROUNDED_RECT {
-                        rect,
-                        radiusX: radius,
-                        radiusY: radius,
-                    };
-                    if let Some(color) = fill {
-                        let brush = self.brush(color)?;
-                        if radius > 0.0 {
-                            self.target.FillRoundedRectangle(&rounded, &brush);
-                        } else {
-                            self.target.FillRectangle(&rect, &brush);
+                        fill,
+                        stroke,
+                        stroke_width,
+                        radius,
+                    } => {
+                        let rect = D2D_RECT_F {
+                            left,
+                            top,
+                            right,
+                            bottom,
+                        };
+                        let rounded = D2D1_ROUNDED_RECT {
+                            rect,
+                            radiusX: radius,
+                            radiusY: radius,
+                        };
+                        if let Some(color) = fill {
+                            let brush = self.brush(color)?;
+                            if radius > 0.0 {
+                                resources.target.FillRoundedRectangle(&rounded, &brush);
+                            } else {
+                                resources.target.FillRectangle(&rect, &brush);
+                            }
+                        }
+                        if let Some(color) = stroke {
+                            let brush = self.brush(color)?;
+                            if radius > 0.0 {
+                                resources.target.DrawRoundedRectangle(
+                                    &rounded,
+                                    &brush,
+                                    stroke_width,
+                                    None,
+                                );
+                            } else {
+                                resources
+                                    .target
+                                    .DrawRectangle(&rect, &brush, stroke_width, None);
+                            }
                         }
                     }
-                    if let Some(color) = stroke {
+                    ShapeCommand::Line {
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        color,
+                        width,
+                    } => {
                         let brush = self.brush(color)?;
-                        if radius > 0.0 {
-                            self.target
-                                .DrawRoundedRectangle(&rounded, &brush, stroke_width, None);
-                        } else {
-                            self.target.DrawRectangle(&rect, &brush, stroke_width, None);
-                        }
+                        resources.target.DrawLine(
+                            Vector2 { X: x1, Y: y1 },
+                            Vector2 { X: x2, Y: y2 },
+                            &brush,
+                            width,
+                            None,
+                        );
                     }
                 }
-                ShapeCommand::Line {
-                    x1,
-                    y1,
-                    x2,
-                    y2,
-                    color,
-                    width,
-                } => {
-                    let brush = self.brush(color)?;
-                    self.target.DrawLine(
-                        Vector2 { X: x1, Y: y1 },
-                        Vector2 { X: x2, Y: y2 },
+            }
+            if !texts.is_empty() {
+                for command in texts {
+                    let command_size = if command.font_size > 0.0 {
+                        command.font_size
+                    } else {
+                        font_size
+                    };
+                    let command_weight = if command.font_weight > 0 {
+                        command.font_weight
+                    } else {
+                        font_weight
+                    };
+                    let key = (
+                        font_family.to_string(),
+                        command_size.to_bits(),
+                        command_weight,
+                    );
+                    let format = if let Some(format) = self.text_formats.borrow().get(&key) {
+                        format.clone()
+                    } else {
+                        let family = wide_null(font_family);
+                        let format = self.text_factory.CreateTextFormat(
+                            PCWSTR(family.as_ptr()),
+                            None,
+                            DWRITE_FONT_WEIGHT(command_weight.clamp(100, 900)),
+                            DWRITE_FONT_STYLE_NORMAL,
+                            DWRITE_FONT_STRETCH_NORMAL,
+                            command_size.max(1.0),
+                            PCWSTR::null(),
+                        )?;
+                        self.text_formats.borrow_mut().insert(key, format.clone());
+                        format
+                    };
+                    let brush = self.brush(command.color)?;
+                    let text = wide_null(&command.text);
+                    let rect = D2D_RECT_F {
+                        left: command.x as f32,
+                        top: command.y as f32,
+                        right: width as f32,
+                        bottom: (command.y as f32 + command_size * 2.0).min(height as f32),
+                    };
+                    resources.target.DrawText(
+                        &text[..text.len().saturating_sub(1)],
+                        &format,
+                        &rect as *const _,
                         &brush,
-                        width,
-                        None,
+                        D2D1_DRAW_TEXT_OPTIONS_NONE,
+                        DWRITE_MEASURING_MODE_NATURAL,
                     );
                 }
             }
-        }
-        if !texts.is_empty() {
-            for command in texts {
-                let command_size = if command.font_size > 0.0 {
-                    command.font_size
-                } else {
-                    font_size
-                };
-                let command_weight = if command.font_weight > 0 {
-                    command.font_weight
-                } else {
-                    font_weight
-                };
-                let key = (
-                    font_family.to_string(),
-                    command_size.to_bits(),
-                    command_weight,
-                );
-                let format = if let Some(format) = self.text_formats.borrow().get(&key) {
-                    format.clone()
-                } else {
-                    let family = wide_null(font_family);
-                    let format = self.text_factory.CreateTextFormat(
-                        PCWSTR(family.as_ptr()),
-                        None,
-                        DWRITE_FONT_WEIGHT(command_weight.clamp(100, 900)),
-                        DWRITE_FONT_STYLE_NORMAL,
-                        DWRITE_FONT_STRETCH_NORMAL,
-                        command_size.max(1.0),
-                        PCWSTR::null(),
-                    )?;
-                    self.text_formats.borrow_mut().insert(key, format.clone());
-                    format
-                };
-                let brush = self.brush(command.color)?;
-                let text = wide_null(&command.text);
-                let rect = D2D_RECT_F {
-                    left: command.x as f32,
-                    top: command.y as f32,
-                    right: width as f32,
-                    bottom: (command.y as f32 + command_size * 2.0).min(height as f32),
-                };
-                self.target.DrawText(
-                    &text[..text.len().saturating_sub(1)],
-                    &format,
-                    &rect as *const _,
-                    &brush,
-                    D2D1_DRAW_TEXT_OPTIONS_NONE,
-                    DWRITE_MEASURING_MODE_NATURAL,
-                );
+            Ok(())
+        })();
+        let end_result = self.target.borrow().target.EndDraw(None, None);
+        if let Err(error) = end_result {
+            self.clear_target_caches();
+            if let Err(recovery_error) = self.recreate_target() {
+                return draw_result.and(Err(recovery_error));
             }
+            return draw_result.and(Err(error));
         }
-        let result = self.target.EndDraw(None, None);
-        if result.is_err() {
-            // Brushes and text formats are tied to the render target's device
-            // resources. Drop the caches after a failed frame so the next
-            // recovery attempt cannot reuse stale COM objects.
-            self.brushes.borrow_mut().clear();
-            self.text_formats.borrow_mut().clear();
-        }
-        result
+        draw_result
     }
 
     unsafe fn brush(&self, color: u32) -> Result<ID2D1SolidColorBrush> {
         if let Some(brush) = self.brushes.borrow().get(&color) {
             return Ok(brush.clone());
         }
-        let brush = self.target.CreateSolidColorBrush(&color_f(color), None)?;
+        let brush = self
+            .target
+            .borrow()
+            .target
+            .CreateSolidColorBrush(&color_f(color), None)?;
         self.brushes.borrow_mut().insert(color, brush.clone());
         Ok(brush)
     }
 
     pub unsafe fn resize(&self, width: u32, height: u32) -> Result<()> {
         let size = D2D_SIZE_U { width, height };
-        self.target.Resize(&size)
+        self.size.set(size);
+        let result = self.target.borrow().target.Resize(&size);
+        if let Err(error) = result {
+            self.clear_target_caches();
+            self.recreate_target()?;
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub unsafe fn set_dpi(&self, dpi: u32) {
         let dpi = dpi.max(1) as f32;
-        self.target.SetDpi(dpi, dpi);
+        self.dpi.set(dpi);
+        self.target.borrow().target.SetDpi(dpi, dpi);
     }
 
     #[allow(dead_code)]
     pub fn factory(&self) -> &ID2D1Factory {
         &self.factory
+    }
+
+    unsafe fn recreate_target(&self) -> Result<()> {
+        let size = self.size.get();
+        let dpi = self.dpi.get();
+        let properties = D2D1_RENDER_TARGET_PROPERTIES {
+            r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
+            pixelFormat: D2D1_PIXEL_FORMAT {
+                format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                alphaMode:
+                    windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED,
+            },
+            dpiX: dpi,
+            dpiY: dpi,
+            usage: D2D1_RENDER_TARGET_USAGE_NONE,
+            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+        };
+        let hwnd_properties = D2D1_HWND_RENDER_TARGET_PROPERTIES {
+            hwnd: self.hwnd,
+            pixelSize: size,
+            presentOptions: D2D1_PRESENT_OPTIONS_NONE,
+        };
+        let target = self
+            .factory
+            .CreateHwndRenderTarget(&properties, &hwnd_properties)?;
+        let gdi = target.cast::<ID2D1GdiInteropRenderTarget>()?;
+        *self.target.borrow_mut() = TargetResources { target, gdi };
+        Ok(())
+    }
+
+    fn clear_target_caches(&self) {
+        self.brushes.borrow_mut().clear();
+        self.text_formats.borrow_mut().clear();
     }
 }
 

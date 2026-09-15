@@ -213,6 +213,14 @@ pub const WIDGET_CATALOG: &[WidgetDefinition] = &[
         data_requirement: "runtime",
         status: "Real",
     },
+    WidgetDefinition {
+        id: "track_map",
+        name: "Track map",
+        category: "Spatial",
+        description: "Session-local map from official world positions.",
+        data_requirement: "official world position",
+        status: "Unavailable",
+    },
 ];
 
 pub fn widget_catalog() -> &'static [WidgetDefinition] {
@@ -244,6 +252,7 @@ pub const OVERLAY_SURFACE_IDS: &[&str] = &[
     "damage",
     "weather",
     "performance",
+    "track_map",
 ];
 
 #[cfg(test)]

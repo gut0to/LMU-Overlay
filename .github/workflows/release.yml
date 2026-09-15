@@ -51,14 +51,14 @@ jobs:
           $installer = Get-ChildItem settings\src-tauri\target\release\bundle\nsis -Filter *.exe | Select-Object -First 1
           if (-not $installer) { throw 'Tauri NSIS installer was not produced' }
           Copy-Item $installer.FullName dist\HashOverlay-Setup-x64.exe
-          Compress-Archive -Path dist\HashOverlay\* -DestinationPath dist\HashOverlay-windows.zip -Force
+          Compress-Archive -Path dist\HashOverlay\* -DestinationPath dist\HashOverlay-overlay-x64.zip -Force
 
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v6
         with:
-          name: HashOverlay-windows
+          name: HashOverlay-overlay-x64
           path: |
-            dist/HashOverlay-windows.zip
+            dist/HashOverlay-overlay-x64.zip
             dist/HashOverlay-Setup-x64.exe
 
       - name: Publish GitHub Release
@@ -66,5 +66,5 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/HashOverlay-windows.zip
+            dist/HashOverlay-overlay-x64.zip
             dist/HashOverlay-Setup-x64.exe
