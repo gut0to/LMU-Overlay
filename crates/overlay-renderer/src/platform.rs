@@ -329,6 +329,11 @@ mod windows_overlay {
         state: SharedState,
     }
 
+    // A surface is moved into its dedicated UI thread before its Direct2D
+    // target is created. No surface instance is shared between threads; this
+    // marker documents that ownership boundary for the host coordinator.
+    unsafe impl Send for TelemetryOverlay {}
+
     impl TelemetryOverlay {
         pub fn new() -> Result<Self, OverlayError> {
             Self::with_config(OverlayConfig::default())

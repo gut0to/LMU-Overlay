@@ -2,7 +2,10 @@ use std::{
     fs,
     path::PathBuf,
     process::{Command, ExitCode},
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime},
 };
@@ -165,20 +168,33 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
-    let runtime_config = config.for_overlay_layer(overlay_layer.as_deref())?;
-    let mut lap_config = lap_engine_config(&runtime_config);
-    let overlay = TelemetryOverlay::with_config_path_and_layer(
-        runtime_config,
-        config_path.clone(),
-        overlay_layer.clone(),
-    )?;
+    let surface_configs = if let Some(layer_id) = overlay_layer.as_deref() {
+        vec![(
+            Some(layer_id.to_string()),
+            config.for_overlay_layer(Some(layer_id))?,
+        )]
+    } else {
+        config
+            .overlays
+            .iter()
+            .filter(|layer| layer.enabled)
+            .map(|layer| {
+                Ok((
+                    Some(layer.id.clone()),
+                    config.for_overlay_layer(Some(layer.id.as_str()))?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+    if surface_configs.is_empty() {
+        info!("No enabled overlay surfaces; waiting for Settings changes is not available in this host mode");
+        return Ok(());
+    }
+
+    let shared_latest = Arc::new(Mutex::new(None));
+    let host_running = Arc::new(AtomicBool::new(true));
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
-    let mut current_lap_key = None;
-    let mut lap_engine = LapEngine::new(lap_config.clone());
-    let mut fuel_engine = FuelEngine::default();
-    let mut last_config_check = Instant::now();
-    let mut config_mtime = modified_time(&config_path);
     let (lap_writer, lap_receiver) = mpsc::channel();
     let runtime_lap_writer = lap_writer.clone();
     let lap_writer_handle = thread::spawn(move || {
@@ -189,61 +205,106 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         }
     });
 
-    overlay.run(move || {
-        if last_config_check.elapsed() >= Duration::from_millis(500) {
-            if let Some((config, mtime)) =
-                load_config_if_changed(&config_path, config_mtime, overlay_layer.as_deref())
-            {
-                let next_lap_config = lap_engine_config(&config);
-                if next_lap_config != lap_config {
-                    lap_config = next_lap_config;
-                    let personal_best = current_lap_key
-                        .as_ref()
-                        .and_then(|lap_key| lap_store.load_personal_best(lap_key).ok().flatten());
-                    lap_engine =
-                        LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
+    let acquisition_path = config_path.clone();
+    let acquisition_layer = overlay_layer.clone();
+    let acquisition_latest = shared_latest.clone();
+    let acquisition_running = host_running.clone();
+    let acquisition_handle = thread::spawn(move || {
+        let mut current_config = config;
+        let mut lap_config = lap_engine_config(&current_config);
+        let mut current_lap_key = None;
+        let mut lap_engine = LapEngine::new(lap_config.clone());
+        let mut fuel_engine = FuelEngine::default();
+        let mut last_config_check = Instant::now();
+        let mut config_mtime = modified_time(&acquisition_path);
+        let mut next_sample = Instant::now();
+
+        while acquisition_running.load(Ordering::Relaxed) {
+            if last_config_check.elapsed() >= Duration::from_millis(500) {
+                if let Some((next_config, mtime)) = load_config_if_changed(
+                    &acquisition_path,
+                    config_mtime,
+                    acquisition_layer.as_deref(),
+                ) {
+                    let next_lap_config = lap_engine_config(&next_config);
+                    if next_lap_config != lap_config {
+                        lap_config = next_lap_config;
+                        lap_engine.update_config(lap_config.clone());
+                    }
+                    current_config = next_config;
+                    config_mtime = Some(mtime);
                 }
-                config_mtime = Some(mtime);
+                last_config_check = Instant::now();
             }
-            last_config_check = Instant::now();
-        }
 
-        match source.read_sample() {
-            Ok(Some(sample)) => {
-                let lap_key = reference_lap_key(&sample);
-                if current_lap_key.as_ref() != Some(&lap_key) {
-                    let personal_best = match lap_store.load_personal_best(&lap_key) {
-                        Ok(personal_best) => personal_best,
-                        Err(error) => {
-                            warn!("Could not load personal best reference lap: {error}");
-                            None
+            if Instant::now() < next_sample {
+                thread::sleep(next_sample - Instant::now());
+                continue;
+            }
+            next_sample =
+                Instant::now() + Duration::from_millis(current_config.window.sample_ms.max(5));
+
+            match source.read_sample() {
+                Ok(Some(sample)) => {
+                    let lap_key = reference_lap_key(&sample);
+                    if current_lap_key.as_ref() != Some(&lap_key) {
+                        let personal_best = match lap_store.load_personal_best(&lap_key) {
+                            Ok(personal_best) => personal_best,
+                            Err(error) => {
+                                warn!("Could not load personal best reference lap: {error}");
+                                None
+                            }
+                        };
+                        lap_engine =
+                            LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
+                        current_lap_key = Some(lap_key.clone());
+                    }
+
+                    let fuel = fuel_engine.update(&sample);
+                    let mut snapshot = TelemetrySnapshot::from(sample);
+                    snapshot.fuel_last_lap_used = fuel.last_lap_used;
+                    snapshot.fuel_average_lap_used = fuel.average_lap_used;
+                    snapshot.fuel_estimated_laps_remaining = fuel.estimated_laps_remaining;
+                    lap_engine.update(snapshot.clone()).apply_to(&mut snapshot);
+                    if let Some(lap) = lap_engine.take_new_personal_best() {
+                        if let Some(lap_key) = &current_lap_key {
+                            let _ = runtime_lap_writer.send((lap_key.clone(), lap));
                         }
-                    };
-                    lap_engine =
-                        LapEngine::new(lap_config.clone()).with_personal_best(personal_best);
-                    current_lap_key = Some(lap_key.clone());
-                }
-
-                let fuel = fuel_engine.update(&sample);
-                let mut snapshot = TelemetrySnapshot::from(sample);
-                snapshot.fuel_last_lap_used = fuel.last_lap_used;
-                snapshot.fuel_average_lap_used = fuel.average_lap_used;
-                snapshot.fuel_estimated_laps_remaining = fuel.estimated_laps_remaining;
-                lap_engine.update(snapshot.clone()).apply_to(&mut snapshot);
-                if let Some(lap) = lap_engine.take_new_personal_best() {
-                    if let Some(lap_key) = &current_lap_key {
-                        let _ = runtime_lap_writer.send((lap_key.clone(), lap));
+                    }
+                    if let Ok(mut latest) = acquisition_latest.lock() {
+                        *latest = Some(snapshot);
                     }
                 }
-                Some(snapshot)
-            }
-            Ok(None) => None,
-            Err(error) => {
-                warn!("Could not read telemetry sample: {error}");
-                None
+                Ok(None) => {}
+                Err(error) => warn!("Could not read telemetry sample: {error}"),
             }
         }
-    })?;
+    });
+
+    let mut surface_handles = Vec::with_capacity(surface_configs.len());
+    for (layer_id, runtime_config) in surface_configs {
+        let surface = TelemetryOverlay::with_config_path_and_layer(
+            runtime_config,
+            config_path.clone(),
+            layer_id,
+        )?;
+        let surface_latest = shared_latest.clone();
+        let surface_running = host_running.clone();
+        surface_handles.push(thread::spawn(move || {
+            surface.run_shared(surface_latest, surface_running)
+        }));
+    }
+    for handle in surface_handles {
+        if let Err(error) = handle
+            .join()
+            .unwrap_or_else(|_| Err(overlay_renderer::OverlayError::UnsupportedPlatform))
+        {
+            warn!("Overlay surface stopped: {error}");
+            host_running.store(false, Ordering::Relaxed);
+        }
+    }
+    host_running.store(false, Ordering::Relaxed);
+    let _ = acquisition_handle.join();
     drop(lap_writer);
     if let Err(error) = lap_writer_handle.join() {
         warn!("Could not join personal best storage worker: {error:?}");
