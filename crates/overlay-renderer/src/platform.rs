@@ -880,14 +880,14 @@ mod windows_overlay {
                     };
                 }
                 InvalidateRect(hwnd, ptr::null(), 0);
-                save_runtime_config(state, None);
+                save_runtime_preferences(state);
             }
             HOTKEY_CYCLE_PRESET => {
                 if let Ok(mut config) = state.config.lock() {
                     cycle_runtime_preset(&mut config);
                 }
                 InvalidateRect(hwnd, ptr::null(), 0);
-                save_runtime_config(state, None);
+                save_runtime_preferences(state);
             }
             _ => {}
         }
@@ -1063,6 +1063,51 @@ mod windows_overlay {
         }
         if let Err(error) = result {
             log::warn!("Could not save overlay layout: {error}");
+        }
+    }
+
+    fn save_runtime_preferences(state: &SharedState) {
+        let Some(path) = &state.config_path else {
+            return;
+        };
+        let Ok(runtime_config) = state.config.lock().map(|config| config.clone()) else {
+            return;
+        };
+        let mut result = Ok(());
+        for attempt in 0..3 {
+            let mut latest = match OverlayConfig::load(path.as_ref()) {
+                Ok(config) => config,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            let revision = match OverlayConfig::revision(path.as_ref()) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            };
+            latest.widgets.coaching = runtime_config.widgets.coaching;
+            latest.coaching = runtime_config.coaching.clone();
+            latest.timing = runtime_config.timing.clone();
+            latest.performance = runtime_config.performance.clone();
+            latest.style = runtime_config.style.clone();
+            match latest.save_if_revision(path.as_ref(), revision) {
+                Ok(_) => {
+                    result = Ok(());
+                    break;
+                }
+                Err(crate::config::ConfigError::Conflict { .. }) if attempt < 2 => continue,
+                Err(error) => {
+                    result = Err(error);
+                    break;
+                }
+            }
+        }
+        if let Err(error) = result {
+            log::warn!("Could not save overlay preferences: {error}");
         }
     }
 
