@@ -376,6 +376,13 @@ impl LapEngine {
         self
     }
 
+    /// Apply timing/coaching changes without discarding the active session.
+    /// Existing points and history remain valid; subsequent samples use the
+    /// new thresholds and reference mode.
+    pub fn update_config(&mut self, config: LapEngineConfig) {
+        self.config = config;
+    }
+
     pub fn update(&mut self, snapshot: TelemetrySnapshot) -> LapAnalysis {
         self.reset_if_new_session(&snapshot);
 
@@ -666,12 +673,12 @@ impl LapEngine {
                 .personal_best
                 .as_ref()
                 .or(self.session_best.as_ref())
-                .or(self.last_lap.as_ref()),
+                .or(self.last_valid_lap.as_ref()),
             ReferenceMode::SessionBest => self
                 .session_best
                 .as_ref()
                 .or(self.personal_best.as_ref())
-                .or(self.last_lap.as_ref()),
+                .or(self.last_valid_lap.as_ref()),
             ReferenceMode::BestValidLap => self
                 .best_valid_lap
                 .as_ref()
@@ -1069,6 +1076,36 @@ mod tests {
         assert!(engine.session_best().is_none());
         assert!(engine.personal_best().is_none());
         assert!(engine.take_new_personal_best().is_none());
+    }
+
+    #[test]
+    fn valid_reference_modes_never_fall_back_to_invalid_last_lap() {
+        let mut engine = LapEngine::default();
+        engine.last_lap = Some(reference_lap(95.0));
+        engine.config.reference_mode = ReferenceMode::PersonalBest;
+
+        assert!(engine.selected_reference().is_none());
+    }
+
+    #[test]
+    fn timing_config_reload_preserves_session_state() {
+        let mut engine = LapEngine::default();
+        engine.session_best = Some(reference_lap(90.0));
+        engine.last_valid_lap = Some(reference_lap(91.0));
+        engine.config.reference_mode = ReferenceMode::PersonalBest;
+
+        let mut next = engine.config.clone();
+        next.brake_threshold = 0.25;
+        next.throttle_threshold = 0.35;
+        engine.update_config(next);
+
+        assert_eq!(engine.session_best().unwrap().total_time_seconds, 90.0);
+        assert_eq!(
+            engine.last_valid_lap.as_ref().unwrap().total_time_seconds,
+            91.0
+        );
+        assert_eq!(engine.config.brake_threshold, 0.25);
+        assert_eq!(engine.config.throttle_threshold, 0.35);
     }
 
     #[test]
