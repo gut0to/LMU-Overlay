@@ -41,6 +41,12 @@ impl OverlayConfig {
         let text = fs::read_to_string(path)?;
         let mut config: Self = toml::from_str(&text)?;
         let original_version = config.config_version;
+        if original_version > CURRENT_CONFIG_VERSION {
+            return Err(ConfigError::UnsupportedVersion {
+                found: original_version,
+                supported: CURRENT_CONFIG_VERSION,
+            });
+        }
         let needs_migration = original_version < CURRENT_CONFIG_VERSION;
         let missing_overlay_layers = config.overlays.is_empty();
         if needs_migration {
@@ -76,7 +82,7 @@ impl OverlayConfig {
     }
 
     pub fn normalize(&mut self) {
-        if self.config_version == 0 || self.config_version > CURRENT_CONFIG_VERSION {
+        if self.config_version == 0 {
             self.config_version = CURRENT_CONFIG_VERSION;
         }
         self.window.width = self.window.width.clamp(280, 1200);
@@ -133,12 +139,12 @@ impl OverlayConfig {
     /// Returns the runtime view for one independent overlay surface.
     /// The persisted config remains the source of truth; each process only
     /// receives the widgets and window belonging to its selected layer.
-    pub fn for_overlay_layer(&self, layer_id: Option<&str>) -> Self {
+    pub fn for_overlay_layer(&self, layer_id: Option<&str>) -> Result<Self, ConfigError> {
         let Some(layer_id) = layer_id else {
-            return self.clone();
+            return Ok(self.clone());
         };
         let Some(layer) = self.overlays.iter().find(|layer| layer.id == layer_id) else {
-            return self.clone();
+            return Err(ConfigError::UnknownOverlayLayer(layer_id.to_string()));
         };
 
         let mut next = self.clone();
@@ -178,7 +184,7 @@ impl OverlayConfig {
             }
         }
         next.overlays.clear();
-        next
+        Ok(next)
     }
 }
 
@@ -230,6 +236,7 @@ fn default_overlay_widget_ids() -> Vec<String> {
         "engine",
         "damage",
         "weather",
+        "performance",
     ]
     .into_iter()
     .map(str::to_string)
@@ -359,7 +366,7 @@ fn migrate_v5_to_v6(config: &mut OverlayConfig) {
     for preset in &mut config.presets.custom {
         preset.profile.normalize();
     }
-    config.config_version = CURRENT_CONFIG_VERSION;
+    config.config_version = 6;
 }
 
 fn migrate_v6_to_v7(config: &mut OverlayConfig) {
@@ -1490,6 +1497,8 @@ pub enum ConfigError {
     Io(io::Error),
     Toml(toml::de::Error),
     TomlSer(toml::ser::Error),
+    UnsupportedVersion { found: u32, supported: u32 },
+    UnknownOverlayLayer(String),
 }
 
 impl From<io::Error> for ConfigError {
@@ -1516,6 +1525,11 @@ impl std::fmt::Display for ConfigError {
             Self::Io(error) => write!(f, "could not read overlay config: {error}"),
             Self::Toml(error) => write!(f, "overlay config has invalid TOML: {error}"),
             Self::TomlSer(error) => write!(f, "could not write overlay config: {error}"),
+            Self::UnsupportedVersion { found, supported } => write!(
+                f,
+                "overlay config version {found} is newer than supported version {supported}"
+            ),
+            Self::UnknownOverlayLayer(id) => write!(f, "overlay layer '{id}' does not exist"),
         }
     }
 }
@@ -2010,12 +2024,69 @@ mod tests {
         });
         config.normalize();
 
-        let coach = config.for_overlay_layer(Some("coach"));
+        let coach = config.for_overlay_layer(Some("coach")).unwrap();
         assert_eq!(coach.window.width, WindowConfig::default().width);
         assert!(coach.widgets.coaching);
         assert!(!coach.widgets.speed_gear_rpm);
         assert!(!coach.extra_widgets["fuel"].enabled);
         assert!(config.overlays.iter().any(|layer| layer.id == "main"));
+    }
+
+    #[test]
+    fn preserves_performance_surface_membership() {
+        let mut config = OverlayConfig::default();
+        config.widgets.performance_monitor = true;
+        config.overlays = vec![OverlayLayerConfig {
+            widgets: vec!["performance".to_string()],
+            ..OverlayLayerConfig::default()
+        }];
+
+        config.normalize();
+
+        assert_eq!(config.overlays[0].widgets, vec!["performance"]);
+        assert!(
+            config
+                .for_overlay_layer(Some("main"))
+                .unwrap()
+                .widgets
+                .performance_monitor
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_explicit_overlay_layer() {
+        let mut config = OverlayConfig::default();
+        config.normalize();
+
+        assert!(matches!(
+            config.for_overlay_layer(Some("typo")),
+            Err(ConfigError::UnknownOverlayLayer(id)) if id == "typo"
+        ));
+        assert!(config.for_overlay_layer(None).is_ok());
+    }
+
+    #[test]
+    fn rejects_future_config_without_rewriting_it() {
+        let temp_path = std::env::temp_dir().join(format!(
+            "hashoverlay-future-config-{}.toml",
+            std::process::id()
+        ));
+        let config = OverlayConfig {
+            config_version: 999,
+            ..OverlayConfig::default()
+        };
+        let original = toml::to_string_pretty(&config).unwrap();
+        fs::write(&temp_path, &original).unwrap();
+
+        assert!(matches!(
+            OverlayConfig::load(&temp_path),
+            Err(ConfigError::UnsupportedVersion {
+                found: 999,
+                supported: CURRENT_CONFIG_VERSION
+            })
+        ));
+        assert_eq!(fs::read_to_string(&temp_path).unwrap(), original);
+        let _ = fs::remove_file(&temp_path);
     }
 
     #[test]

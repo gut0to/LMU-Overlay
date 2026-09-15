@@ -165,7 +165,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
-    let runtime_config = config.for_overlay_layer(overlay_layer.as_deref());
+    let runtime_config = config.for_overlay_layer(overlay_layer.as_deref())?;
     let mut lap_config = lap_engine_config(&runtime_config);
     let overlay = TelemetryOverlay::with_config_path_and_layer(
         runtime_config,
@@ -262,7 +262,13 @@ fn load_config_if_changed(
         return None;
     }
     match OverlayConfig::load(config_path) {
-        Ok(config) => Some((config.for_overlay_layer(overlay_layer), mtime)),
+        Ok(config) => match config.for_overlay_layer(overlay_layer) {
+            Ok(config) => Some((config, mtime)),
+            Err(error) => {
+                warn!("Could not select overlay layer: {error}");
+                None
+            }
+        },
         Err(error) => {
             warn!("Could not hot reload overlay timing config: {error}");
             None
