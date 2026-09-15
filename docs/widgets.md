@@ -11,10 +11,16 @@
 | Electronics, Energy, Engine, Damage | Official vehicle data | Real |
 | Weather | Official session data | Real |
 | Performance monitor | Overlay runtime | Real |
+| Track map | Official world positions | Unavailable until the transform is validated |
 
 Widgets can be enabled from **Settings > Widgets**. Each widget instance has an independent position, size, scale, opacity, lock state and z-order. The Widget Browser identifies both the required source and the truth status. Widgets marked unavailable remain disabled until the official LMU header is available and the corresponding layout is verified; they are not treated as live data.
 
 Some individual fields are intentionally optional even inside a `Real` widget. For example, hybrid energy is absent on non-hybrid cars, and orientation/DRS/map data are not claimed unless the installed LMU layout exposes them. In those cases the widget keeps the verified fields visible and renders `--` only for the unavailable field. Energy prefers LMU's official state-of-charge field and falls back to the battery charge fraction when that field is unavailable. Brake input is shown as a normalized percentage because LMU does not expose that field as physical kPa.
+
+Track Map is currently exposed in the catalog as unavailable and renders
+`TRACK DATA --`; the release does not draw a fabricated circuit outline.
+Radar is intentionally not exposed until an official heading/orientation
+transform is verified.
 
 ## Per-widget options
 
