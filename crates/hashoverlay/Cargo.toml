@@ -14,3 +14,4 @@ lmu-telemetry = { path = "../lmu-telemetry" }
 overlay-renderer = { path = "../overlay-renderer" }
 storage = { path = "../storage" }
 telemetry-engine = { path = "../telemetry-engine" }
+windows-sys.workspace = true

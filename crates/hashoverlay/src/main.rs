@@ -20,6 +20,8 @@ use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
 use storage::{ReferenceLapKey, ReferenceLapStore};
 use telemetry_engine::{FuelEngine, TelemetrySnapshot};
 
+mod host_instance;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Cli {
     overlay: bool,
@@ -55,6 +57,10 @@ fn run(cli: Cli) -> Result<()> {
     }
 
     if cli.overlay {
+        let Some(_host_instance) = host_instance::HostInstance::acquire()? else {
+            info!("HashOverlay host is already running; not starting a duplicate");
+            return Ok(());
+        };
         return run_overlay(cli.config_path, cli.overlay_layer);
     }
 
