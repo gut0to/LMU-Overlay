@@ -79,8 +79,8 @@ mod windows_overlay {
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
                 HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
                 SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_ERASEBKGND, WM_HOTKEY,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WNDCLASSW,
-                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_SIZE,
+                WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
                 WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
@@ -755,6 +755,10 @@ mod windows_overlay {
                 paint(hwnd);
                 0
             }
+            WM_SIZE => {
+                resize_d2d_target(hwnd, lparam);
+                0
+            }
             WM_ERASEBKGND => 1,
             WM_HOTKEY => {
                 handle_hotkey(hwnd, wparam as i32);
@@ -832,6 +836,22 @@ mod windows_overlay {
                 save_runtime_config(state);
             }
             _ => {}
+        }
+    }
+
+    unsafe fn resize_d2d_target(hwnd: HWND, lparam: LPARAM) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+        let width = (lparam as u32 & 0xffff) as u32;
+        let height = ((lparam as u32 >> 16) & 0xffff) as u32;
+        if width == 0 || height == 0 {
+            return;
+        }
+        if let Some(backend) = state.d2d.as_ref() {
+            if let Err(error) = backend.resize(width, height) {
+                log::warn!("Could not resize Direct2D render target: {error}");
+            }
         }
     }
 
