@@ -174,24 +174,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
-    let surface_configs = if let Some(layer_id) = overlay_layer.as_deref() {
-        vec![(
-            Some(layer_id.to_string()),
-            config.for_overlay_layer(Some(layer_id))?,
-        )]
-    } else {
-        config
-            .overlays
-            .iter()
-            .filter(|layer| layer.enabled)
-            .map(|layer| {
-                Ok((
-                    Some(layer.id.clone()),
-                    config.for_overlay_layer(Some(layer.id.as_str()))?,
-                ))
-            })
-            .collect::<Result<Vec<_>>>()?
-    };
+    let surface_configs = enabled_surface_configs(&config, overlay_layer.as_deref())?;
     if surface_configs.is_empty() {
         info!("No enabled overlay surfaces; waiting for Settings changes is not available in this host mode");
         return Ok(());
@@ -347,6 +330,30 @@ fn modified_time(path: &PathBuf) -> Option<SystemTime> {
     fs::metadata(path).ok()?.modified().ok()
 }
 
+fn enabled_surface_configs(
+    config: &OverlayConfig,
+    selected_layer: Option<&str>,
+) -> Result<Vec<(Option<String>, OverlayConfig)>> {
+    if let Some(layer_id) = selected_layer {
+        return Ok(vec![(
+            Some(layer_id.to_string()),
+            config.for_overlay_layer(Some(layer_id))?,
+        )]);
+    }
+
+    config
+        .overlays
+        .iter()
+        .filter(|layer| layer.enabled)
+        .map(|layer| {
+            Ok((
+                Some(layer.id.clone()),
+                config.for_overlay_layer(Some(layer.id.as_str()))?,
+            ))
+        })
+        .collect()
+}
+
 fn reference_lap_key(sample: &TelemetrySample) -> ReferenceLapKey {
     ReferenceLapKey {
         track: sample
@@ -423,6 +430,7 @@ fn overlay_config_path(config_path: Option<PathBuf>) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use overlay_renderer::config::OverlayLayerConfig;
 
     #[test]
     fn parses_default_cli() {
@@ -499,5 +507,30 @@ mod tests {
                 legacy_vehicle_class: Some("Hypercar".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn host_selects_only_enabled_surfaces_and_rejects_unknown_debug_layers() {
+        let mut config = OverlayConfig {
+            overlays: vec![
+                OverlayLayerConfig {
+                    id: "main".to_string(),
+                    enabled: true,
+                    ..OverlayLayerConfig::default()
+                },
+                OverlayLayerConfig {
+                    id: "race".to_string(),
+                    enabled: false,
+                    ..OverlayLayerConfig::default()
+                },
+            ],
+            ..OverlayConfig::default()
+        };
+        config.normalize();
+
+        let surfaces = enabled_surface_configs(&config, None).unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].0.as_deref(), Some("main"));
+        assert!(enabled_surface_configs(&config, Some("missing")).is_err());
     }
 }
