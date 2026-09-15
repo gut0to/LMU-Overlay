@@ -1437,16 +1437,26 @@ mod windows_overlay {
                 ],
                 pressure_unit_label(config),
             ),
-            "brakes" => wheel_summary(
-                "BRAKES",
-                [
-                    display_temperature_value(snapshot.wheels.front_left.brake_temp_c, config),
-                    display_temperature_value(snapshot.wheels.front_right.brake_temp_c, config),
-                    display_temperature_value(snapshot.wheels.rear_left.brake_temp_c, config),
-                    display_temperature_value(snapshot.wheels.rear_right.brake_temp_c, config),
-                ],
-                temperature_unit_label(config),
-            ),
+            "brakes" => {
+                let summary = wheel_summary(
+                    "BRAKES",
+                    [
+                        display_temperature_value(snapshot.wheels.front_left.brake_temp_c, config),
+                        display_temperature_value(snapshot.wheels.front_right.brake_temp_c, config),
+                        display_temperature_value(snapshot.wheels.rear_left.brake_temp_c, config),
+                        display_temperature_value(snapshot.wheels.rear_right.brake_temp_c, config),
+                    ],
+                    temperature_unit_label(config),
+                );
+                if options.show_bias {
+                    format!(
+                        "{summary}  {}",
+                        brake_bias_summary(snapshot.vehicle.brake_bias_front_percent)
+                    )
+                } else {
+                    summary
+                }
+            }
             "electronics" => electronics_summary(&snapshot),
             "energy" => match (
                 snapshot
@@ -2620,6 +2630,13 @@ mod windows_overlay {
             values[1].unwrap_or_default(),
             values[2].unwrap_or_default(),
             values[3].unwrap_or_default(),
+        )
+    }
+
+    fn brake_bias_summary(value: Option<f64>) -> String {
+        value.filter(|value| value.is_finite()).map_or_else(
+            || "BIAS --".to_string(),
+            |value| format!("BIAS {value:.1}% F"),
         )
     }
 
@@ -4175,6 +4192,12 @@ mod windows_overlay {
                 "TC ACTIVE  ABS READY  LIMITER"
             );
             assert!(electronics_intervention_active(&sample));
+        }
+
+        #[test]
+        fn formats_official_brake_bias_without_faking_unavailable_data() {
+            assert_eq!(brake_bias_summary(Some(54.26)), "BIAS 54.3% F");
+            assert_eq!(brake_bias_summary(None), "BIAS --");
         }
 
         fn scoring_car(
