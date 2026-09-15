@@ -137,4 +137,18 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn filters_by_class_without_changing_physical_order() {
+        let field = vec![
+            car(1, 1, 100.0, "Hypercar", true),
+            car(2, 1, 120.0, "LMP2", false),
+            car(3, 1, 80.0, "Hypercar", false),
+        ];
+
+        assert_eq!(
+            order_by_track_proximity(&field, 1, true, Some(5_000.0)),
+            Some(vec![0, 2])
+        );
+    }
 }
