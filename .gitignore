@@ -1,6 +1,7 @@
 /target/
 /settings/node_modules/
 /settings/dist/
+/dist/
 /settings/src-tauri/target/
 /settings/src-tauri/gen/
 /.idea/
