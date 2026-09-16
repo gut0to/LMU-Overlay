@@ -77,7 +77,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
 fn reset_config() -> Result<ConfigResponse, String> {
     let config: OverlayConfig =
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
-    let revision = OverlayConfig::revision(&overlay_config_path()).unwrap_or_default();
+    let revision = OverlayConfig::revision(overlay_config_path()).unwrap_or_default();
     save_config(config, revision)
 }
 
