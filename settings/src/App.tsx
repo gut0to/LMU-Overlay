@@ -530,10 +530,10 @@ function App() {
     <main className="shell">
       <header className="topbar">
         <div className="brandBlock">
-          <div className="brandMark">H</div>
+          <div className="brandMark" aria-hidden="true"><span>HO</span><span>01</span></div>
           <div>
-            <div className="brandKicker">LMU / race control</div>
-            <h1>HashOverlay <span>settings</span></h1>
+            <div className="brandKicker">LMU · race control</div>
+            <h1>HashOverlay <span>/ settings</span></h1>
             <p>{path}</p>
           </div>
         </div>
@@ -567,8 +567,8 @@ function App() {
 
       <section className="sceneBar">
         <div className="sceneHeading">
-          <span className="eyebrow">Overlay scenes</span>
-          <strong>Choose a cockpit view, then arrange its widgets.</strong>
+          <span className="eyebrow">Preset bank</span>
+          <strong>Load a cockpit setup.</strong>
         </div>
         <div className="sceneChoices">
           {presetNames.map((name) => (
@@ -590,8 +590,8 @@ function App() {
 
       <section className="layersBar">
         <div className="sceneHeading">
-          <span className="eyebrow">Overlay surfaces</span>
-          <strong>Run separate transparent windows and assign widgets to each one.</strong>
+          <span className="eyebrow">Window stack</span>
+          <strong>Choose the surface under control.</strong>
         </div>
         <div className="layerChoices">
           {config.overlays.map((overlay) => (
@@ -616,7 +616,7 @@ function App() {
 
       <section className="controlStrip" aria-label="Active overlay summary">
         <div className="controlLead">
-          <span className="stripLabel">Selected surface</span>
+          <span className="stripLabel">Armed surface</span>
           <strong>{activeOverlay?.name ?? "Main overlay"}</strong>
         </div>
         <div className="stripMetric">
@@ -628,10 +628,10 @@ function App() {
           <strong>{(activeOverlayConfig ?? config).window.width} × {(activeOverlayConfig ?? config).window.height}</strong>
         </div>
         <div className="stripMetric">
-          <span className="stripLabel">Startup</span>
-          <strong className={activeOverlay?.enabled ? "valueLive" : "valueMuted"}>{activeOverlay?.enabled ? "Enabled" : "Disabled"}</strong>
+          <span className="stripLabel">Deployment</span>
+          <strong className={activeOverlay?.enabled ? "valueLive" : "valueMuted"}>{activeOverlay?.enabled ? "Armed" : "Standby"}</strong>
         </div>
-        <p className="stripHint">Select a surface above to edit its layout and widget set.</p>
+        <p className="stripHint">Pick a surface, then set its layout and live data modules.</p>
       </section>
 
       <nav className="tabs">
