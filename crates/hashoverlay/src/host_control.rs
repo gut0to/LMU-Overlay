@@ -5,9 +5,33 @@ use std::sync::Arc;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\HashOverlay.Host";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlCommand {
+    Status,
+    Reload,
+    Show,
+    Hide,
+    Stop,
+    Shutdown,
+}
+
+impl ControlCommand {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "status" => Some(Self::Status),
+            "reload" => Some(Self::Reload),
+            "show" => Some(Self::Show),
+            "hide" => Some(Self::Hide),
+            "stop" => Some(Self::Stop),
+            "shutdown" => Some(Self::Shutdown),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(windows)]
 mod windows_control {
-    use super::PIPE_NAME;
+    use super::{ControlCommand, PIPE_NAME};
     use std::{
         ptr,
         sync::atomic::{AtomicBool, Ordering},
@@ -32,11 +56,16 @@ mod windows_control {
     }
 
     impl HostControl {
-        pub fn start(running: Arc<AtomicBool>) -> std::io::Result<Self> {
+        pub fn start(
+            running: Arc<AtomicBool>,
+            visible: Arc<AtomicBool>,
+            reload_requested: Arc<AtomicBool>,
+        ) -> std::io::Result<Self> {
             let server_running = running.clone();
+            let server_visible = visible.clone();
             let handle = thread::Builder::new()
                 .name("hashoverlay-host-control".to_string())
-                .spawn(move || server_loop(server_running))?;
+                .spawn(move || server_loop(server_running, server_visible, reload_requested))?;
             Ok(Self {
                 running,
                 handle: Some(handle),
@@ -62,7 +91,11 @@ mod windows_control {
         }
     }
 
-    fn server_loop(running: Arc<AtomicBool>) {
+    fn server_loop(
+        running: Arc<AtomicBool>,
+        visible: Arc<AtomicBool>,
+        reload_requested: Arc<AtomicBool>,
+    ) {
         while running.load(Ordering::Relaxed) {
             let pipe = unsafe {
                 CreateNamedPipeW(
@@ -88,17 +121,30 @@ mod windows_control {
             }
 
             let command = read_command(pipe);
-            let response = match command.as_deref() {
-                Some("status") => "running",
-                Some("stop") => {
+            let response = match command.as_deref().and_then(ControlCommand::parse) {
+                Some(ControlCommand::Status) => {
+                    if running.load(Ordering::Relaxed) {
+                        "running"
+                    } else {
+                        "stopped"
+                    }
+                }
+                Some(ControlCommand::Reload) => {
+                    reload_requested.store(true, Ordering::Relaxed);
+                    "reloaded"
+                }
+                Some(ControlCommand::Show) => {
+                    visible.store(true, Ordering::Relaxed);
+                    "shown"
+                }
+                Some(ControlCommand::Hide) => {
+                    visible.store(false, Ordering::Relaxed);
+                    "hidden"
+                }
+                Some(ControlCommand::Stop) | Some(ControlCommand::Shutdown) => {
                     running.store(false, Ordering::Relaxed);
                     "stopping"
                 }
-                Some("shutdown") => {
-                    running.store(false, Ordering::Relaxed);
-                    "stopping"
-                }
-                Some("reload") | Some("show") | Some("hide") => "unsupported",
                 _ => "invalid",
             };
             let _ = write_response(pipe, response);
@@ -218,9 +264,34 @@ pub struct HostControl;
 
 #[cfg(not(windows))]
 impl HostControl {
-    pub fn start(_running: Arc<AtomicBool>) -> std::io::Result<Self> {
+    pub fn start(
+        _running: Arc<AtomicBool>,
+        _visible: Arc<AtomicBool>,
+        _reload_requested: Arc<AtomicBool>,
+    ) -> std::io::Result<Self> {
         Ok(Self)
     }
 
     pub fn shutdown(self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_every_public_control_command() {
+        assert_eq!(
+            ControlCommand::parse("status"),
+            Some(ControlCommand::Status)
+        );
+        assert_eq!(
+            ControlCommand::parse("reload"),
+            Some(ControlCommand::Reload)
+        );
+        assert_eq!(ControlCommand::parse("show"), Some(ControlCommand::Show));
+        assert_eq!(ControlCommand::parse("hide"), Some(ControlCommand::Hide));
+        assert_eq!(ControlCommand::parse("stop"), Some(ControlCommand::Stop));
+        assert_eq!(ControlCommand::parse("invalid"), None);
+    }
 }
