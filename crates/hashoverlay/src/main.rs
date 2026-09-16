@@ -199,8 +199,16 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let mut host_hotkeys = Some(host_hotkeys::HostHotkeys::start(
         active_hotkeys.clone(),
         host_action_sender.clone(),
-    ));
-    let surface_configs = enabled_surface_configs(&config, overlay_layer.as_deref())?;
+    )?);
+    let surface_configs = match enabled_surface_configs(&config, overlay_layer.as_deref()) {
+        Ok(configs) => configs,
+        Err(error) => {
+            if let Some(hotkeys) = host_hotkeys.take() {
+                hotkeys.shutdown();
+            }
+            return Err(error);
+        }
+    };
     let shared_latest = Arc::new(Mutex::new(None));
     let history_capacity = surface_configs
         .iter()
@@ -343,12 +351,22 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     });
 
     let mut surfaces = HashMap::new();
-    reconcile_surfaces(
+    if let Err(error) = reconcile_surfaces(
         &config_path,
         overlay_layer.as_deref(),
         &runtime,
         &mut surfaces,
-    )?;
+    ) {
+        host_running.store(false, Ordering::Relaxed);
+        let _ = acquisition_handle.join();
+        drop(lap_writer);
+        let _ = lap_writer_handle.join();
+        host_control.shutdown();
+        if let Some(hotkeys) = host_hotkeys.take() {
+            hotkeys.shutdown();
+        }
+        return Err(error);
+    }
     let mut last_reconcile = Instant::now();
     while host_running.load(Ordering::Relaxed) {
         while let Ok(reply) = reload_request_receiver.try_recv() {
@@ -483,7 +501,7 @@ fn reload_host_hotkeys_if_changed(
     *host_hotkeys = Some(host_hotkeys::HostHotkeys::start(
         active_hotkeys.clone(),
         actions.clone(),
-    ));
+    )?);
     Ok(())
 }
 
@@ -563,7 +581,33 @@ fn reconcile_surfaces(
             visible: runtime.visible.clone(),
             edit_mode: runtime.edit_mode.clone(),
         };
-        let join = thread::spawn(move || surface.run_shared(view));
+        let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
+        let join = thread::spawn(move || surface.run_shared(view, Some(ready_sender)));
+        match ready_receiver.recv_timeout(Duration::from_secs(5)) {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                surface_running.store(false, Ordering::Relaxed);
+                let _ = join.join();
+                for (_, surface) in surfaces.drain() {
+                    surface.running.store(false, Ordering::Relaxed);
+                    let _ = surface.join.join();
+                }
+                return Err(anyhow::anyhow!(
+                    "overlay surface '{id}' failed to start: {error}"
+                ));
+            }
+            Err(error) => {
+                surface_running.store(false, Ordering::Relaxed);
+                let _ = join.join();
+                for (_, surface) in surfaces.drain() {
+                    surface.running.store(false, Ordering::Relaxed);
+                    let _ = surface.join.join();
+                }
+                return Err(anyhow::anyhow!(
+                    "overlay surface '{id}' did not report startup: {error}"
+                ));
+            }
+        }
         surfaces.insert(
             id,
             SurfaceHandle {

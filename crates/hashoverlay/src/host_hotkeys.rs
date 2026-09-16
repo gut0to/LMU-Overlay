@@ -45,49 +45,68 @@ mod windows_hotkeys {
     }
 
     impl HostHotkeys {
-        pub fn start(config: HotkeyConfig, actions: Sender<HostAction>) -> Self {
+        pub fn start(config: HotkeyConfig, actions: Sender<HostAction>) -> std::io::Result<Self> {
             let thread_id = Arc::new(AtomicU32::new(0));
             let worker_id = thread_id.clone();
             let (ready_sender, ready_receiver) = sync_channel(1);
-            let join = thread::spawn(move || unsafe {
-                let mut message: MSG = std::mem::zeroed();
-                // A thread queue must exist before shutdown can safely post WM_QUIT.
-                PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_NOREMOVE);
-                worker_id.store(GetCurrentThreadId(), Ordering::Relaxed);
-                register(TOGGLE_VISIBILITY, &config.toggle_overlay);
-                register(TOGGLE_EDIT, &config.edit_mode);
-                register(TOGGLE_COACHING, &config.toggle_coaching);
-                register(CYCLE_PRESET, &config.cycle_preset);
-                let _ = ready_sender.send(());
-                while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
-                    if message.message == WM_HOTKEY {
-                        let action = match message.wParam as i32 {
-                            TOGGLE_VISIBILITY => Some(HostAction::ToggleVisibility),
-                            TOGGLE_EDIT => Some(HostAction::ToggleEditMode),
-                            TOGGLE_COACHING => Some(HostAction::ToggleCoaching),
-                            CYCLE_PRESET => Some(HostAction::CyclePreset),
-                            _ => None,
-                        };
-                        if let Some(action) = action {
-                            let _ = actions.send(action);
+            let join = thread::Builder::new()
+                .name("hashoverlay-global-hotkeys".to_string())
+                .spawn(move || unsafe {
+                    let mut message: MSG = std::mem::zeroed();
+                    // A thread queue must exist before shutdown can safely post WM_QUIT.
+                    PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_NOREMOVE);
+                    worker_id.store(GetCurrentThreadId(), Ordering::Relaxed);
+                    let registrations = [
+                        (TOGGLE_VISIBILITY, config.toggle_overlay.as_str()),
+                        (TOGGLE_EDIT, config.edit_mode.as_str()),
+                        (TOGGLE_COACHING, config.toggle_coaching.as_str()),
+                        (CYCLE_PRESET, config.cycle_preset.as_str()),
+                    ];
+                    let mut registered = Vec::new();
+                    let registration_result = registrations.iter().try_for_each(|(id, binding)| {
+                        register(*id, binding).map(|()| registered.push(*id))
+                    });
+                    if let Err(error) = registration_result {
+                        for id in registered {
+                            UnregisterHotKey(std::ptr::null_mut(), id);
+                        }
+                        let _ = ready_sender.send(Err(error));
+                        return;
+                    }
+                    let _ = ready_sender.send(Ok(()));
+                    while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
+                        if message.message == WM_HOTKEY {
+                            let action = match message.wParam as i32 {
+                                TOGGLE_VISIBILITY => Some(HostAction::ToggleVisibility),
+                                TOGGLE_EDIT => Some(HostAction::ToggleEditMode),
+                                TOGGLE_COACHING => Some(HostAction::ToggleCoaching),
+                                CYCLE_PRESET => Some(HostAction::CyclePreset),
+                                _ => None,
+                            };
+                            if let Some(action) = action {
+                                let _ = actions.send(action);
+                            }
                         }
                     }
+                    for id in registered {
+                        UnregisterHotKey(std::ptr::null_mut(), id);
+                    }
+                })?;
+            match ready_receiver.recv() {
+                Ok(Ok(())) => Ok(Self {
+                    thread_id,
+                    join: Some(join),
+                }),
+                Ok(Err(error)) => {
+                    let _ = join.join();
+                    Err(error)
                 }
-                for id in [
-                    TOGGLE_VISIBILITY,
-                    TOGGLE_EDIT,
-                    TOGGLE_COACHING,
-                    CYCLE_PRESET,
-                ] {
-                    UnregisterHotKey(std::ptr::null_mut(), id);
+                Err(_) => {
+                    let _ = join.join();
+                    Err(std::io::Error::other(
+                        "host hotkey worker exited before initialization completed",
+                    ))
                 }
-            });
-            if ready_receiver.recv().is_err() {
-                log::warn!("Host hotkey worker exited before its message queue was ready");
-            }
-            Self {
-                thread_id,
-                join: Some(join),
             }
         }
 
@@ -112,14 +131,21 @@ mod windows_hotkeys {
         }
     }
 
-    unsafe fn register(id: i32, value: &str) {
-        let Some((modifiers, key)) = parse_hotkey(value) else {
-            log::warn!("Invalid host hotkey: {value}");
-            return;
-        };
+    unsafe fn register(id: i32, value: &str) -> std::io::Result<()> {
+        let (modifiers, key) = parse_hotkey(value).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid host hotkey: {value}"),
+            )
+        })?;
         if RegisterHotKey(std::ptr::null_mut(), id, modifiers, key) == 0 {
-            log::warn!("Could not register host hotkey '{value}'");
+            let error = std::io::Error::last_os_error();
+            return Err(std::io::Error::new(
+                error.kind(),
+                format!("could not register host hotkey '{value}': {error}"),
+            ));
         }
+        Ok(())
     }
 
     fn parse_hotkey(value: &str) -> Option<(u32, u32)> {
@@ -130,14 +156,15 @@ mod windows_hotkeys {
             .map(|part| part.trim().to_ascii_uppercase())
         {
             match part.as_str() {
-                "CTRL" | "CONTROL" => modifiers |= MOD_CONTROL,
-                "SHIFT" => modifiers |= MOD_SHIFT,
-                "ALT" => modifiers |= MOD_ALT,
+                "CTRL" | "CONTROL" if modifiers & MOD_CONTROL == 0 => modifiers |= MOD_CONTROL,
+                "SHIFT" if modifiers & MOD_SHIFT == 0 => modifiers |= MOD_SHIFT,
+                "ALT" if modifiers & MOD_ALT == 0 => modifiers |= MOD_ALT,
                 value
                     if value
                         .strip_prefix('F')
                         .and_then(|number| number.parse::<u32>().ok())
-                        .is_some_and(|number| (1..=12).contains(&number)) =>
+                        .is_some_and(|number| (1..=12).contains(&number))
+                        && key.is_none() =>
                 {
                     key = value[1..].parse::<u32>().ok().map(|number| 0x6f + number);
                 }
@@ -156,8 +183,8 @@ pub struct HostHotkeys;
 
 #[cfg(not(windows))]
 impl HostHotkeys {
-    pub fn start(_config: HotkeyConfig, _actions: Sender<HostAction>) -> Self {
-        Self
+    pub fn start(_config: HotkeyConfig, _actions: Sender<HostAction>) -> std::io::Result<Self> {
+        Ok(Self)
     }
     pub fn shutdown(self) {}
 }
