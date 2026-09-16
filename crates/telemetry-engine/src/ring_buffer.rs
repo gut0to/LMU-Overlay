@@ -50,6 +50,22 @@ impl<T> RingBuffer<T> {
         self.len = self.len.saturating_add(1).min(self.capacity());
     }
 
+    pub fn resize_preserving_recent(&mut self, capacity: usize)
+    where
+        T: Clone,
+    {
+        if self.capacity() == capacity {
+            return;
+        }
+        let items = self.iter().cloned().collect::<Vec<_>>();
+        let start = items.len().saturating_sub(capacity);
+        let retained = items.into_iter().skip(start).collect::<Vec<_>>();
+        *self = Self::new(capacity);
+        for item in retained {
+            self.push(item);
+        }
+    }
+
     pub fn latest(&self) -> Option<&T> {
         if self.is_empty() {
             return None;
@@ -127,5 +143,18 @@ mod tests {
         assert_eq!(buffer.capacity(), 2);
         assert!(buffer.is_empty());
         assert_eq!(buffer.iter().count(), 0);
+    }
+
+    #[test]
+    fn resize_preserves_the_most_recent_items() {
+        let mut buffer = RingBuffer::new(4);
+        for item in 1..=4 {
+            buffer.push(item);
+        }
+
+        buffer.resize_preserving_recent(2);
+
+        assert_eq!(buffer.capacity(), 2);
+        assert_eq!(buffer.iter().copied().collect::<Vec<_>>(), vec![3, 4]);
     }
 }
