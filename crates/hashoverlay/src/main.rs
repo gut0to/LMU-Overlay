@@ -599,6 +599,9 @@ fn reconcile_surfaces(
             }
             Err(error) => {
                 surface_running.store(false, Ordering::Relaxed);
+                if !join.is_finished() {
+                    runtime.running.store(false, Ordering::Relaxed);
+                }
                 let _ = join.join();
                 for (_, surface) in surfaces.drain() {
                     surface.running.store(false, Ordering::Relaxed);

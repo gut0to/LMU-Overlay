@@ -470,7 +470,15 @@ mod windows_overlay {
         where
             F: FnMut() -> Option<TelemetrySnapshot> + Send + 'static,
         {
-            let hwnd = create_window(self.state.clone())?;
+            let hwnd = match create_window(self.state.clone()) {
+                Ok(hwnd) => hwnd,
+                Err(error) => {
+                    if let Some(ready) = self.state.surface_ready.take() {
+                        let _ = ready.send(Err(error.to_string()));
+                    }
+                    return Err(error);
+                }
+            };
             if let Some(ready) = self.state.surface_ready.take() {
                 let _ = ready.send(Ok(()));
             }
