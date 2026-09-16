@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "surface": "settings",
+  "mode": "operate",
+  "direction": "paddock-timecard",
+  "palette": {
+    "paper": "#f3efe4",
+    "ink": "#10233f",
+    "cobalt": "#185adb",
+    "lime": "#c8f22d",
+    "coral": "#f05c4b"
+  },
+  "typography": {
+    "ui": "Archivo",
+    "data": "DM Mono"
+  }
+}
