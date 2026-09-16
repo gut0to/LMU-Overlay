@@ -7,13 +7,14 @@ candidate live-validated.
 
 ## Lifecycle
 
-- [ ] Open Settings before LMU; start the overlay and confirm `WAITING FOR LMU`.
+- [ ] Open Settings before LMU; start the overlay and confirm Settings reaches `Overlay live` only after each enabled surface window exists, then confirm `WAITING FOR LMU`.
 - [ ] Start LMU and confirm the overlay connects without restarting.
 - [ ] Enable Main, Race, and Coach; confirm one `hashoverlay.exe` host and three independent windows.
 - [ ] Move or resize each surface independently; disable one and confirm only that window disappears.
 - [ ] Close LMU; confirm stale data is rejected and the overlay returns to `WAITING FOR LMU`.
 - [ ] Reopen LMU; confirm automatic reconnect without restarting HashOverlay.
 - [ ] Stop and reload from Settings; confirm both use the running host state.
+- [ ] Reserve or conflict with one configured global hotkey; confirm the overlay still starts and the remaining available shortcuts work.
 
 ## Telemetry and persistence
 
@@ -29,3 +30,9 @@ candidate live-validated.
 - [ ] During an approximately one-hour session, observe RAM, CPU, GPU, handles, GDI objects, threads, and frame/telemetry latency.
 - [ ] Confirm no monotonic growth, reconnect loop, thread leak, or increasing frame latency.
 - [ ] Record limitations and mismatches here rather than presenting synthetic tests as live results.
+
+## Release Evidence
+
+- [ ] Record the LMU build, circuit, car, date and HashOverlay release tag used for this run.
+- [ ] Record whether the Settings installer and the standalone ZIP were both tested.
+- [ ] Attach or link the observed issues to the release PR before publishing a live-validation claim.
