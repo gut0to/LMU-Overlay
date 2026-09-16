@@ -42,7 +42,7 @@ fn save_config(
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
-    let _ = send_host_command("reload");
+    reload_overlay_config_after_save()?;
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -68,7 +68,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
-    let _ = send_host_command("reload");
+    reload_overlay_config_after_save()?;
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -177,13 +177,33 @@ fn overlay_status() -> Result<bool, String> {
     Ok(send_host_command("status").is_ok_and(|response| host_ready_response(&response)))
 }
 
+fn reload_overlay_config_after_save() -> Result<(), String> {
+    if !host_is_running() {
+        return Ok(());
+    }
+    let response = send_host_command("reload").map_err(|error| {
+        format!("Configuration was saved, but overlay reload failed: {error}")
+    })?;
+    validate_reload_response(&response).map_err(|error| {
+        format!("Configuration was saved, but overlay reload failed: {error}")
+    })
+}
+
+fn validate_reload_response(response: &str) -> Result<(), String> {
+    if response == "reloaded" {
+        Ok(())
+    } else {
+        Err(format!("host returned '{response}'"))
+    }
+}
+
 fn host_ready_response(response: &str) -> bool {
     response == "running"
 }
 
 #[cfg(test)]
 mod startup_status_tests {
-    use super::host_ready_response;
+    use super::{host_ready_response, validate_reload_response};
 
     #[test]
     fn only_reports_running_after_host_control_confirms_ready() {
@@ -192,6 +212,14 @@ mod startup_status_tests {
         assert!(!host_ready_response("stopping"));
         assert!(!host_ready_response("invalid"));
         assert!(!host_ready_response("error:window creation failed"));
+    }
+
+    #[test]
+    fn rejects_unsuccessful_runtime_reload_responses() {
+        assert!(validate_reload_response("reloaded").is_ok());
+        assert!(validate_reload_response("running").is_err());
+        assert!(validate_reload_response("error:host stopped").is_err());
+        assert!(validate_reload_response("error:reload timed out").is_err());
     }
 }
 
