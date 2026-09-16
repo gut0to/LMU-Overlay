@@ -35,6 +35,12 @@ The reader also extracts session metadata from the same official buffer:
 
 To avoid reading a half-updated frame, the reader captures a small frame marker before and after the sample. If the marker changes during the read, the sample is retried and then rejected as a torn frame. This keeps the overlay conservative without touching process memory.
 
+The host also fingerprints the verified raw frame to observe producer
+progress. This avoids treating an invalid or unavailable session elapsed time
+as proof that LMU has stopped producing telemetry. If the fingerprint remains
+unchanged beyond the stale timeout, the reader reopens the mapping and waits
+for a fresh frame.
+
 The source layout is based on the `SharedMemoryInterface` header shipped with LMU under the game's `Support\SharedMemoryInterface` folder. TinyPedal's open source `pyLMUSharedMemory` project follows the same source and is useful as a reference implementation.
 
 The generic `gameVersion` value is recorded by the interface but is not a

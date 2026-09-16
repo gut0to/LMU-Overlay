@@ -42,7 +42,7 @@ fn save_config(
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
-    let _ = send_host_command("reload");
+    reload_overlay_config_after_save()?;
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -68,7 +68,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
-    let _ = send_host_command("reload");
+    reload_overlay_config_after_save()?;
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -77,7 +77,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
 fn reset_config() -> Result<ConfigResponse, String> {
     let config: OverlayConfig =
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
-    let revision = OverlayConfig::revision(&overlay_config_path()).unwrap_or_default();
+    let revision = OverlayConfig::revision(overlay_config_path()).unwrap_or_default();
     save_config(config, revision)
 }
 
@@ -92,7 +92,7 @@ fn start_overlay(
     processes: tauri::State<'_, OverlayProcesses>,
 ) -> Result<(), String> {
     if host_is_running() {
-        return Ok(());
+        return wait_for_host_startup();
     }
     let mut running = processes
         .0
@@ -105,7 +105,7 @@ fn start_overlay(
             .unwrap_or(true)
     });
     if !running.is_empty() {
-        return Ok(());
+        return wait_for_host_startup();
     }
 
     let mut candidates = Vec::new();
@@ -174,9 +174,53 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 
 #[tauri::command]
 fn overlay_status() -> Result<bool, String> {
-    Ok(send_host_command("status")
-        .map(|response| response == "running")
-        .unwrap_or_else(|_| host_is_running()))
+    Ok(send_host_command("status").is_ok_and(|response| host_ready_response(&response)))
+}
+
+fn reload_overlay_config_after_save() -> Result<(), String> {
+    if !host_is_running() {
+        return Ok(());
+    }
+    let response = send_host_command("reload").map_err(|error| {
+        format!("Configuration was saved, but overlay reload failed: {error}")
+    })?;
+    validate_reload_response(&response).map_err(|error| {
+        format!("Configuration was saved, but overlay reload failed: {error}")
+    })
+}
+
+fn validate_reload_response(response: &str) -> Result<(), String> {
+    if response == "reloaded" {
+        Ok(())
+    } else {
+        Err(format!("host returned '{response}'"))
+    }
+}
+
+fn host_ready_response(response: &str) -> bool {
+    response == "running"
+}
+
+#[cfg(test)]
+mod startup_status_tests {
+    use super::{host_ready_response, validate_reload_response};
+
+    #[test]
+    fn only_reports_running_after_host_control_confirms_ready() {
+        assert!(host_ready_response("running"));
+        assert!(!host_ready_response("stopped"));
+        assert!(!host_ready_response("stopping"));
+        assert!(!host_ready_response("invalid"));
+        assert!(!host_ready_response("error:window creation failed"));
+    }
+
+    #[test]
+    fn rejects_unsuccessful_runtime_reload_responses() {
+        assert!(validate_reload_response("reloaded").is_ok());
+        assert!(validate_reload_response("running").is_err());
+        assert!(validate_reload_response("error:host stopped").is_err());
+        assert!(validate_reload_response("error:reload timed out").is_err());
+    }
 }
 
 #[cfg(windows)]
@@ -276,7 +320,7 @@ fn host_is_running() -> bool {
 }
 
 fn wait_for_host_startup() -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if send_host_command("status").is_ok_and(|response| response == "running") {
             return Ok(());

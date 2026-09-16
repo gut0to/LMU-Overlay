@@ -161,19 +161,18 @@ const PRODUCER_STALE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Default)]
 pub struct ProducerLiveness {
-    last_marker: Option<f64>,
+    last_fingerprint: Option<u64>,
     last_progress_at: Option<Instant>,
     stale: bool,
 }
 
 impl ProducerLiveness {
-    pub fn observe(&mut self, marker: f64, now: Instant) -> bool {
-        let progressed = marker.is_finite()
-            && self.last_marker.is_none_or(|previous| {
-                (marker - previous).abs() > f64::EPSILON || marker < previous
-            });
+    pub fn observe(&mut self, fingerprint: u64, now: Instant) -> bool {
+        let progressed = self
+            .last_fingerprint
+            .is_none_or(|previous| previous != fingerprint);
         if progressed {
-            self.last_marker = Some(marker);
+            self.last_fingerprint = Some(fingerprint);
             self.last_progress_at = Some(now);
             self.stale = false;
         } else if self
@@ -220,7 +219,10 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
         }
 
         if let Some(heartbeat) = self.inner.read_heartbeat()? {
-            if self.liveness.observe(heartbeat.marker, Instant::now()) {
+            if self
+                .liveness
+                .observe(heartbeat.frame_fingerprint, Instant::now())
+            {
                 self.inner = PlatformTelemetrySource::open()?;
                 self.next_reconnect_attempt = Instant::now() + Duration::from_millis(500);
                 self.liveness.reset();
@@ -358,7 +360,7 @@ impl PlatformTelemetrySource {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ProducerHeartbeat {
-    marker: f64,
+    frame_fingerprint: u64,
 }
 
 fn read_producer_heartbeat(bytes: &[u8]) -> Result<Option<ProducerHeartbeat>, TelemetryError> {
@@ -366,8 +368,20 @@ fn read_producer_heartbeat(bytes: &[u8]) -> Result<Option<ProducerHeartbeat>, Te
     if detect_layout(bytes, frame).is_none() {
         return Ok(None);
     }
-    let marker = read_f64(bytes, OFFSET_SCORING_CURRENT_ET)?;
-    Ok(marker.is_finite().then_some(ProducerHeartbeat { marker }))
+    // LMU exposes no sequence counter in this shared-memory layout. Fingerprint
+    // the raw frame so liveness remains observable even when session ET is NaN
+    // or otherwise unavailable (for example, while waiting between sessions).
+    Ok(Some(ProducerHeartbeat {
+        frame_fingerprint: producer_frame_fingerprint(bytes),
+    }))
+}
+
+fn producer_frame_fingerprint(bytes: &[u8]) -> u64 {
+    bytes[..BUFFER_SIZE]
+        .iter()
+        .fold(0xcbf29ce484222325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+        })
 }
 
 fn read_consistent_sample_from_bytes(
@@ -1010,25 +1024,34 @@ mod tests {
     fn producer_liveness_detects_frozen_progress_in_every_phase() {
         let start = Instant::now();
         let mut liveness = ProducerLiveness::default();
-        assert!(!liveness.observe(10.0, start));
-        assert!(liveness.observe(10.0, start + Duration::from_secs(6)));
+        assert!(!liveness.observe(10, start));
+        assert!(liveness.observe(10, start + Duration::from_secs(6)));
 
         liveness.reset();
-        assert!(!liveness.observe(10.0, start));
-        assert!(!liveness.observe(11.0, start + Duration::from_secs(6)));
+        assert!(!liveness.observe(10, start));
+        assert!(!liveness.observe(11, start + Duration::from_secs(6)));
     }
 
     #[test]
     fn reads_heartbeat_without_a_player_vehicle() {
         let mut bytes = vec![0; BUFFER_SIZE];
         write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
-        write_f64(&mut bytes, OFFSET_SCORING_CURRENT_ET, 12.5);
         write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE, 0);
 
-        assert_eq!(
-            read_producer_heartbeat(&bytes).unwrap(),
-            Some(ProducerHeartbeat { marker: 12.5 })
-        );
+        assert!(read_producer_heartbeat(&bytes).unwrap().is_some());
+    }
+
+    #[test]
+    fn heartbeat_tracks_raw_frame_changes_when_session_time_is_invalid() {
+        let mut bytes = vec![0; BUFFER_SIZE];
+        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
+        write_f64(&mut bytes, OFFSET_SCORING_CURRENT_ET, f64::NAN);
+
+        let initial = read_producer_heartbeat(&bytes).unwrap().unwrap();
+        write_u8(&mut bytes, OFFSET_TELEMETRY_ACTIVE_VEHICLES, 2);
+        let updated = read_producer_heartbeat(&bytes).unwrap().unwrap();
+
+        assert_ne!(initial.frame_fingerprint, updated.frame_fingerprint);
     }
 
     #[test]

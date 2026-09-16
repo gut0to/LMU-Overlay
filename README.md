@@ -9,14 +9,14 @@ HashOverlay is a local, read-only racing overlay for Le Mans Ultimate. It is bui
 3. Choose a preset, adjust the widgets you want and press **Start overlay**.
 4. Start Le Mans Ultimate and enter a session.
 
-The overlay waits safely for LMU when the game is not running. By default, `F9` shows or hides it and `F10` enters layout edit mode.
+The Settings app confirms that the overlay window is ready before showing it as live. The overlay waits safely for LMU when the game is not running. By default, `F9` shows or hides it and `F10` enters layout edit mode.
 
 The full guide is in [docs/usage.md](docs/usage.md). Widget availability and data sources are listed in [docs/widgets.md](docs/widgets.md).
 
 ## What It Does
 
 - Transparent, always-on-top, click-through overlay with in-game drag, resize and snapping.
-- Settings app with a widget catalog, search, category filters, presets, hotkeys, preview, import/export and hot reload.
+- Settings app with a widget catalog, search, category filters, presets, hotkeys, preview, import/export, hot reload and explicit host status.
 - Core driving HUD: gear, speed, RPM, pedals, steering, input history, delta, timing, sectors and mini sectors.
 - Local reference-lap analysis: PB/session references, predicted lap, bounded histories and coaching.
 - Optional engineering and race widgets for fuel, tyres, brakes, electronics, energy, engine, weather, flags, position and scoring-derived views.
@@ -30,7 +30,7 @@ HashOverlay opens `LMU_Data` with read-only access. It does not inject code, wri
 
 The shared-memory layout is verified against the pyLMUSharedMemory MIT reference and covered by synthetic parser tests. Live LMU smoke testing is environment-dependent and is not claimed by those tests; fields that are not officially available remain optional and render as `--`.
 
-Architecture, development and release notes live in [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md) and [docs/release.md](docs/release.md).
+Architecture, development, release and live-LMU validation notes live in [docs/architecture.md](docs/architecture.md), [docs/development.md](docs/development.md), [docs/release.md](docs/release.md) and [docs/live-smoke-test.md](docs/live-smoke-test.md).
 
 ## Contributing
 

@@ -361,6 +361,7 @@ mod windows_overlay {
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
         d2d: Option<Arc<d2d_backend::D2dBackend>>,
+        surface_ready: Option<std::sync::mpsc::SyncSender<Result<(), String>>>,
     }
 
     #[derive(Debug, Default)]
@@ -460,15 +461,27 @@ mod windows_overlay {
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
                     d2d: None,
+                    surface_ready: None,
                 },
             })
         }
 
-        pub fn run<F>(self, mut next_snapshot: F) -> Result<(), OverlayError>
+        pub fn run<F>(mut self, mut next_snapshot: F) -> Result<(), OverlayError>
         where
             F: FnMut() -> Option<TelemetrySnapshot> + Send + 'static,
         {
-            let hwnd = create_window(self.state.clone())?;
+            let hwnd = match create_window(self.state.clone()) {
+                Ok(hwnd) => hwnd,
+                Err(error) => {
+                    if let Some(ready) = self.state.surface_ready.take() {
+                        let _ = ready.send(Err(error.to_string()));
+                    }
+                    return Err(error);
+                }
+            };
+            if let Some(ready) = self.state.surface_ready.take() {
+                let _ = ready.send(Ok(()));
+            }
             let telemetry_state = self.state.clone();
             let telemetry_worker = self.state.shared_runtime.is_none().then(|| {
                 thread::spawn(move || {
@@ -622,12 +635,17 @@ mod windows_overlay {
         /// Run this surface from a host-owned immutable snapshot stream. The
         /// surface renders and reloads its own configuration, but never reads
         /// LMU memory or owns analysis/storage workers.
-        pub fn run_shared(mut self, runtime: SharedRuntimeView) -> Result<(), OverlayError> {
+        pub fn run_shared(
+            mut self,
+            runtime: SharedRuntimeView,
+            ready: Option<std::sync::mpsc::SyncSender<Result<(), String>>>,
+        ) -> Result<(), OverlayError> {
             self.state.latest = runtime.latest.clone();
             self.state.history = runtime.history.clone();
             self.state.visible = runtime.visible.clone();
             self.state.edit_mode = runtime.edit_mode.clone();
             self.state.shared_runtime = Some(runtime);
+            self.state.surface_ready = ready;
             self.run(|| None)
         }
     }
@@ -4544,7 +4562,14 @@ impl TelemetryOverlay {
         Err(OverlayError::UnsupportedPlatform)
     }
 
-    pub fn run_shared(self, _runtime: SharedRuntimeView) -> Result<(), OverlayError> {
+    pub fn run_shared(
+        self,
+        _runtime: SharedRuntimeView,
+        ready: Option<std::sync::mpsc::SyncSender<Result<(), String>>>,
+    ) -> Result<(), OverlayError> {
+        if let Some(ready) = ready {
+            let _ = ready.send(Err("overlay rendering is only supported on Windows".into()));
+        }
         Err(OverlayError::UnsupportedPlatform)
     }
 }
