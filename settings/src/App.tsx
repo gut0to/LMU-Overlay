@@ -532,7 +532,6 @@ function App() {
         <div className="brandBlock">
           <div className="brandMark" aria-hidden="true"><span>HO</span><span>01</span></div>
           <div>
-            <div className="brandKicker">LMU · race control</div>
             <h1>HashOverlay <span>/ settings</span></h1>
             <p>{path}</p>
           </div>
@@ -567,7 +566,6 @@ function App() {
 
       <section className="sceneBar">
         <div className="sceneHeading">
-          <span className="eyebrow">Preset bank</span>
           <strong>Load a cockpit setup.</strong>
         </div>
         <div className="sceneChoices">
@@ -590,7 +588,6 @@ function App() {
 
       <section className="layersBar">
         <div className="sceneHeading">
-          <span className="eyebrow">Window stack</span>
           <strong>Choose the surface under control.</strong>
         </div>
         <div className="layerChoices">
