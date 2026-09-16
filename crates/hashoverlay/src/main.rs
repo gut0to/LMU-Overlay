@@ -230,11 +230,6 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         visible: shared_visible.clone(),
         edit_mode: shared_edit_mode.clone(),
     };
-    let host_control = host_control::HostControl::start(
-        host_running.clone(),
-        shared_visible.clone(),
-        reload_request_sender,
-    )?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
     let (lap_writer, lap_receiver) = mpsc::channel();
@@ -361,12 +356,18 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         let _ = acquisition_handle.join();
         drop(lap_writer);
         let _ = lap_writer_handle.join();
-        host_control.shutdown();
         if let Some(hotkeys) = host_hotkeys.take() {
             hotkeys.shutdown();
         }
         return Err(error);
     }
+    // Publish host readiness only after the initial overlay surface has
+    // created its window. Settings uses this pipe as the startup handshake.
+    let host_control = host_control::HostControl::start(
+        host_running.clone(),
+        shared_visible.clone(),
+        reload_request_sender,
+    )?;
     let mut last_reconcile = Instant::now();
     while host_running.load(Ordering::Relaxed) {
         while let Ok(reply) = reload_request_receiver.try_recv() {

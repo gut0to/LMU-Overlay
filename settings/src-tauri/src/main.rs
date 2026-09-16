@@ -92,7 +92,7 @@ fn start_overlay(
     processes: tauri::State<'_, OverlayProcesses>,
 ) -> Result<(), String> {
     if host_is_running() {
-        return Ok(());
+        return wait_for_host_startup();
     }
     let mut running = processes
         .0
@@ -105,7 +105,7 @@ fn start_overlay(
             .unwrap_or(true)
     });
     if !running.is_empty() {
-        return Ok(());
+        return wait_for_host_startup();
     }
 
     let mut candidates = Vec::new();
@@ -174,9 +174,25 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 
 #[tauri::command]
 fn overlay_status() -> Result<bool, String> {
-    Ok(send_host_command("status")
-        .map(|response| response == "running")
-        .unwrap_or_else(|_| host_is_running()))
+    Ok(send_host_command("status").is_ok_and(|response| host_ready_response(&response)))
+}
+
+fn host_ready_response(response: &str) -> bool {
+    response == "running"
+}
+
+#[cfg(test)]
+mod startup_status_tests {
+    use super::host_ready_response;
+
+    #[test]
+    fn only_reports_running_after_host_control_confirms_ready() {
+        assert!(host_ready_response("running"));
+        assert!(!host_ready_response("stopped"));
+        assert!(!host_ready_response("stopping"));
+        assert!(!host_ready_response("invalid"));
+        assert!(!host_ready_response("error:window creation failed"));
+    }
 }
 
 #[cfg(windows)]
@@ -276,7 +292,7 @@ fn host_is_running() -> bool {
 }
 
 fn wait_for_host_startup() -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
         if send_host_command("status").is_ok_and(|response| response == "running") {
             return Ok(());

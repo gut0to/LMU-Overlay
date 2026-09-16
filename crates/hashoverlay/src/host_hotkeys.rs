@@ -63,15 +63,13 @@ mod windows_hotkeys {
                         (CYCLE_PRESET, config.cycle_preset.as_str()),
                     ];
                     let mut registered = Vec::new();
-                    let registration_result = registrations.iter().try_for_each(|(id, binding)| {
-                        register(*id, binding).map(|()| registered.push(*id))
-                    });
-                    if let Err(error) = registration_result {
-                        for id in registered {
-                            UnregisterHotKey(std::ptr::null_mut(), id);
+                    for (id, binding) in registrations {
+                        match register(id, binding) {
+                            Ok(()) => registered.push(id),
+                            Err(error) => {
+                                log::warn!("{error}");
+                            }
                         }
-                        let _ = ready_sender.send(Err(error));
-                        return;
                     }
                     let _ = ready_sender.send(Ok(()));
                     while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
