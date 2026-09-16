@@ -25,7 +25,25 @@ The current renderer creates a lightweight Win32 transparent, always-on-top, cli
 
 F9 toggles visibility by default. F10 toggles edit mode by default, which makes the overlay clickable so each unlocked widget can be selected, moved, resized and saved back to the config file.
 
-Saved config changes are hot reloaded while the overlay is running. This lets the Settings app change colors, layout, opacity, units, coaching and timing behavior without restarting the overlay.
+Saved config changes are hot reloaded while the overlay is running. This lets the Settings app change colors, layout, opacity, units, coaching and timing behavior without restarting the overlay. A failed reload is returned to Settings instead of being silently reported as successful.
+
+## Host Lifecycle And Control
+
+The overlay host owns the telemetry acquisition loop, reference-lap writer,
+global host hotkeys and every configured overlay surface. Each surface creates
+its Win32 window on its own UI thread, then acknowledges readiness to the host.
+Only after every initial surface is ready does the host publish the local
+`HashOverlay.Host` named pipe used by Settings.
+
+Settings treats a `running` response from that pipe as the startup contract. A
+mutex or a child process alone is not enough to mark the overlay as live. This
+keeps a failed window creation, a startup timeout and an unavailable control
+pipe visible to the user instead of presenting a false running state.
+
+Global hotkeys are best-effort: a binding already claimed by another program is
+logged and skipped without preventing the overlay from starting. The host
+continues to own the successfully registered bindings and releases them during
+shutdown.
 
 The normal Windows path submits cached Direct2D shapes and DirectWrite text commands. A GDI path remains only as a compatibility fallback when the native surface cannot be created, and Win32/GDI interop is retained for bootstrap integration with the existing window paint lifecycle. Widgets do not depend on the fallback path for their data or layout.
 
@@ -45,7 +63,7 @@ Public APIs should be boring and explicit. Avoid clever abstractions until there
 
 ## Settings App
 
-`settings/` contains the Tauri + React + TypeScript overlay designer. It edits the same TOML config consumed by the runtime overlay, loads the widget catalog from Rust, starts an adjacent release overlay executable, opens the config folder, provides a searchable widget browser, live layout preview, import/export and reset actions. Normal use does not require hand-editing TOML.
+`settings/` contains the Tauri + React + TypeScript overlay control room. It edits the same TOML config consumed by the runtime overlay, loads the widget catalog from Rust, starts an adjacent release overlay executable, opens the config folder, provides a searchable widget browser, live layout preview, import/export and reset actions. Normal use does not require hand-editing TOML.
 
 ## CI
 
