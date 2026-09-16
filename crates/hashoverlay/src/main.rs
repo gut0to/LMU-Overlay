@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::PathBuf,
     process::{Command, ExitCode},
@@ -23,7 +24,23 @@ use storage::{ReferenceLapKey, ReferenceLapStore};
 use telemetry_engine::{FuelEngine, RingBuffer, TelemetrySnapshot};
 
 mod host_control;
+mod host_hotkeys;
 mod host_instance;
+
+#[derive(Clone)]
+struct HostRuntime {
+    latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
+    history: Arc<Mutex<RingBuffer<TelemetrySnapshot>>>,
+    stats: Arc<Mutex<HostRuntimeStats>>,
+    running: Arc<AtomicBool>,
+    visible: Arc<AtomicBool>,
+    edit_mode: Arc<AtomicBool>,
+}
+
+struct SurfaceHandle {
+    running: Arc<AtomicBool>,
+    join: thread::JoinHandle<Result<(), overlay_renderer::OverlayError>>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Cli {
@@ -177,12 +194,9 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
+    let (host_action_sender, host_action_receiver) = mpsc::channel();
+    let host_hotkeys = host_hotkeys::HostHotkeys::start(config.hotkeys.clone(), host_action_sender);
     let surface_configs = enabled_surface_configs(&config, overlay_layer.as_deref())?;
-    if surface_configs.is_empty() {
-        info!("No enabled overlay surfaces; waiting for Settings changes is not available in this host mode");
-        return Ok(());
-    }
-
     let shared_latest = Arc::new(Mutex::new(None));
     let history_capacity = surface_configs
         .iter()
@@ -193,8 +207,21 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let shared_stats = Arc::new(Mutex::new(HostRuntimeStats::default()));
     let shared_visible = Arc::new(AtomicBool::new(true));
     let shared_edit_mode = Arc::new(AtomicBool::new(false));
+    let reload_requested = Arc::new(AtomicBool::new(false));
     let host_running = Arc::new(AtomicBool::new(true));
-    let host_control = host_control::HostControl::start(host_running.clone())?;
+    let runtime = HostRuntime {
+        latest: shared_latest.clone(),
+        history: shared_history.clone(),
+        stats: shared_stats.clone(),
+        running: host_running.clone(),
+        visible: shared_visible.clone(),
+        edit_mode: shared_edit_mode.clone(),
+    };
+    let host_control = host_control::HostControl::start(
+        host_running.clone(),
+        shared_visible.clone(),
+        reload_requested.clone(),
+    )?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
     let (lap_writer, lap_receiver) = mpsc::channel();
@@ -299,33 +326,67 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         }
     });
 
-    let mut surface_handles = Vec::with_capacity(surface_configs.len());
-    for (layer_id, runtime_config) in surface_configs {
-        let surface = TelemetryOverlay::with_config_path_and_layer(
-            runtime_config,
-            config_path.clone(),
-            layer_id,
-        )?;
-        let surface_latest = shared_latest.clone();
-        let surface_running = Arc::new(AtomicBool::new(true));
-        let runtime = SharedRuntimeView {
-            latest: surface_latest,
-            history: shared_history.clone(),
-            host_stats: shared_stats.clone(),
-            host_running: host_running.clone(),
-            surface_running,
-            visible: shared_visible.clone(),
-            edit_mode: shared_edit_mode.clone(),
-        };
-        surface_handles.push(thread::spawn(move || surface.run_shared(runtime)));
+    let mut surfaces = HashMap::new();
+    reconcile_surfaces(
+        &config_path,
+        overlay_layer.as_deref(),
+        &runtime,
+        &mut surfaces,
+    )?;
+    let mut last_reconcile = Instant::now();
+    while host_running.load(Ordering::Relaxed) {
+        while let Ok(action) = host_action_receiver.try_recv() {
+            match action {
+                host_hotkeys::HostAction::ToggleVisibility => {
+                    shared_visible.fetch_xor(true, Ordering::Relaxed);
+                }
+                host_hotkeys::HostAction::ToggleEditMode => {
+                    let enabled = !shared_edit_mode.load(Ordering::Relaxed);
+                    shared_edit_mode.store(enabled, Ordering::Relaxed);
+                    if enabled {
+                        shared_visible.store(true, Ordering::Relaxed);
+                    }
+                }
+                host_hotkeys::HostAction::ToggleCoaching => {
+                    if let Err(error) = toggle_host_coaching(&config_path) {
+                        warn!("Could not toggle coaching from host hotkey: {error}");
+                    } else {
+                        reload_requested.store(true, Ordering::Relaxed);
+                    }
+                }
+                host_hotkeys::HostAction::CyclePreset => {
+                    if let Err(error) = cycle_host_preset(&config_path) {
+                        warn!("Could not cycle preset from host hotkey: {error}");
+                    } else {
+                        reload_requested.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+        if reload_requested.swap(false, Ordering::Relaxed)
+            || last_reconcile.elapsed() >= Duration::from_millis(500)
+        {
+            if let Err(error) = reconcile_surfaces(
+                &config_path,
+                overlay_layer.as_deref(),
+                &runtime,
+                &mut surfaces,
+            ) {
+                warn!("Could not reconcile overlay surfaces: {error}");
+            }
+            last_reconcile = Instant::now();
+        }
+        reap_finished_surfaces(&mut surfaces);
+        thread::sleep(Duration::from_millis(25));
     }
-    for handle in surface_handles {
-        if let Err(error) = handle
+    for (_, surface) in surfaces {
+        surface.running.store(false, Ordering::Relaxed);
+        if let Err(error) = surface
+            .join
             .join()
             .unwrap_or(Err(overlay_renderer::OverlayError::UnsupportedPlatform))
         {
             warn!("Overlay surface stopped: {error}");
-            host_running.store(false, Ordering::Relaxed);
         }
     }
     host_running.store(false, Ordering::Relaxed);
@@ -335,7 +396,29 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         warn!("Could not join personal best storage worker: {error:?}");
     }
     host_control.shutdown();
+    host_hotkeys.shutdown();
 
+    Ok(())
+}
+
+fn toggle_host_coaching(config_path: &PathBuf) -> Result<()> {
+    let mut config = OverlayConfig::load(config_path)?;
+    config.widgets.coaching = !config.widgets.coaching;
+    config.coaching.mode = if config.widgets.coaching {
+        "practice".to_string()
+    } else {
+        "off".to_string()
+    };
+    let revision = OverlayConfig::revision(config_path)?;
+    config.save_if_revision(config_path, revision)?;
+    Ok(())
+}
+
+fn cycle_host_preset(config_path: &PathBuf) -> Result<()> {
+    let mut config = OverlayConfig::load(config_path)?;
+    config.cycle_preset();
+    let revision = OverlayConfig::revision(config_path)?;
+    config.save_if_revision(config_path, revision)?;
     Ok(())
 }
 
@@ -359,6 +442,86 @@ fn load_config_if_changed(
         Err(error) => {
             warn!("Could not hot reload overlay timing config: {error}");
             None
+        }
+    }
+}
+
+fn reconcile_surfaces(
+    config_path: &PathBuf,
+    selected_layer: Option<&str>,
+    runtime: &HostRuntime,
+    surfaces: &mut HashMap<String, SurfaceHandle>,
+) -> Result<()> {
+    let config = OverlayConfig::load(config_path)?;
+    let desired = enabled_surface_configs(&config, selected_layer)?;
+    let desired_ids = desired
+        .iter()
+        .filter_map(|(id, _)| id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let history_capacity = desired
+        .iter()
+        .map(|(_, config)| config.window.history_samples)
+        .max()
+        .unwrap_or(16);
+    if let Ok(mut history) = runtime.history.lock() {
+        history.resize_preserving_recent(history_capacity);
+    }
+
+    let removed = surfaces
+        .keys()
+        .filter(|id| !desired_ids.contains(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    for id in removed {
+        if let Some(surface) = surfaces.remove(&id) {
+            surface.running.store(false, Ordering::Relaxed);
+            let _ = surface.join.join();
+        }
+    }
+    for (layer_id, surface_config) in desired {
+        let id = layer_id.unwrap_or_else(|| "main".to_string());
+        if surfaces.contains_key(&id) {
+            continue;
+        }
+        let surface = TelemetryOverlay::with_config_path_and_layer(
+            surface_config,
+            config_path.clone(),
+            Some(id.clone()),
+        )?;
+        let surface_running = Arc::new(AtomicBool::new(true));
+        let view = SharedRuntimeView {
+            latest: runtime.latest.clone(),
+            history: runtime.history.clone(),
+            host_stats: runtime.stats.clone(),
+            host_running: runtime.running.clone(),
+            surface_running: surface_running.clone(),
+            visible: runtime.visible.clone(),
+            edit_mode: runtime.edit_mode.clone(),
+        };
+        let join = thread::spawn(move || surface.run_shared(view));
+        surfaces.insert(
+            id,
+            SurfaceHandle {
+                running: surface_running,
+                join,
+            },
+        );
+    }
+    Ok(())
+}
+
+fn reap_finished_surfaces(surfaces: &mut HashMap<String, SurfaceHandle>) {
+    let finished = surfaces
+        .iter()
+        .filter_map(|(id, surface)| surface.join.is_finished().then_some(id.clone()))
+        .collect::<Vec<_>>();
+    for id in finished {
+        if let Some(surface) = surfaces.remove(&id) {
+            match surface.join.join() {
+                Ok(Ok(())) => warn!("Overlay surface '{id}' exited"),
+                Ok(Err(error)) => warn!("Overlay surface '{id}' failed: {error}"),
+                Err(error) => warn!("Overlay surface '{id}' panicked: {error:?}"),
+            }
         }
     }
 }
