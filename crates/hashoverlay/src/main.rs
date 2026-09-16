@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fs,
     path::PathBuf,
     process::{Command, ExitCode},
@@ -16,12 +17,30 @@ use lmu_telemetry::{
     format_sample_line, SharedMemoryTelemetrySource, TelemetrySample, TelemetrySource,
 };
 use log::{info, warn};
-use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
+use overlay_renderer::{
+    config::OverlayConfig, HostRuntimeStats, SharedRuntimeView, TelemetryOverlay,
+};
 use storage::{ReferenceLapKey, ReferenceLapStore};
-use telemetry_engine::{FuelEngine, TelemetrySnapshot};
+use telemetry_engine::{FuelEngine, RingBuffer, TelemetrySnapshot};
 
 mod host_control;
+mod host_hotkeys;
 mod host_instance;
+
+#[derive(Clone)]
+struct HostRuntime {
+    latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
+    history: Arc<Mutex<RingBuffer<TelemetrySnapshot>>>,
+    stats: Arc<Mutex<HostRuntimeStats>>,
+    running: Arc<AtomicBool>,
+    visible: Arc<AtomicBool>,
+    edit_mode: Arc<AtomicBool>,
+}
+
+struct SurfaceHandle {
+    running: Arc<AtomicBool>,
+    join: thread::JoinHandle<Result<(), overlay_renderer::OverlayError>>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Cli {
@@ -175,15 +194,39 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let config_path = overlay_config_path(config_path);
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
+    let (host_action_sender, host_action_receiver) = mpsc::channel();
+    let mut active_hotkeys = config.hotkeys.clone();
+    let mut host_hotkeys = Some(host_hotkeys::HostHotkeys::start(
+        active_hotkeys.clone(),
+        host_action_sender.clone(),
+    ));
     let surface_configs = enabled_surface_configs(&config, overlay_layer.as_deref())?;
-    if surface_configs.is_empty() {
-        info!("No enabled overlay surfaces; waiting for Settings changes is not available in this host mode");
-        return Ok(());
-    }
-
     let shared_latest = Arc::new(Mutex::new(None));
+    let history_capacity = surface_configs
+        .iter()
+        .map(|(_, config)| config.window.history_samples)
+        .max()
+        .unwrap_or(16);
+    let shared_history = Arc::new(Mutex::new(RingBuffer::new(history_capacity)));
+    let shared_stats = Arc::new(Mutex::new(HostRuntimeStats::default()));
+    let shared_visible = Arc::new(AtomicBool::new(true));
+    let shared_edit_mode = Arc::new(AtomicBool::new(false));
+    let reload_requested = Arc::new(AtomicBool::new(false));
+    let (reload_request_sender, reload_request_receiver) = mpsc::channel();
     let host_running = Arc::new(AtomicBool::new(true));
-    let host_control = host_control::HostControl::start(host_running.clone())?;
+    let runtime = HostRuntime {
+        latest: shared_latest.clone(),
+        history: shared_history.clone(),
+        stats: shared_stats.clone(),
+        running: host_running.clone(),
+        visible: shared_visible.clone(),
+        edit_mode: shared_edit_mode.clone(),
+    };
+    let host_control = host_control::HostControl::start(
+        host_running.clone(),
+        shared_visible.clone(),
+        reload_request_sender,
+    )?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
     let (lap_writer, lap_receiver) = mpsc::channel();
@@ -199,6 +242,8 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let acquisition_path = config_path.clone();
     let acquisition_layer = overlay_layer.clone();
     let acquisition_latest = shared_latest.clone();
+    let acquisition_history = shared_history.clone();
+    let acquisition_stats = shared_stats.clone();
     let acquisition_running = host_running.clone();
     let acquisition_handle = thread::spawn(move || {
         let mut current_config = config;
@@ -209,6 +254,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         let mut last_config_check = Instant::now();
         let mut config_mtime = modified_time(&acquisition_path);
         let mut next_sample = Instant::now();
+        let mut last_stats_refresh = Instant::now();
 
         while acquisition_running.load(Ordering::Relaxed) {
             if last_config_check.elapsed() >= Duration::from_millis(500) {
@@ -232,9 +278,10 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
                 thread::sleep(next_sample - Instant::now());
                 continue;
             }
-            next_sample =
-                Instant::now() + Duration::from_millis(current_config.window.sample_ms.max(5));
+            let sample_interval = Duration::from_millis(current_config.window.sample_ms.max(5));
+            next_sample += sample_interval;
 
+            let acquisition_started = Instant::now();
             match source.read_sample() {
                 Ok(Some(sample)) => {
                     let lap_key = reference_lap_key(&sample);
@@ -263,35 +310,125 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
                         }
                     }
                     if let Ok(mut latest) = acquisition_latest.lock() {
-                        *latest = Some(snapshot);
+                        *latest = Some(snapshot.clone());
+                    }
+                    if let Ok(mut history) = acquisition_history.lock() {
+                        history.push(snapshot);
+                    }
+                    if let Ok(mut stats) = acquisition_stats.lock() {
+                        stats.record_sample(acquisition_started.elapsed());
                     }
                 }
                 Ok(None) => {}
                 Err(error) => warn!("Could not read telemetry sample: {error}"),
             }
+            let now = Instant::now();
+            if next_sample <= now {
+                let skipped = (now.duration_since(next_sample).as_nanos()
+                    / sample_interval.as_nanos())
+                .saturating_add(1)
+                .min(u64::MAX as u128) as u64;
+                if let Ok(mut stats) = acquisition_stats.lock() {
+                    stats.record_skipped_samples(skipped);
+                }
+                next_sample = now + sample_interval;
+            }
+            if last_stats_refresh.elapsed() >= Duration::from_secs(1) {
+                if let Ok(mut stats) = acquisition_stats.lock() {
+                    stats.refresh();
+                }
+                last_stats_refresh = Instant::now();
+            }
         }
     });
 
-    let mut surface_handles = Vec::with_capacity(surface_configs.len());
-    for (layer_id, runtime_config) in surface_configs {
-        let surface = TelemetryOverlay::with_config_path_and_layer(
-            runtime_config,
-            config_path.clone(),
-            layer_id,
-        )?;
-        let surface_latest = shared_latest.clone();
-        let surface_running = host_running.clone();
-        surface_handles.push(thread::spawn(move || {
-            surface.run_shared(surface_latest, surface_running)
-        }));
+    let mut surfaces = HashMap::new();
+    reconcile_surfaces(
+        &config_path,
+        overlay_layer.as_deref(),
+        &runtime,
+        &mut surfaces,
+    )?;
+    let mut last_reconcile = Instant::now();
+    while host_running.load(Ordering::Relaxed) {
+        while let Ok(reply) = reload_request_receiver.try_recv() {
+            let result = reload_host_hotkeys_if_changed(
+                &config_path,
+                &mut active_hotkeys,
+                &mut host_hotkeys,
+                &host_action_sender,
+            )
+            .and_then(|()| {
+                reconcile_surfaces(
+                    &config_path,
+                    overlay_layer.as_deref(),
+                    &runtime,
+                    &mut surfaces,
+                )
+            });
+            let _ = reply.send(result.map_err(|error| error.to_string()));
+            last_reconcile = Instant::now();
+        }
+        while let Ok(action) = host_action_receiver.try_recv() {
+            match action {
+                host_hotkeys::HostAction::ToggleVisibility => {
+                    shared_visible.fetch_xor(true, Ordering::Relaxed);
+                }
+                host_hotkeys::HostAction::ToggleEditMode => {
+                    let enabled = !shared_edit_mode.load(Ordering::Relaxed);
+                    shared_edit_mode.store(enabled, Ordering::Relaxed);
+                    if enabled {
+                        shared_visible.store(true, Ordering::Relaxed);
+                    }
+                }
+                host_hotkeys::HostAction::ToggleCoaching => {
+                    if let Err(error) = toggle_host_coaching(&config_path) {
+                        warn!("Could not toggle coaching from host hotkey: {error}");
+                    } else {
+                        reload_requested.store(true, Ordering::Relaxed);
+                    }
+                }
+                host_hotkeys::HostAction::CyclePreset => {
+                    if let Err(error) = cycle_host_preset(&config_path) {
+                        warn!("Could not cycle preset from host hotkey: {error}");
+                    } else {
+                        reload_requested.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+        if reload_requested.swap(false, Ordering::Relaxed)
+            || last_reconcile.elapsed() >= Duration::from_millis(500)
+        {
+            if let Err(error) = reload_host_hotkeys_if_changed(
+                &config_path,
+                &mut active_hotkeys,
+                &mut host_hotkeys,
+                &host_action_sender,
+            ) {
+                warn!("Could not reload host hotkeys: {error}");
+            }
+            if let Err(error) = reconcile_surfaces(
+                &config_path,
+                overlay_layer.as_deref(),
+                &runtime,
+                &mut surfaces,
+            ) {
+                warn!("Could not reconcile overlay surfaces: {error}");
+            }
+            last_reconcile = Instant::now();
+        }
+        reap_finished_surfaces(&mut surfaces);
+        thread::sleep(Duration::from_millis(25));
     }
-    for handle in surface_handles {
-        if let Err(error) = handle
+    for (_, surface) in surfaces {
+        surface.running.store(false, Ordering::Relaxed);
+        if let Err(error) = surface
+            .join
             .join()
             .unwrap_or(Err(overlay_renderer::OverlayError::UnsupportedPlatform))
         {
             warn!("Overlay surface stopped: {error}");
-            host_running.store(false, Ordering::Relaxed);
         }
     }
     host_running.store(false, Ordering::Relaxed);
@@ -301,7 +438,52 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         warn!("Could not join personal best storage worker: {error:?}");
     }
     host_control.shutdown();
+    if let Some(hotkeys) = host_hotkeys {
+        hotkeys.shutdown();
+    }
 
+    Ok(())
+}
+
+fn toggle_host_coaching(config_path: &PathBuf) -> Result<()> {
+    let mut config = OverlayConfig::load(config_path)?;
+    config.widgets.coaching = !config.widgets.coaching;
+    config.coaching.mode = if config.widgets.coaching {
+        "practice".to_string()
+    } else {
+        "off".to_string()
+    };
+    let revision = OverlayConfig::revision(config_path)?;
+    config.save_if_revision(config_path, revision)?;
+    Ok(())
+}
+
+fn cycle_host_preset(config_path: &PathBuf) -> Result<()> {
+    let mut config = OverlayConfig::load(config_path)?;
+    config.cycle_preset();
+    let revision = OverlayConfig::revision(config_path)?;
+    config.save_if_revision(config_path, revision)?;
+    Ok(())
+}
+
+fn reload_host_hotkeys_if_changed(
+    config_path: &PathBuf,
+    active_hotkeys: &mut overlay_renderer::config::HotkeyConfig,
+    host_hotkeys: &mut Option<host_hotkeys::HostHotkeys>,
+    actions: &mpsc::Sender<host_hotkeys::HostAction>,
+) -> Result<()> {
+    let config = OverlayConfig::load(config_path)?;
+    if config.hotkeys == *active_hotkeys {
+        return Ok(());
+    }
+    if let Some(hotkeys) = host_hotkeys.take() {
+        hotkeys.shutdown();
+    }
+    *active_hotkeys = config.hotkeys.clone();
+    *host_hotkeys = Some(host_hotkeys::HostHotkeys::start(
+        active_hotkeys.clone(),
+        actions.clone(),
+    ));
     Ok(())
 }
 
@@ -325,6 +507,86 @@ fn load_config_if_changed(
         Err(error) => {
             warn!("Could not hot reload overlay timing config: {error}");
             None
+        }
+    }
+}
+
+fn reconcile_surfaces(
+    config_path: &PathBuf,
+    selected_layer: Option<&str>,
+    runtime: &HostRuntime,
+    surfaces: &mut HashMap<String, SurfaceHandle>,
+) -> Result<()> {
+    let config = OverlayConfig::load(config_path)?;
+    let desired = enabled_surface_configs(&config, selected_layer)?;
+    let desired_ids = desired
+        .iter()
+        .filter_map(|(id, _)| id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let history_capacity = desired
+        .iter()
+        .map(|(_, config)| config.window.history_samples)
+        .max()
+        .unwrap_or(16);
+    if let Ok(mut history) = runtime.history.lock() {
+        history.resize_preserving_recent(history_capacity);
+    }
+
+    let removed = surfaces
+        .keys()
+        .filter(|id| !desired_ids.contains(*id))
+        .cloned()
+        .collect::<Vec<_>>();
+    for id in removed {
+        if let Some(surface) = surfaces.remove(&id) {
+            surface.running.store(false, Ordering::Relaxed);
+            let _ = surface.join.join();
+        }
+    }
+    for (layer_id, surface_config) in desired {
+        let id = layer_id.unwrap_or_else(|| "main".to_string());
+        if surfaces.contains_key(&id) {
+            continue;
+        }
+        let surface = TelemetryOverlay::with_config_path_and_layer(
+            surface_config,
+            config_path.clone(),
+            Some(id.clone()),
+        )?;
+        let surface_running = Arc::new(AtomicBool::new(true));
+        let view = SharedRuntimeView {
+            latest: runtime.latest.clone(),
+            history: runtime.history.clone(),
+            host_stats: runtime.stats.clone(),
+            host_running: runtime.running.clone(),
+            surface_running: surface_running.clone(),
+            visible: runtime.visible.clone(),
+            edit_mode: runtime.edit_mode.clone(),
+        };
+        let join = thread::spawn(move || surface.run_shared(view));
+        surfaces.insert(
+            id,
+            SurfaceHandle {
+                running: surface_running,
+                join,
+            },
+        );
+    }
+    Ok(())
+}
+
+fn reap_finished_surfaces(surfaces: &mut HashMap<String, SurfaceHandle>) {
+    let finished = surfaces
+        .iter()
+        .filter_map(|(id, surface)| surface.join.is_finished().then_some(id.clone()))
+        .collect::<Vec<_>>();
+    for id in finished {
+        if let Some(surface) = surfaces.remove(&id) {
+            match surface.join.join() {
+                Ok(Ok(())) => warn!("Overlay surface '{id}' exited"),
+                Ok(Err(error)) => warn!("Overlay surface '{id}' failed: {error}"),
+                Err(error) => warn!("Overlay surface '{id}' panicked: {error:?}"),
+            }
         }
     }
 }

@@ -232,6 +232,10 @@ function App() {
     void loadDefaultConfig();
     void loadWidgetCatalog();
     void refreshOverlayStatus();
+    const id = window.setInterval(() => {
+      void refreshOverlayStatus();
+    }, 1500);
+    return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
@@ -314,7 +318,6 @@ function App() {
       setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
       setRevision(response.revision);
-      setRevision(response.revision);
       setStatus("Config imported");
     } catch (error) {
       setStatus(String(error));
@@ -339,8 +342,8 @@ function App() {
         return;
       }
       await invoke("start_overlay");
-      setOverlayRunning(true);
-      setStatus("Overlay started");
+      await refreshOverlayStatus();
+      setStatus("Overlay start requested");
     } catch (error) {
       setStatus(String(error));
     }
@@ -349,8 +352,8 @@ function App() {
   async function stopOverlay() {
     try {
       await invoke("stop_overlay");
-      setOverlayRunning(false);
-      setStatus("Overlay stopped");
+      await refreshOverlayStatus();
+      setStatus("Overlay stop requested");
     } catch (error) {
       setStatus(String(error));
     }

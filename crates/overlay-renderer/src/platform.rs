@@ -1,9 +1,80 @@
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt,
+    sync::{atomic::AtomicBool, Arc, Mutex},
+};
 
 use crate::config;
 use crate::config::OverlayConfig;
-#[cfg(not(windows))]
-use telemetry_engine::TelemetrySnapshot;
+use telemetry_engine::{RingBuffer, TelemetrySnapshot};
+
+/// Telemetry state owned by the overlay host and read by every surface.
+/// Acquisition writes a sample exactly once; surfaces only consume it.
+#[derive(Clone)]
+pub struct SharedRuntimeView {
+    pub latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
+    pub history: Arc<Mutex<RingBuffer<TelemetrySnapshot>>>,
+    pub host_stats: Arc<Mutex<HostRuntimeStats>>,
+    pub host_running: Arc<AtomicBool>,
+    pub surface_running: Arc<AtomicBool>,
+    pub visible: Arc<AtomicBool>,
+    pub edit_mode: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct HostRuntimeStats {
+    pub telemetry_hz: u64,
+    pub acquisition_ms: f64,
+    pub skipped_samples: u64,
+    samples_since_refresh: u64,
+    acquisition_micros_since_refresh: u64,
+}
+
+impl HostRuntimeStats {
+    pub fn record_sample(&mut self, elapsed: std::time::Duration) {
+        self.samples_since_refresh += 1;
+        self.acquisition_micros_since_refresh += elapsed.as_micros() as u64;
+    }
+
+    pub fn record_skipped_sample(&mut self) {
+        self.record_skipped_samples(1);
+    }
+
+    pub fn record_skipped_samples(&mut self, count: u64) {
+        self.skipped_samples = self.skipped_samples.saturating_add(count);
+    }
+
+    pub fn refresh(&mut self) {
+        self.telemetry_hz = self.samples_since_refresh;
+        self.acquisition_ms = if self.samples_since_refresh == 0 {
+            0.0
+        } else {
+            self.acquisition_micros_since_refresh as f64
+                / self.samples_since_refresh as f64
+                / 1_000.0
+        };
+        self.samples_since_refresh = 0;
+        self.acquisition_micros_since_refresh = 0;
+    }
+}
+
+#[cfg(test)]
+mod shared_runtime_tests {
+    use super::*;
+
+    #[test]
+    fn host_stats_count_acquisition_once_per_sample() {
+        let mut stats = HostRuntimeStats::default();
+        stats.record_sample(std::time::Duration::from_micros(200));
+        stats.record_sample(std::time::Duration::from_micros(400));
+        stats.record_skipped_samples(3);
+        stats.refresh();
+
+        assert_eq!(stats.telemetry_hz, 2);
+        assert_eq!(stats.acquisition_ms, 0.3);
+        assert_eq!(stats.skipped_samples, 3);
+    }
+}
 
 #[cfg(windows)]
 #[allow(dead_code)]
@@ -73,11 +144,11 @@ mod windows_overlay {
                 RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
             },
             WindowsAndMessaging::{
-                CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
-                RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
-                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
-                HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+                CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
+                PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, ShowWindow,
+                TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM,
+                HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY,
+                MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
                 WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
                 WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
                 WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
@@ -88,7 +159,9 @@ mod windows_overlay {
     use super::d2d_backend;
     use crate::config::{WidgetLayout, WidgetOptions, WidgetStyleConfig};
 
-    use super::{config::parse_color, OverlayConfig, OverlayError};
+    use super::{
+        config::parse_color, HostRuntimeStats, OverlayConfig, OverlayError, SharedRuntimeView,
+    };
 
     const CLASS_NAME: &[u16] = &[
         'H' as u16, 'a' as u16, 's' as u16, 'h' as u16, 'O' as u16, 'v' as u16, 'e' as u16,
@@ -283,8 +356,8 @@ mod windows_overlay {
         config: Arc<Mutex<OverlayConfig>>,
         config_path: Option<Arc<PathBuf>>,
         overlay_layer: Option<Arc<String>>,
-        shared_latest: Option<Arc<Mutex<Option<TelemetrySnapshot>>>>,
-        host_running: Option<Arc<AtomicBool>>,
+        shared_runtime: Option<SharedRuntimeView>,
+        applied_shared_window_state: Arc<Mutex<Option<(bool, bool)>>>,
         selected_widget: Arc<Mutex<Option<WidgetId>>>,
         drag: Arc<Mutex<Option<DragState>>>,
         d2d: Option<Arc<d2d_backend::D2dBackend>>,
@@ -382,8 +455,8 @@ mod windows_overlay {
                     config: Arc::new(Mutex::new(config)),
                     config_path: config_path.map(Arc::new),
                     overlay_layer: overlay_layer.map(Arc::new),
-                    shared_latest: None,
-                    host_running: None,
+                    shared_runtime: None,
+                    applied_shared_window_state: Arc::new(Mutex::new(None)),
                     selected_widget: Arc::new(Mutex::new(None)),
                     drag: Arc::new(Mutex::new(None)),
                     d2d: None,
@@ -397,7 +470,7 @@ mod windows_overlay {
         {
             let hwnd = create_window(self.state.clone())?;
             let telemetry_state = self.state.clone();
-            let telemetry_worker = self.state.shared_latest.is_none().then(|| {
+            let telemetry_worker = self.state.shared_runtime.is_none().then(|| {
                 thread::spawn(move || {
                     let mut next_sample = Instant::now();
                     while telemetry_state.running.load(Ordering::Relaxed) {
@@ -443,7 +516,7 @@ mod windows_overlay {
             let repaint_config = self.state.config.clone();
             let repaint_visible = self.state.visible.clone();
             let repaint_edit_mode = self.state.edit_mode.clone();
-            let repaint_host_running = self.state.host_running.clone();
+            let repaint_runtime = self.state.shared_runtime.clone();
             let repaint_hwnd = hwnd as isize;
 
             let repaint_stats = self.state.stats.clone();
@@ -451,9 +524,10 @@ mod windows_overlay {
                 let hwnd = repaint_hwnd as HWND;
                 let mut next_frame = Instant::now();
                 while repaint_running.load(Ordering::Relaxed)
-                    && repaint_host_running
-                        .as_ref()
-                        .is_none_or(|running| running.load(Ordering::Relaxed))
+                    && repaint_runtime.as_ref().is_none_or(|runtime| {
+                        runtime.host_running.load(Ordering::Relaxed)
+                            && runtime.surface_running.load(Ordering::Relaxed)
+                    })
                 {
                     if !repaint_visible.load(Ordering::Relaxed)
                         && !repaint_edit_mode.load(Ordering::Relaxed)
@@ -495,12 +569,11 @@ mod windows_overlay {
             let mut message: MSG = unsafe { zeroed() };
 
             'message_loop: loop {
-                if self
-                    .state
-                    .host_running
-                    .as_ref()
-                    .is_some_and(|running| !running.load(Ordering::Relaxed))
-                {
+                if self.state.shared_runtime.as_ref().is_some_and(|runtime| {
+                    !runtime.host_running.load(Ordering::Relaxed)
+                        || !runtime.surface_running.load(Ordering::Relaxed)
+                }) {
+                    unsafe { DestroyWindow(hwnd) };
                     break 'message_loop;
                 }
                 unsafe {
@@ -514,9 +587,6 @@ mod windows_overlay {
                     {
                         if message.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_QUIT {
                             self.state.running.store(false, Ordering::Relaxed);
-                            if let Some(host_running) = &self.state.host_running {
-                                host_running.store(false, Ordering::Relaxed);
-                            }
                             break 'message_loop;
                         }
                         TranslateMessage(&message);
@@ -536,13 +606,7 @@ mod windows_overlay {
                     last_config_check = Instant::now();
                 }
 
-                if let Some(shared_latest) = &self.state.shared_latest {
-                    if let Ok(shared) = shared_latest.lock() {
-                        if let Ok(mut latest) = self.state.latest.lock() {
-                            *latest = shared.clone();
-                        }
-                    }
-                }
+                apply_shared_runtime_window_state(hwnd, &self.state);
 
                 thread::sleep(Duration::from_millis(1));
             }
@@ -558,19 +622,47 @@ mod windows_overlay {
         /// Run this surface from a host-owned immutable snapshot stream. The
         /// surface renders and reloads its own configuration, but never reads
         /// LMU memory or owns analysis/storage workers.
-        pub fn run_shared(
-            mut self,
-            shared_latest: Arc<Mutex<Option<TelemetrySnapshot>>>,
-            host_running: Arc<AtomicBool>,
-        ) -> Result<(), OverlayError> {
-            self.state.shared_latest = Some(shared_latest);
-            self.state.host_running = Some(host_running);
+        pub fn run_shared(mut self, runtime: SharedRuntimeView) -> Result<(), OverlayError> {
+            self.state.latest = runtime.latest.clone();
+            self.state.history = runtime.history.clone();
+            self.state.visible = runtime.visible.clone();
+            self.state.edit_mode = runtime.edit_mode.clone();
+            self.state.shared_runtime = Some(runtime);
             self.run(|| None)
         }
     }
 
     fn modified_time(path: &PathBuf) -> Option<SystemTime> {
         fs::metadata(path).ok()?.modified().ok()
+    }
+
+    fn apply_shared_runtime_window_state(hwnd: HWND, state: &SharedState) {
+        let Some(runtime) = &state.shared_runtime else {
+            return;
+        };
+        let visible =
+            runtime.visible.load(Ordering::Relaxed) || runtime.edit_mode.load(Ordering::Relaxed);
+        let edit_mode = runtime.edit_mode.load(Ordering::Relaxed);
+        let changed = state
+            .applied_shared_window_state
+            .lock()
+            .ok()
+            .is_some_and(|mut applied| {
+                if *applied == Some((visible, edit_mode)) {
+                    false
+                } else {
+                    *applied = Some((visible, edit_mode));
+                    true
+                }
+            });
+        if !changed {
+            return;
+        }
+        unsafe {
+            ShowWindow(hwnd, if visible { SW_SHOW } else { SW_HIDE });
+            set_click_through(hwnd, !edit_mode);
+            InvalidateRect(hwnd, ptr::null(), 0);
+        }
     }
 
     fn reload_runtime_config(hwnd: HWND, state: &SharedState, last_mtime: &mut Option<SystemTime>) {
@@ -608,10 +700,12 @@ mod windows_overlay {
                         }
                     }
                 }
-                unsafe {
-                    reload_hotkeys(hwnd, &config);
+                if state.shared_runtime.is_none() {
+                    unsafe {
+                        reload_hotkeys(hwnd, &config);
+                    }
+                    resize_history_if_needed(state, config.window.history_samples);
                 }
-                resize_history_if_needed(state, config.window.history_samples);
                 if let Ok(mut current) = state.config.lock() {
                     *current = config;
                 }
@@ -777,7 +871,9 @@ mod windows_overlay {
                 SWP_NOACTIVATE,
             );
             ShowWindow(hwnd, SW_SHOW);
-            register_runtime_hotkeys(hwnd, &config);
+            if (*state_ptr).shared_runtime.is_none() {
+                register_runtime_hotkeys(hwnd, &config);
+            }
 
             Ok(hwnd)
         }
@@ -810,7 +906,7 @@ mod windows_overlay {
                 0
             }
             WM_DPICHANGED => {
-                update_d2d_dpi(hwnd, wparam);
+                apply_dpi_change(hwnd, wparam, lparam);
                 0
             }
             WM_ERASEBKGND => 1,
@@ -909,11 +1005,24 @@ mod windows_overlay {
         }
     }
 
-    unsafe fn update_d2d_dpi(hwnd: HWND, wparam: WPARAM) {
+    unsafe fn apply_dpi_change(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) {
         let Some(state) = shared_state(hwnd) else {
             return;
         };
         let dpi = wparam as u32 & 0xffff;
+        let suggested = lparam as *const RECT;
+        if !suggested.is_null() {
+            let rect = *suggested;
+            windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                rect.left,
+                rect.top,
+                (rect.right - rect.left).max(1),
+                (rect.bottom - rect.top).max(1),
+                SWP_NOACTIVATE,
+            );
+        }
         if let Some(backend) = state.d2d.as_ref() {
             backend.set_dpi(dpi);
         }
@@ -1137,38 +1246,7 @@ mod windows_overlay {
     }
 
     fn cycle_runtime_preset(config: &mut OverlayConfig) {
-        let next = match (
-            config.performance.mode.as_str(),
-            config.timing.reference_mode.as_str(),
-        ) {
-            ("normal", "last_lap") => config.presets.qualifying.clone(),
-            ("high_refresh", "personal_best") => config.presets.race.clone(),
-            ("eco", "session_best") => config.presets.endurance.clone(),
-            ("eco", _) => config.presets.minimal.clone(),
-            _ => config.presets.practice.clone(),
-        };
-        config.performance.mode = next.performance_mode;
-        config.timing.reference_mode = next.reference_mode;
-        config.timing.mini_sectors = next.mini_sectors;
-        config.style = next.style;
-        config.units = next.units;
-        config.coaching = next.coaching_config;
-        config.layout = next.layout;
-        config.extra_widgets = next.extra_widgets;
-        config.widgets.title = next.title;
-        config.widgets.speed_gear_rpm = next.speed_gear_rpm;
-        config.widgets.pedals = next.pedals;
-        config.widgets.steering = next.steering;
-        config.widgets.lap_info = next.lap_info;
-        config.widgets.lap_timing = next.lap_timing;
-        config.widgets.sectors = next.sectors;
-        config.widgets.mini_sector_widget = next.mini_sector_widget;
-        config.widgets.input_history = next.input_history;
-        config.widgets.delta_timing = next.delta_timing;
-        config.widgets.ghost_inputs = next.ghost_inputs;
-        config.widgets.coaching = next.coaching;
-        config.widgets.performance_monitor = next.performance_monitor;
-        config.normalize();
+        config.cycle_preset();
     }
 
     unsafe fn shared_state(hwnd: HWND) -> Option<&'static SharedState> {
@@ -3378,6 +3456,16 @@ mod windows_overlay {
             .map(|history| format!("{}/{}", history.len(), history.capacity()))
             .unwrap_or_else(|| "--".to_string());
         if let Ok(stats) = state.stats.lock() {
+            let host_stats = state
+                .shared_runtime
+                .as_ref()
+                .and_then(|runtime| runtime.host_stats.lock().ok().map(|stats| *stats))
+                .unwrap_or(HostRuntimeStats {
+                    telemetry_hz: stats.telemetry_hz,
+                    acquisition_ms: stats.acquisition_ms,
+                    skipped_samples: stats.skipped_samples,
+                    ..HostRuntimeStats::default()
+                });
             draw_text(
                 hdc,
                 area.x + scale_px(config, 8),
@@ -3385,11 +3473,11 @@ mod windows_overlay {
                 colors.secondary_text,
                 &format!(
                     "tel {} Hz  draw {} FPS  read {:.2} ms  draw {:.2} ms  skip {}  drop {}  ring {}",
-                    stats.telemetry_hz,
+                    host_stats.telemetry_hz,
                     stats.render_fps,
-                    stats.acquisition_ms,
+                    host_stats.acquisition_ms,
                     stats.render_ms,
-                    stats.skipped_samples,
+                    host_stats.skipped_samples,
                     stats.dropped_frames,
                     ring_usage
                 ),
@@ -4456,11 +4544,7 @@ impl TelemetryOverlay {
         Err(OverlayError::UnsupportedPlatform)
     }
 
-    pub fn run_shared(
-        self,
-        _shared_latest: std::sync::Arc<std::sync::Mutex<Option<TelemetrySnapshot>>>,
-        _host_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    ) -> Result<(), OverlayError> {
+    pub fn run_shared(self, _runtime: SharedRuntimeView) -> Result<(), OverlayError> {
         Err(OverlayError::UnsupportedPlatform)
     }
 }

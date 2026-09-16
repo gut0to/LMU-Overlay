@@ -167,7 +167,7 @@ pub struct ProducerLiveness {
 }
 
 impl ProducerLiveness {
-    pub fn observe(&mut self, marker: f64, phase: GamePhase, now: Instant) -> bool {
+    pub fn observe(&mut self, marker: f64, now: Instant) -> bool {
         let progressed = marker.is_finite()
             && self.last_marker.is_none_or(|previous| {
                 (marker - previous).abs() > f64::EPSILON || marker < previous
@@ -176,10 +176,7 @@ impl ProducerLiveness {
             self.last_marker = Some(marker);
             self.last_progress_at = Some(now);
             self.stale = false;
-        } else if !matches!(
-            phase,
-            GamePhase::BeforeSession | GamePhase::SessionStopped | GamePhase::SessionOver
-        ) && self
+        } else if self
             .last_progress_at
             .is_some_and(|last| now.duration_since(last) >= PRODUCER_STALE_TIMEOUT)
         {
@@ -222,20 +219,15 @@ impl TelemetrySource for SharedMemoryTelemetrySource {
             self.liveness.reset();
         }
 
-        let sample = self.inner.read_sample()?;
-        if let Some(sample) = &sample {
-            if self.liveness.observe(
-                sample.timestamp_seconds,
-                sample.metadata.game_phase,
-                Instant::now(),
-            ) {
+        if let Some(heartbeat) = self.inner.read_heartbeat()? {
+            if self.liveness.observe(heartbeat.marker, Instant::now()) {
                 self.inner = PlatformTelemetrySource::open()?;
                 self.next_reconnect_attempt = Instant::now() + Duration::from_millis(500);
                 self.liveness.reset();
                 return Ok(None);
             }
         }
-        Ok(sample)
+        self.inner.read_sample()
     }
 }
 
@@ -316,6 +308,14 @@ impl PlatformTelemetrySource {
         }
         Ok(sample)
     }
+
+    fn read_heartbeat(&self) -> Result<Option<ProducerHeartbeat>, TelemetryError> {
+        if !self.is_available() {
+            return Ok(None);
+        }
+        let bytes = unsafe { slice::from_raw_parts(self.view.Value.cast::<u8>(), BUFFER_SIZE) };
+        read_producer_heartbeat(bytes)
+    }
 }
 
 #[cfg(windows)]
@@ -350,6 +350,24 @@ impl PlatformTelemetrySource {
     fn read_sample(&mut self) -> Result<Option<TelemetrySample>, TelemetryError> {
         Err(TelemetryError::UnsupportedPlatform)
     }
+
+    fn read_heartbeat(&self) -> Result<Option<ProducerHeartbeat>, TelemetryError> {
+        Err(TelemetryError::UnsupportedPlatform)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProducerHeartbeat {
+    marker: f64,
+}
+
+fn read_producer_heartbeat(bytes: &[u8]) -> Result<Option<ProducerHeartbeat>, TelemetryError> {
+    let frame = read_frame_marker(bytes)?;
+    if detect_layout(bytes, frame).is_none() {
+        return Ok(None);
+    }
+    let marker = read_f64(bytes, OFFSET_SCORING_CURRENT_ET)?;
+    Ok(marker.is_finite().then_some(ProducerHeartbeat { marker }))
 }
 
 fn read_consistent_sample_from_bytes(
@@ -989,20 +1007,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn producer_liveness_requires_frozen_progress_outside_idle_phases() {
+    fn producer_liveness_detects_frozen_progress_in_every_phase() {
         let start = Instant::now();
         let mut liveness = ProducerLiveness::default();
-        assert!(!liveness.observe(10.0, GamePhase::GreenFlag, start));
-        assert!(!liveness.observe(
-            10.0,
-            GamePhase::BeforeSession,
-            start + Duration::from_secs(6)
-        ));
-        assert!(liveness.observe(10.0, GamePhase::GreenFlag, start + Duration::from_secs(6)));
+        assert!(!liveness.observe(10.0, start));
+        assert!(liveness.observe(10.0, start + Duration::from_secs(6)));
 
         liveness.reset();
-        assert!(!liveness.observe(10.0, GamePhase::GreenFlag, start));
-        assert!(!liveness.observe(11.0, GamePhase::GreenFlag, start + Duration::from_secs(6)));
+        assert!(!liveness.observe(10.0, start));
+        assert!(!liveness.observe(11.0, start + Duration::from_secs(6)));
+    }
+
+    #[test]
+    fn reads_heartbeat_without_a_player_vehicle() {
+        let mut bytes = vec![0; BUFFER_SIZE];
+        write_i32(&mut bytes, OFFSET_GAME_VERSION, 1);
+        write_f64(&mut bytes, OFFSET_SCORING_CURRENT_ET, 12.5);
+        write_u8(&mut bytes, OFFSET_TELEMETRY_PLAYER_HAS_VEHICLE, 0);
+
+        assert_eq!(
+            read_producer_heartbeat(&bytes).unwrap(),
+            Some(ProducerHeartbeat { marker: 12.5 })
+        );
     }
 
     #[test]

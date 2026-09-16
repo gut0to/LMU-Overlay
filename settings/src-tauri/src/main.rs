@@ -42,6 +42,7 @@ fn save_config(
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
+    let _ = send_host_command("reload");
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -67,6 +68,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
+    let _ = send_host_command("reload");
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     Ok(ConfigResponse::new(path, config))
 }
@@ -132,7 +134,7 @@ fn start_overlay(
         Ok(child) => running.push(child),
         Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
     }
-    Ok(())
+    wait_for_host_startup()
 }
 
 #[tauri::command]
@@ -271,6 +273,17 @@ fn host_is_running() -> bool {
 
     #[cfg(not(windows))]
     false
+}
+
+fn wait_for_host_startup() -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if send_host_command("status").is_ok_and(|response| response == "running") {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err("HashOverlay started but its control service did not become ready in time".to_string())
 }
 
 #[tauri::command]

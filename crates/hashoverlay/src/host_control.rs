@@ -1,18 +1,48 @@
 #[cfg(not(windows))]
 use std::sync::atomic::AtomicBool;
 #[cfg(not(windows))]
+use std::sync::mpsc::SyncSender;
+#[cfg(not(windows))]
 use std::sync::Arc;
 
 pub const PIPE_NAME: &str = r"\\.\pipe\HashOverlay.Host";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlCommand {
+    Status,
+    Reload,
+    Show,
+    Hide,
+    Stop,
+    Shutdown,
+}
+
+impl ControlCommand {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "status" => Some(Self::Status),
+            "reload" => Some(Self::Reload),
+            "show" => Some(Self::Show),
+            "hide" => Some(Self::Hide),
+            "stop" => Some(Self::Stop),
+            "shutdown" => Some(Self::Shutdown),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(windows)]
 mod windows_control {
-    use super::PIPE_NAME;
+    use super::{ControlCommand, PIPE_NAME};
     use std::{
         ptr,
-        sync::atomic::{AtomicBool, Ordering},
         sync::Arc,
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc::{sync_channel, SyncSender},
+        },
         thread::{self, JoinHandle},
+        time::Duration,
     };
 
     use windows_sys::Win32::{
@@ -32,11 +62,16 @@ mod windows_control {
     }
 
     impl HostControl {
-        pub fn start(running: Arc<AtomicBool>) -> std::io::Result<Self> {
+        pub fn start(
+            running: Arc<AtomicBool>,
+            visible: Arc<AtomicBool>,
+            reload_requests: std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
+        ) -> std::io::Result<Self> {
             let server_running = running.clone();
+            let server_visible = visible.clone();
             let handle = thread::Builder::new()
                 .name("hashoverlay-host-control".to_string())
-                .spawn(move || server_loop(server_running))?;
+                .spawn(move || server_loop(server_running, server_visible, reload_requests))?;
             Ok(Self {
                 running,
                 handle: Some(handle),
@@ -62,7 +97,11 @@ mod windows_control {
         }
     }
 
-    fn server_loop(running: Arc<AtomicBool>) {
+    fn server_loop(
+        running: Arc<AtomicBool>,
+        visible: Arc<AtomicBool>,
+        reload_requests: std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
+    ) {
         while running.load(Ordering::Relaxed) {
             let pipe = unsafe {
                 CreateNamedPipeW(
@@ -88,25 +127,49 @@ mod windows_control {
             }
 
             let command = read_command(pipe);
-            let response = match command.as_deref() {
-                Some("status") => "running",
-                Some("stop") => {
-                    running.store(false, Ordering::Relaxed);
-                    "stopping"
+            let response = match command.as_deref().and_then(ControlCommand::parse) {
+                Some(ControlCommand::Status) => {
+                    if running.load(Ordering::Relaxed) {
+                        "running".to_string()
+                    } else {
+                        "stopped".to_string()
+                    }
                 }
-                Some("shutdown") => {
-                    running.store(false, Ordering::Relaxed);
-                    "stopping"
+                Some(ControlCommand::Reload) => request_reload(&reload_requests),
+                Some(ControlCommand::Show) => {
+                    visible.store(true, Ordering::Relaxed);
+                    "shown".to_string()
                 }
-                Some("reload") | Some("show") | Some("hide") => "unsupported",
-                _ => "invalid",
+                Some(ControlCommand::Hide) => {
+                    visible.store(false, Ordering::Relaxed);
+                    "hidden".to_string()
+                }
+                Some(ControlCommand::Stop) | Some(ControlCommand::Shutdown) => {
+                    running.store(false, Ordering::Relaxed);
+                    "stopping".to_string()
+                }
+                _ => "invalid".to_string(),
             };
-            let _ = write_response(pipe, response);
+            let _ = write_response(pipe, &response);
             unsafe {
                 FlushFileBuffers(pipe);
                 DisconnectNamedPipe(pipe);
                 CloseHandle(pipe);
             }
+        }
+    }
+
+    fn request_reload(
+        reload_requests: &std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
+    ) -> String {
+        let (acknowledge, response) = sync_channel(1);
+        if reload_requests.send(acknowledge).is_err() {
+            return "error:host stopped".to_string();
+        }
+        match response.recv_timeout(Duration::from_secs(2)) {
+            Ok(Ok(())) => "reloaded".to_string(),
+            Ok(Err(error)) => format!("error:{error}"),
+            Err(_) => "error:reload timed out".to_string(),
         }
     }
 
@@ -218,9 +281,34 @@ pub struct HostControl;
 
 #[cfg(not(windows))]
 impl HostControl {
-    pub fn start(_running: Arc<AtomicBool>) -> std::io::Result<Self> {
+    pub fn start(
+        _running: Arc<AtomicBool>,
+        _visible: Arc<AtomicBool>,
+        _reload_requests: std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
+    ) -> std::io::Result<Self> {
         Ok(Self)
     }
 
     pub fn shutdown(self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_every_public_control_command() {
+        assert_eq!(
+            ControlCommand::parse("status"),
+            Some(ControlCommand::Status)
+        );
+        assert_eq!(
+            ControlCommand::parse("reload"),
+            Some(ControlCommand::Reload)
+        );
+        assert_eq!(ControlCommand::parse("show"), Some(ControlCommand::Show));
+        assert_eq!(ControlCommand::parse("hide"), Some(ControlCommand::Hide));
+        assert_eq!(ControlCommand::parse("stop"), Some(ControlCommand::Stop));
+        assert_eq!(ControlCommand::parse("invalid"), None);
+    }
 }
