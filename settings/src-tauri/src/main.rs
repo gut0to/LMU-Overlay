@@ -134,7 +134,7 @@ fn start_overlay(
         Ok(child) => running.push(child),
         Err(error) => return Err(format!("Could not start HashOverlay: {error}")),
     }
-    Ok(())
+    wait_for_host_startup()
 }
 
 #[tauri::command]
@@ -273,6 +273,17 @@ fn host_is_running() -> bool {
 
     #[cfg(not(windows))]
     false
+}
+
+fn wait_for_host_startup() -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        if send_host_command("status").is_ok_and(|response| response == "running") {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Err("HashOverlay started but its control service did not become ready in time".to_string())
 }
 
 #[tauri::command]

@@ -17,7 +17,7 @@ mod windows_hotkeys {
     use std::{
         sync::{
             atomic::{AtomicU32, Ordering},
-            mpsc::Sender,
+            mpsc::{sync_channel, Sender},
             Arc,
         },
         thread::{self, JoinHandle},
@@ -28,7 +28,9 @@ mod windows_hotkeys {
             Input::KeyboardAndMouse::{
                 RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
             },
-            WindowsAndMessaging::{GetMessageW, PostThreadMessageW, MSG, WM_HOTKEY, WM_QUIT},
+            WindowsAndMessaging::{
+                GetMessageW, PeekMessageW, PostThreadMessageW, MSG, PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
+            },
         },
     };
 
@@ -46,13 +48,17 @@ mod windows_hotkeys {
         pub fn start(config: HotkeyConfig, actions: Sender<HostAction>) -> Self {
             let thread_id = Arc::new(AtomicU32::new(0));
             let worker_id = thread_id.clone();
+            let (ready_sender, ready_receiver) = sync_channel(1);
             let join = thread::spawn(move || unsafe {
+                let mut message: MSG = std::mem::zeroed();
+                // A thread queue must exist before shutdown can safely post WM_QUIT.
+                PeekMessageW(&mut message, std::ptr::null_mut(), 0, 0, PM_NOREMOVE);
                 worker_id.store(GetCurrentThreadId(), Ordering::Relaxed);
                 register(TOGGLE_VISIBILITY, &config.toggle_overlay);
                 register(TOGGLE_EDIT, &config.edit_mode);
                 register(TOGGLE_COACHING, &config.toggle_coaching);
                 register(CYCLE_PRESET, &config.cycle_preset);
-                let mut message: MSG = std::mem::zeroed();
+                let _ = ready_sender.send(());
                 while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
                     if message.message == WM_HOTKEY {
                         let action = match message.wParam as i32 {
@@ -76,6 +82,9 @@ mod windows_hotkeys {
                     UnregisterHotKey(std::ptr::null_mut(), id);
                 }
             });
+            if ready_receiver.recv().is_err() {
+                log::warn!("Host hotkey worker exited before its message queue was ready");
+            }
             Self {
                 thread_id,
                 join: Some(join),
@@ -83,6 +92,10 @@ mod windows_hotkeys {
         }
 
         pub fn shutdown(mut self) {
+            self.finish();
+        }
+
+        fn finish(&mut self) {
             let thread_id = self.thread_id.load(Ordering::Relaxed);
             if thread_id != 0 {
                 unsafe { PostThreadMessageW(thread_id, WM_QUIT, 0, 0) };
@@ -90,6 +103,12 @@ mod windows_hotkeys {
             if let Some(join) = self.join.take() {
                 let _ = join.join();
             }
+        }
+    }
+
+    impl Drop for HostHotkeys {
+        fn drop(&mut self) {
+            self.finish();
         }
     }
 

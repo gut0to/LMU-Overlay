@@ -37,7 +37,11 @@ impl HostRuntimeStats {
     }
 
     pub fn record_skipped_sample(&mut self) {
-        self.skipped_samples += 1;
+        self.record_skipped_samples(1);
+    }
+
+    pub fn record_skipped_samples(&mut self, count: u64) {
+        self.skipped_samples = self.skipped_samples.saturating_add(count);
     }
 
     pub fn refresh(&mut self) {
@@ -63,12 +67,12 @@ mod shared_runtime_tests {
         let mut stats = HostRuntimeStats::default();
         stats.record_sample(std::time::Duration::from_micros(200));
         stats.record_sample(std::time::Duration::from_micros(400));
-        stats.record_skipped_sample();
+        stats.record_skipped_samples(3);
         stats.refresh();
 
         assert_eq!(stats.telemetry_hz, 2);
         assert_eq!(stats.acquisition_ms, 0.3);
-        assert_eq!(stats.skipped_samples, 1);
+        assert_eq!(stats.skipped_samples, 3);
     }
 }
 

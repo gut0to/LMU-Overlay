@@ -195,7 +195,11 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     OverlayConfig::save_default(&config_path)?;
     let config = OverlayConfig::load(&config_path)?;
     let (host_action_sender, host_action_receiver) = mpsc::channel();
-    let host_hotkeys = host_hotkeys::HostHotkeys::start(config.hotkeys.clone(), host_action_sender);
+    let mut active_hotkeys = config.hotkeys.clone();
+    let mut host_hotkeys = Some(host_hotkeys::HostHotkeys::start(
+        active_hotkeys.clone(),
+        host_action_sender.clone(),
+    ));
     let surface_configs = enabled_surface_configs(&config, overlay_layer.as_deref())?;
     let shared_latest = Arc::new(Mutex::new(None));
     let history_capacity = surface_configs
@@ -208,6 +212,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let shared_visible = Arc::new(AtomicBool::new(true));
     let shared_edit_mode = Arc::new(AtomicBool::new(false));
     let reload_requested = Arc::new(AtomicBool::new(false));
+    let (reload_request_sender, reload_request_receiver) = mpsc::channel();
     let host_running = Arc::new(AtomicBool::new(true));
     let runtime = HostRuntime {
         latest: shared_latest.clone(),
@@ -220,7 +225,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let host_control = host_control::HostControl::start(
         host_running.clone(),
         shared_visible.clone(),
-        reload_requested.clone(),
+        reload_request_sender,
     )?;
     let lap_store = ReferenceLapStore::appdata();
     let lap_writer_store = lap_store.clone();
@@ -273,8 +278,8 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
                 thread::sleep(next_sample - Instant::now());
                 continue;
             }
-            next_sample =
-                Instant::now() + Duration::from_millis(current_config.window.sample_ms.max(5));
+            let sample_interval = Duration::from_millis(current_config.window.sample_ms.max(5));
+            next_sample += sample_interval;
 
             let acquisition_started = Instant::now();
             match source.read_sample() {
@@ -317,6 +322,17 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
                 Ok(None) => {}
                 Err(error) => warn!("Could not read telemetry sample: {error}"),
             }
+            let now = Instant::now();
+            if next_sample <= now {
+                let skipped = (now.duration_since(next_sample).as_nanos()
+                    / sample_interval.as_nanos())
+                .saturating_add(1)
+                .min(u64::MAX as u128) as u64;
+                if let Ok(mut stats) = acquisition_stats.lock() {
+                    stats.record_skipped_samples(skipped);
+                }
+                next_sample = now + sample_interval;
+            }
             if last_stats_refresh.elapsed() >= Duration::from_secs(1) {
                 if let Ok(mut stats) = acquisition_stats.lock() {
                     stats.refresh();
@@ -335,6 +351,24 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     )?;
     let mut last_reconcile = Instant::now();
     while host_running.load(Ordering::Relaxed) {
+        while let Ok(reply) = reload_request_receiver.try_recv() {
+            let result = reload_host_hotkeys_if_changed(
+                &config_path,
+                &mut active_hotkeys,
+                &mut host_hotkeys,
+                &host_action_sender,
+            )
+            .and_then(|()| {
+                reconcile_surfaces(
+                    &config_path,
+                    overlay_layer.as_deref(),
+                    &runtime,
+                    &mut surfaces,
+                )
+            });
+            let _ = reply.send(result.map_err(|error| error.to_string()));
+            last_reconcile = Instant::now();
+        }
         while let Ok(action) = host_action_receiver.try_recv() {
             match action {
                 host_hotkeys::HostAction::ToggleVisibility => {
@@ -366,6 +400,14 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         if reload_requested.swap(false, Ordering::Relaxed)
             || last_reconcile.elapsed() >= Duration::from_millis(500)
         {
+            if let Err(error) = reload_host_hotkeys_if_changed(
+                &config_path,
+                &mut active_hotkeys,
+                &mut host_hotkeys,
+                &host_action_sender,
+            ) {
+                warn!("Could not reload host hotkeys: {error}");
+            }
             if let Err(error) = reconcile_surfaces(
                 &config_path,
                 overlay_layer.as_deref(),
@@ -396,7 +438,9 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         warn!("Could not join personal best storage worker: {error:?}");
     }
     host_control.shutdown();
-    host_hotkeys.shutdown();
+    if let Some(hotkeys) = host_hotkeys {
+        hotkeys.shutdown();
+    }
 
     Ok(())
 }
@@ -419,6 +463,27 @@ fn cycle_host_preset(config_path: &PathBuf) -> Result<()> {
     config.cycle_preset();
     let revision = OverlayConfig::revision(config_path)?;
     config.save_if_revision(config_path, revision)?;
+    Ok(())
+}
+
+fn reload_host_hotkeys_if_changed(
+    config_path: &PathBuf,
+    active_hotkeys: &mut overlay_renderer::config::HotkeyConfig,
+    host_hotkeys: &mut Option<host_hotkeys::HostHotkeys>,
+    actions: &mpsc::Sender<host_hotkeys::HostAction>,
+) -> Result<()> {
+    let config = OverlayConfig::load(config_path)?;
+    if config.hotkeys == *active_hotkeys {
+        return Ok(());
+    }
+    if let Some(hotkeys) = host_hotkeys.take() {
+        hotkeys.shutdown();
+    }
+    *active_hotkeys = config.hotkeys.clone();
+    *host_hotkeys = Some(host_hotkeys::HostHotkeys::start(
+        active_hotkeys.clone(),
+        actions.clone(),
+    ));
     Ok(())
 }
 
