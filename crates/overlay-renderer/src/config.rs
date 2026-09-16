@@ -190,6 +190,43 @@ impl OverlayConfig {
         normalize_overlay_layers(self);
     }
 
+    /// Applies the next built-in runtime preset without changing the hotkey
+    /// bindings or the configured overlay surfaces.
+    pub fn cycle_preset(&mut self) {
+        let next = match (
+            self.performance.mode.as_str(),
+            self.timing.reference_mode.as_str(),
+        ) {
+            ("normal", "last_lap") => self.presets.qualifying.clone(),
+            ("high_refresh", "personal_best") => self.presets.race.clone(),
+            ("eco", "session_best") => self.presets.endurance.clone(),
+            ("eco", _) => self.presets.minimal.clone(),
+            _ => self.presets.practice.clone(),
+        };
+        self.performance.mode = next.performance_mode;
+        self.timing.reference_mode = next.reference_mode;
+        self.timing.mini_sectors = next.mini_sectors;
+        self.style = next.style;
+        self.units = next.units;
+        self.coaching = next.coaching_config;
+        self.layout = next.layout;
+        self.extra_widgets = next.extra_widgets;
+        self.widgets.title = next.title;
+        self.widgets.speed_gear_rpm = next.speed_gear_rpm;
+        self.widgets.pedals = next.pedals;
+        self.widgets.steering = next.steering;
+        self.widgets.lap_info = next.lap_info;
+        self.widgets.lap_timing = next.lap_timing;
+        self.widgets.sectors = next.sectors;
+        self.widgets.mini_sector_widget = next.mini_sector_widget;
+        self.widgets.input_history = next.input_history;
+        self.widgets.delta_timing = next.delta_timing;
+        self.widgets.ghost_inputs = next.ghost_inputs;
+        self.widgets.coaching = next.coaching;
+        self.widgets.performance_monitor = next.performance_monitor;
+        self.normalize();
+    }
+
     /// Returns the runtime view for one independent overlay surface.
     /// The persisted config remains the source of truth; each process only
     /// receives the widgets and window belonging to its selected layer.
@@ -2263,6 +2300,22 @@ mod tests {
         assert!(presets.endurance.extra_widgets["energy"].enabled);
         assert!(presets.practice.extra_widgets["tyres"].enabled);
         assert!(!presets.minimal.extra_widgets["relative"].enabled);
+    }
+
+    #[test]
+    fn cycling_a_preset_updates_the_complete_runtime_profile() {
+        let mut config = OverlayConfig::default();
+        config.performance.mode = "normal".to_string();
+        config.timing.reference_mode = "last_lap".to_string();
+
+        config.cycle_preset();
+
+        assert_eq!(config.performance.mode, "high_refresh");
+        assert_eq!(config.timing.reference_mode, "personal_best");
+        assert_eq!(
+            config.widgets.performance_monitor,
+            config.presets.qualifying.performance_monitor
+        );
     }
 
     #[test]

@@ -140,11 +140,11 @@ mod windows_overlay {
                 RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
             },
             WindowsAndMessaging::{
-                CreateWindowExW, DefWindowProcW, DispatchMessageW, GetClientRect, PostQuitMessage,
-                RegisterClassW, SetLayeredWindowAttributes, ShowWindow, TranslateMessage,
-                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM, HTBOTTOMRIGHT,
-                HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY, MSG,
-                SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
+                CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
+                PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, ShowWindow,
+                TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM,
+                HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY,
+                MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
                 WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
                 WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
                 WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
@@ -569,6 +569,7 @@ mod windows_overlay {
                     !runtime.host_running.load(Ordering::Relaxed)
                         || !runtime.surface_running.load(Ordering::Relaxed)
                 }) {
+                    unsafe { DestroyWindow(hwnd) };
                     break 'message_loop;
                 }
                 unsafe {
@@ -1241,38 +1242,7 @@ mod windows_overlay {
     }
 
     fn cycle_runtime_preset(config: &mut OverlayConfig) {
-        let next = match (
-            config.performance.mode.as_str(),
-            config.timing.reference_mode.as_str(),
-        ) {
-            ("normal", "last_lap") => config.presets.qualifying.clone(),
-            ("high_refresh", "personal_best") => config.presets.race.clone(),
-            ("eco", "session_best") => config.presets.endurance.clone(),
-            ("eco", _) => config.presets.minimal.clone(),
-            _ => config.presets.practice.clone(),
-        };
-        config.performance.mode = next.performance_mode;
-        config.timing.reference_mode = next.reference_mode;
-        config.timing.mini_sectors = next.mini_sectors;
-        config.style = next.style;
-        config.units = next.units;
-        config.coaching = next.coaching_config;
-        config.layout = next.layout;
-        config.extra_widgets = next.extra_widgets;
-        config.widgets.title = next.title;
-        config.widgets.speed_gear_rpm = next.speed_gear_rpm;
-        config.widgets.pedals = next.pedals;
-        config.widgets.steering = next.steering;
-        config.widgets.lap_info = next.lap_info;
-        config.widgets.lap_timing = next.lap_timing;
-        config.widgets.sectors = next.sectors;
-        config.widgets.mini_sector_widget = next.mini_sector_widget;
-        config.widgets.input_history = next.input_history;
-        config.widgets.delta_timing = next.delta_timing;
-        config.widgets.ghost_inputs = next.ghost_inputs;
-        config.widgets.coaching = next.coaching;
-        config.widgets.performance_monitor = next.performance_monitor;
-        config.normalize();
+        config.cycle_preset();
     }
 
     unsafe fn shared_state(hwnd: HWND) -> Option<&'static SharedState> {
