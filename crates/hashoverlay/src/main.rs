@@ -16,9 +16,11 @@ use lmu_telemetry::{
     format_sample_line, SharedMemoryTelemetrySource, TelemetrySample, TelemetrySource,
 };
 use log::{info, warn};
-use overlay_renderer::{config::OverlayConfig, TelemetryOverlay};
+use overlay_renderer::{
+    config::OverlayConfig, HostRuntimeStats, SharedRuntimeView, TelemetryOverlay,
+};
 use storage::{ReferenceLapKey, ReferenceLapStore};
-use telemetry_engine::{FuelEngine, TelemetrySnapshot};
+use telemetry_engine::{FuelEngine, RingBuffer, TelemetrySnapshot};
 
 mod host_control;
 mod host_instance;
@@ -182,6 +184,15 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     }
 
     let shared_latest = Arc::new(Mutex::new(None));
+    let history_capacity = surface_configs
+        .iter()
+        .map(|(_, config)| config.window.history_samples)
+        .max()
+        .unwrap_or(16);
+    let shared_history = Arc::new(Mutex::new(RingBuffer::new(history_capacity)));
+    let shared_stats = Arc::new(Mutex::new(HostRuntimeStats::default()));
+    let shared_visible = Arc::new(AtomicBool::new(true));
+    let shared_edit_mode = Arc::new(AtomicBool::new(false));
     let host_running = Arc::new(AtomicBool::new(true));
     let host_control = host_control::HostControl::start(host_running.clone())?;
     let lap_store = ReferenceLapStore::appdata();
@@ -199,6 +210,8 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let acquisition_path = config_path.clone();
     let acquisition_layer = overlay_layer.clone();
     let acquisition_latest = shared_latest.clone();
+    let acquisition_history = shared_history.clone();
+    let acquisition_stats = shared_stats.clone();
     let acquisition_running = host_running.clone();
     let acquisition_handle = thread::spawn(move || {
         let mut current_config = config;
@@ -209,6 +222,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
         let mut last_config_check = Instant::now();
         let mut config_mtime = modified_time(&acquisition_path);
         let mut next_sample = Instant::now();
+        let mut last_stats_refresh = Instant::now();
 
         while acquisition_running.load(Ordering::Relaxed) {
             if last_config_check.elapsed() >= Duration::from_millis(500) {
@@ -235,6 +249,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
             next_sample =
                 Instant::now() + Duration::from_millis(current_config.window.sample_ms.max(5));
 
+            let acquisition_started = Instant::now();
             match source.read_sample() {
                 Ok(Some(sample)) => {
                     let lap_key = reference_lap_key(&sample);
@@ -263,11 +278,23 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
                         }
                     }
                     if let Ok(mut latest) = acquisition_latest.lock() {
-                        *latest = Some(snapshot);
+                        *latest = Some(snapshot.clone());
+                    }
+                    if let Ok(mut history) = acquisition_history.lock() {
+                        history.push(snapshot);
+                    }
+                    if let Ok(mut stats) = acquisition_stats.lock() {
+                        stats.record_sample(acquisition_started.elapsed());
                     }
                 }
                 Ok(None) => {}
                 Err(error) => warn!("Could not read telemetry sample: {error}"),
+            }
+            if last_stats_refresh.elapsed() >= Duration::from_secs(1) {
+                if let Ok(mut stats) = acquisition_stats.lock() {
+                    stats.refresh();
+                }
+                last_stats_refresh = Instant::now();
             }
         }
     });
@@ -280,10 +307,17 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
             layer_id,
         )?;
         let surface_latest = shared_latest.clone();
-        let surface_running = host_running.clone();
-        surface_handles.push(thread::spawn(move || {
-            surface.run_shared(surface_latest, surface_running)
-        }));
+        let surface_running = Arc::new(AtomicBool::new(true));
+        let runtime = SharedRuntimeView {
+            latest: surface_latest,
+            history: shared_history.clone(),
+            host_stats: shared_stats.clone(),
+            host_running: host_running.clone(),
+            surface_running,
+            visible: shared_visible.clone(),
+            edit_mode: shared_edit_mode.clone(),
+        };
+        surface_handles.push(thread::spawn(move || surface.run_shared(runtime)));
     }
     for handle in surface_handles {
         if let Err(error) = handle
