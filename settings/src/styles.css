@@ -624,6 +624,35 @@ h1 span {
   background: var(--field);
   overflow: auto;
 }
+.previewFrame {
+  display: grid;
+  gap: 10px;
+}
+.previewStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.layoutClear,
+.layoutWarning {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.layoutClear {
+  color: var(--green-wash);
+  background: rgba(113, 221, 155, 0.14);
+}
+.layoutWarning {
+  color: #251809;
+  background: var(--amber);
+}
 .previewHint {
   grid-column: 1 / -1;
   margin: -2px 0 10px;

@@ -904,6 +904,7 @@ function OverlayPreview(props: {
   );
   const previewWidth = props.config.window.width * scale;
   const previewHeight = props.config.window.height * scale;
+  const collisions = layoutCollisions(props.config);
 
   function moveWidget(clientX: number, clientY: number) {
     if (!drag) {
@@ -926,8 +927,15 @@ function OverlayPreview(props: {
   }
 
   return (
-    <div className="previewWrap">
-      <div
+    <div className="previewFrame">
+      <div className="previewStatus" aria-live="polite">
+        <span>{Math.round(scale * 100)}% workspace scale</span>
+        <span className={collisions.length > 0 ? "layoutWarning" : "layoutClear"}>
+          {collisions.length > 0 ? `${collisions.length} overlap${collisions.length === 1 ? "" : "s"} detected` : "Layout clear"}
+        </span>
+      </div>
+      <div className="previewWrap">
+        <div
         className="preview"
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
@@ -983,6 +991,7 @@ function OverlayPreview(props: {
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );
