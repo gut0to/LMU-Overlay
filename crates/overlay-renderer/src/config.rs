@@ -142,21 +142,7 @@ impl OverlayConfig {
         }
         self.window.width = self.window.width.clamp(280, 1200);
         self.window.height = self.window.height.clamp(140, 800);
-        match self.performance.mode.as_str() {
-            "eco" => {
-                self.window.refresh_hz = 30;
-                self.window.sample_ms = 20;
-            }
-            "high_refresh" => {
-                self.window.refresh_hz = 120;
-                self.window.sample_ms = 10;
-            }
-            "normal" => {
-                self.window.refresh_hz = 60;
-                self.window.sample_ms = 10;
-            }
-            _ => {}
-        }
+        apply_performance_mode(&mut self.window, &self.performance.mode);
         self.window.refresh_hz = self.window.refresh_hz.clamp(15, 144);
         self.window.sample_ms = self.window.sample_ms.clamp(5, 250);
         self.window.history_samples = self.window.history_samples.clamp(16, 900);
@@ -330,6 +316,7 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
         if overlay.name.trim().is_empty() {
             overlay.name = format!("Overlay {}", index + 1);
         }
+        apply_performance_mode(&mut overlay.window, &config.performance.mode);
         overlay.window.width = overlay.window.width.clamp(280, 1200);
         overlay.window.height = overlay.window.height.clamp(140, 800);
         overlay.window.refresh_hz = overlay.window.refresh_hz.clamp(15, 144);
@@ -343,6 +330,25 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
                 true
             }
         });
+    }
+}
+
+fn apply_performance_mode(window: &mut WindowConfig, mode: &str) {
+    match mode {
+        "eco" => {
+            window.refresh_hz = 30;
+            window.sample_ms = 20;
+        }
+        "high_refresh" => {
+            window.refresh_hz = 120;
+            window.sample_ms = 10;
+        }
+        "normal" => {
+            window.refresh_hz = 60;
+            window.sample_ms = 10;
+        }
+        "custom" => {}
+        _ => {}
     }
 }
 
@@ -2148,6 +2154,45 @@ mod tests {
         assert_eq!(rpm_options.shift_warning_percent, 85);
         assert_eq!(rpm_options.limiter_percent, 95);
         assert_eq!(rpm_options.shift_segments, 10);
+    }
+
+    #[test]
+    fn normalizes_performance_mode_for_every_overlay_surface() {
+        let mut config = OverlayConfig {
+            performance: PerformanceConfig {
+                mode: "high_refresh".to_string(),
+            },
+            overlays: vec![
+                OverlayLayerConfig {
+                    id: "main".to_string(),
+                    window: WindowConfig {
+                        refresh_hz: 30,
+                        sample_ms: 20,
+                        ..WindowConfig::default()
+                    },
+                    ..OverlayLayerConfig::default()
+                },
+                OverlayLayerConfig {
+                    id: "race".to_string(),
+                    window: WindowConfig {
+                        refresh_hz: 60,
+                        sample_ms: 20,
+                        ..WindowConfig::default()
+                    },
+                    ..OverlayLayerConfig::default()
+                },
+            ],
+            ..OverlayConfig::default()
+        };
+
+        config.normalize();
+
+        assert_eq!(config.window.refresh_hz, 120);
+        assert_eq!(config.window.sample_ms, 10);
+        for overlay in config.overlays {
+            assert_eq!(overlay.window.refresh_hz, 120);
+            assert_eq!(overlay.window.sample_ms, 10);
+        }
     }
 
     #[test]
