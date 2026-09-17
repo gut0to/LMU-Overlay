@@ -560,6 +560,8 @@ function App() {
     );
   }
 
+  const statusNeedsAttention = /could not|failed|error|conflict|invalid/i.test(status);
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -571,10 +573,11 @@ function App() {
           </div>
         </div>
         <div className="topbarRight">
-          <div className={`statusPill ${overlayRunning ? "live" : ""}`}>
+          <div className={`statusPill ${overlayRunning ? "live" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
             <span className="statusDot" />
-            {overlayRunning ? "Overlay live" : "Overlay stopped"}
+            {overlayRunning ? "Overlay live" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
           </div>
+          {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">
           <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
