@@ -250,11 +250,14 @@ function App() {
     }
   }, [config, activeOverlayId]);
 
-  async function refreshOverlayStatus() {
+  async function refreshOverlayStatus(): Promise<boolean> {
     try {
-      setOverlayRunning(await invoke<boolean>("overlay_status"));
+      const running = await invoke<boolean>("overlay_status");
+      setOverlayRunning(running);
+      return running;
     } catch (error) {
       setStatus(String(error));
+      return false;
     }
   }
 
@@ -270,20 +273,17 @@ function App() {
     }
   }
 
-  async function saveConfig(): Promise<boolean> {
-    if (!config) {
-      return false;
-    }
+  async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
     setSaving(true);
     try {
       const response = await invoke<LoadResponse>("save_config", {
-        config,
+        config: nextConfig,
         expected_revision: revision,
       });
       setConfig(normalizeUiConfig(response.config));
       setPath(response.path);
       setRevision(response.revision);
-      setStatus("Saved");
+      setStatus(successStatus);
       return true;
     } catch (error) {
       setStatus(String(error));
@@ -291,6 +291,10 @@ function App() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveConfig(): Promise<boolean> {
+    return config ? persistConfig(config) : false;
   }
 
   async function loadDefaultConfig() {
@@ -344,12 +348,14 @@ function App() {
 
   async function startOverlay() {
     try {
-      if (!(await saveConfig())) {
+      const saved = await saveConfig();
+      await invoke("start_overlay");
+      const running = await refreshOverlayStatus();
+      if (!running) {
+        setStatus("HashOverlay did not become ready. Close any older HashOverlay process and try Start overlay again.");
         return;
       }
-      await invoke("start_overlay");
-      await refreshOverlayStatus();
-      setStatus("Overlay start requested");
+      setStatus(saved ? "Overlay started" : "Overlay started with the last saved config; current changes were not saved");
     } catch (error) {
       setStatus(String(error));
     }
@@ -436,14 +442,23 @@ function App() {
     setStatus("Overlay layout arranged");
   }
 
-  function applyPreset(name: StandardPresetKey) {
-    setConfig((current) => {
-      if (!current) {
-        return current;
-      }
-      const preset = current.presets[name];
-      return applyProfile(current, preset, activeOverlayId);
-    });
+  async function applyPreset(name: StandardPresetKey) {
+    if (!config) {
+      return;
+    }
+    const next = applyProfile(config, config.presets[name], activeOverlayId);
+    setConfig(next);
+    await persistConfig(next, `${titleCase(name)} preset applied`);
+  }
+
+  async function applyCustomPresetAndSave(index: number) {
+    if (!config) {
+      return;
+    }
+    const next = applyCustomPreset(config, index, activeOverlayId);
+    setConfig(next);
+    const name = config.presets.custom[index]?.name || `Custom ${index + 1}`;
+    await persistConfig(next, `${name} preset applied`);
   }
 
   function setCatalogWidget(id: string, enabled: boolean) {
@@ -560,7 +575,7 @@ function App() {
     );
   }
 
-  const statusNeedsAttention = /could not|failed|error|conflict|invalid/i.test(status);
+  const statusNeedsAttention = /could not|did not|failed|error|conflict|invalid/i.test(status);
 
   return (
     <main className="shell">
@@ -585,7 +600,7 @@ function App() {
           <button className="iconButton" title="Reload config" onClick={loadConfig}>
             <RotateCcw size={18} />
           </button>
-          <button className="primaryButton" onClick={startOverlay}>
+          <button className="primaryButton" onClick={startOverlay} disabled={saving}>
             <Play size={18} />
             Start overlay
           </button>
@@ -610,13 +625,14 @@ function App() {
             <button
               key={name}
               className={activePreset === name ? "selected" : ""}
-              onClick={() => applyPreset(name)}
+              onClick={() => void applyPreset(name)}
+              disabled={saving}
             >
               {titleCase(name)}
             </button>
           ))}
           {config.presets.custom.map((preset, index) => (
-            <button key={`custom-${index}`} className="customScene" onClick={() => setConfig(applyCustomPreset(config, index, activeOverlayId))}>
+            <button key={`custom-${index}`} className="customScene" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
               {preset.name || `Custom ${index + 1}`}
             </button>
           ))}
