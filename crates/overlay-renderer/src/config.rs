@@ -131,6 +131,7 @@ impl OverlayConfig {
                 supported: CURRENT_CONFIG_VERSION,
             });
         }
+        normalized.hotkeys.validate()?;
         toml::to_string_pretty(&normalized)?;
         Ok(())
     }
@@ -1085,6 +1086,67 @@ impl Default for HotkeyConfig {
     }
 }
 
+impl HotkeyConfig {
+    fn validate(&self) -> Result<(), ConfigError> {
+        let bindings = [
+            ("toggle_overlay", self.toggle_overlay.as_str()),
+            ("edit_mode", self.edit_mode.as_str()),
+            ("toggle_coaching", self.toggle_coaching.as_str()),
+            ("cycle_preset", self.cycle_preset.as_str()),
+        ];
+        let mut seen = BTreeMap::new();
+
+        for (field, binding) in bindings {
+            let normalized =
+                normalize_hotkey(binding).ok_or_else(|| ConfigError::InvalidHotkey {
+                    field,
+                    binding: binding.to_string(),
+                })?;
+            if let Some(first_field) = seen.insert(normalized, field) {
+                return Err(ConfigError::DuplicateHotkey {
+                    first_field,
+                    second_field: field,
+                    binding: binding.to_string(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+fn normalize_hotkey(value: &str) -> Option<String> {
+    let mut modifiers = Vec::new();
+    let mut function_key = None;
+    for part in value
+        .split('+')
+        .map(|part| part.trim().to_ascii_uppercase())
+    {
+        match part.as_str() {
+            "CTRL" | "CONTROL" if !modifiers.contains(&"CTRL") => modifiers.push("CTRL"),
+            "SHIFT" if !modifiers.contains(&"SHIFT") => modifiers.push("SHIFT"),
+            "ALT" if !modifiers.contains(&"ALT") => modifiers.push("ALT"),
+            key if function_key.is_none() => {
+                let number = key
+                    .strip_prefix('F')
+                    .and_then(|number| number.parse::<u8>().ok())?;
+                if !(1..=12).contains(&number) {
+                    return None;
+                }
+                function_key = Some(format!("F{number}"));
+            }
+            _ => return None,
+        }
+    }
+    function_key.map(|key| {
+        modifiers.sort_unstable();
+        modifiers
+            .into_iter()
+            .chain(std::iter::once(key.as_str()))
+            .collect::<Vec<_>>()
+            .join("+")
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PerformanceConfig {
@@ -1580,9 +1642,24 @@ pub enum ConfigError {
     Io(io::Error),
     Toml(toml::de::Error),
     TomlSer(toml::ser::Error),
-    Conflict { expected: u64, actual: u64 },
-    UnsupportedVersion { found: u32, supported: u32 },
+    Conflict {
+        expected: u64,
+        actual: u64,
+    },
+    UnsupportedVersion {
+        found: u32,
+        supported: u32,
+    },
     UnknownOverlayLayer(String),
+    InvalidHotkey {
+        field: &'static str,
+        binding: String,
+    },
+    DuplicateHotkey {
+        first_field: &'static str,
+        second_field: &'static str,
+        binding: String,
+    },
 }
 
 impl From<io::Error> for ConfigError {
@@ -1618,6 +1695,18 @@ impl std::fmt::Display for ConfigError {
                 "overlay config version {found} is newer than supported version {supported}"
             ),
             Self::UnknownOverlayLayer(id) => write!(f, "overlay layer '{id}' does not exist"),
+            Self::InvalidHotkey { field, binding } => write!(
+                f,
+                "hotkey '{field}' must use F1 through F12 with optional Ctrl, Shift, or Alt modifiers (found '{binding}')"
+            ),
+            Self::DuplicateHotkey {
+                first_field,
+                second_field,
+                binding,
+            } => write!(
+                f,
+                "hotkey '{binding}' is assigned to both '{first_field}' and '{second_field}'"
+            ),
         }
     }
 }
@@ -2235,6 +2324,30 @@ mod tests {
             Err(ConfigError::Conflict { .. })
         ));
         let _ = fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn rejects_invalid_or_duplicate_hotkeys_before_saving() {
+        let mut invalid = OverlayConfig::default();
+        invalid.hotkeys.toggle_overlay = "Ctrl+K".to_string();
+        assert!(matches!(
+            invalid.validate_for_save(),
+            Err(ConfigError::InvalidHotkey {
+                field: "toggle_overlay",
+                ..
+            })
+        ));
+
+        let mut duplicate = OverlayConfig::default();
+        duplicate.hotkeys.edit_mode = " f09 ".to_string();
+        assert!(matches!(
+            duplicate.validate_for_save(),
+            Err(ConfigError::DuplicateHotkey {
+                first_field: "toggle_overlay",
+                second_field: "edit_mode",
+                ..
+            })
+        ));
     }
 
     #[test]

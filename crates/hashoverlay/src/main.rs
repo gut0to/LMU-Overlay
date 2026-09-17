@@ -363,11 +363,31 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     }
     // Publish host readiness only after the initial overlay surface has
     // created its window. Settings uses this pipe as the startup handshake.
-    let host_control = host_control::HostControl::start(
+    let host_control = match host_control::HostControl::start(
         host_running.clone(),
         shared_visible.clone(),
         reload_request_sender,
-    )?;
+    ) {
+        Ok(control) => control,
+        Err(error) => {
+            // Surface startup already succeeded, so a control-pipe failure must
+            // explicitly stop every worker before returning to the launcher.
+            // Otherwise their JoinHandles are detached while the host process
+            // reports a failed startup.
+            host_running.store(false, Ordering::Relaxed);
+            for (_, surface) in surfaces.drain() {
+                surface.running.store(false, Ordering::Relaxed);
+                let _ = surface.join.join();
+            }
+            let _ = acquisition_handle.join();
+            drop(lap_writer);
+            let _ = lap_writer_handle.join();
+            if let Some(hotkeys) = host_hotkeys.take() {
+                hotkeys.shutdown();
+            }
+            return Err(error.into());
+        }
+    };
     let mut last_reconcile = Instant::now();
     while host_running.load(Ordering::Relaxed) {
         while let Ok(reply) = reload_request_receiver.try_recv() {
