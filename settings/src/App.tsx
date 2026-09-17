@@ -402,6 +402,34 @@ function App() {
     setStatus("Layout reset");
   }
 
+  function tidyActiveOverlayLayout() {
+    setConfig((current) => {
+      if (!current) {
+        return current;
+      }
+      const arranged = arrangeProfileLayout(currentProfile(current));
+      const currentOverlay = current.overlays.find((overlay) => overlay.id === activeOverlayId);
+      if (!currentOverlay) {
+        return current;
+      }
+      const window = {
+        ...currentOverlay.window,
+        height: Math.max(currentOverlay.window.height, arranged.height),
+      };
+      return {
+        ...current,
+        overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId
+          ? {
+              ...overlay,
+              window,
+              layout_overrides: layoutOverridesFromArrangedProfile(arranged.layout, arranged.widgets),
+            }
+          : overlay),
+      };
+    });
+    setStatus("Overlay layout arranged");
+  }
+
   function applyPreset(name: StandardPresetKey) {
     setConfig((current) => {
       if (!current) {
@@ -648,6 +676,7 @@ function App() {
               selected={selectedLayout}
               onSelect={setSelectedLayout}
               onLayoutChange={(widget, layout) => setConfig(updateOverlayLayoutSelection(config, activeOverlayId, widget, layout))}
+              onTidyLayout={tidyActiveOverlayLayout}
             />
           </Section>
           <aside className="layoutInspector">
@@ -887,6 +916,7 @@ function OverlayPreview(props: {
   selected: LayoutSelection;
   onSelect: (value: LayoutSelection) => void;
   onLayoutChange: (widget: LayoutSelection, layout: WidgetLayout) => void;
+  onTidyLayout: () => void;
 }) {
   const [drag, setDrag] = useState<{
     widget: LayoutSelection;
@@ -933,6 +963,7 @@ function OverlayPreview(props: {
         <span className={collisions.length > 0 ? "layoutWarning" : "layoutClear"}>
           {collisions.length > 0 ? `${collisions.length} overlap${collisions.length === 1 ? "" : "s"} detected` : "Layout clear"}
         </span>
+        {collisions.length > 0 && <button className="tidyLayoutButton" onClick={props.onTidyLayout}>Arrange widgets</button>}
       </div>
       <div className="previewWrap">
         <div

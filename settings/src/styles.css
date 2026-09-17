@@ -653,6 +653,19 @@ h1 span {
   color: #251809;
   background: var(--amber);
 }
+.tidyLayoutButton {
+  min-height: 30px;
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+}
+.tidyLayoutButton:hover {
+  background: rgba(241, 187, 105, 0.12);
+}
 .previewHint {
   grid-column: 1 / -1;
   margin: -2px 0 10px;
