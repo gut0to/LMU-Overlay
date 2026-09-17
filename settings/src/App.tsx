@@ -58,6 +58,12 @@ const performanceModes = [
   ["high_refresh", "High Refresh"],
   ["custom", "Custom"],
 ];
+const performanceWindowValues: Record<string, Pick<WindowConfig, "refresh_hz" | "sample_ms"> | undefined> = {
+  eco: { refresh_hz: 30, sample_ms: 20 },
+  normal: { refresh_hz: 60, sample_ms: 10 },
+  high_refresh: { refresh_hz: 120, sample_ms: 10 },
+  custom: undefined,
+};
 const referenceModes = [
   ["personal_best", "Personal Best"],
   ["session_best", "Session Best"],
@@ -554,6 +560,8 @@ function App() {
     );
   }
 
+  const statusNeedsAttention = /could not|failed|error|conflict|invalid/i.test(status);
+
   return (
     <main className="shell">
       <header className="topbar">
@@ -565,10 +573,11 @@ function App() {
           </div>
         </div>
         <div className="topbarRight">
-          <div className={`statusPill ${overlayRunning ? "live" : ""}`}>
+          <div className={`statusPill ${overlayRunning ? "live" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
             <span className="statusDot" />
-            {overlayRunning ? "Overlay live" : "Overlay stopped"}
+            {overlayRunning ? "Overlay live" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
           </div>
+          {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">
           <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
@@ -1679,7 +1688,18 @@ function setHotkey(config: OverlayConfig, setConfig: React.Dispatch<React.SetSta
 }
 
 function setPerformance(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, mode: string) {
-  setConfig({ ...config, performance: { mode } });
+  setConfig(applyPerformanceMode(config, mode));
+}
+
+function applyPerformanceMode(config: OverlayConfig, mode: string): OverlayConfig {
+  const values = performanceWindowValues[mode];
+  const applyToWindow = (window: WindowConfig) => values ? { ...window, ...values } : window;
+  return {
+    ...config,
+    performance: { mode },
+    window: applyToWindow(config.window),
+    overlays: config.overlays.map((overlay) => ({ ...overlay, window: applyToWindow(overlay.window) })),
+  };
 }
 
 function addCustomPreset(config: OverlayConfig): OverlayConfig {
@@ -1756,9 +1776,8 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
 
 function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
   const arranged = arrangeProfileLayout(profile);
-  const next: OverlayConfig = {
+  const next = applyPerformanceMode({
     ...config,
-    performance: { mode: profile.performance_mode },
     timing: {
       ...config.timing,
       reference_mode: profile.reference_mode,
@@ -1771,7 +1790,7 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overl
     layout: arranged.layout,
     extra_widgets: arranged.widgets,
     window: { ...config.window, height: arranged.height },
-  };
+  }, profile.performance_mode);
   if (!overlayId) {
     return next;
   }

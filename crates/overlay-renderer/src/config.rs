@@ -142,21 +142,8 @@ impl OverlayConfig {
         }
         self.window.width = self.window.width.clamp(280, 1200);
         self.window.height = self.window.height.clamp(140, 800);
-        match self.performance.mode.as_str() {
-            "eco" => {
-                self.window.refresh_hz = 30;
-                self.window.sample_ms = 20;
-            }
-            "high_refresh" => {
-                self.window.refresh_hz = 120;
-                self.window.sample_ms = 10;
-            }
-            "normal" => {
-                self.window.refresh_hz = 60;
-                self.window.sample_ms = 10;
-            }
-            _ => {}
-        }
+        self.performance.normalize();
+        apply_performance_mode(&mut self.window, &self.performance.mode);
         self.window.refresh_hz = self.window.refresh_hz.clamp(15, 144);
         self.window.sample_ms = self.window.sample_ms.clamp(5, 250);
         self.window.history_samples = self.window.history_samples.clamp(16, 900);
@@ -184,9 +171,7 @@ impl OverlayConfig {
         }
         self.units.normalize();
         self.coaching.normalize();
-        self.timing.mini_sectors = self.timing.mini_sectors.clamp(1, 200);
-        self.timing.brake_threshold = self.timing.brake_threshold.clamp(0.01, 1.0);
-        self.timing.throttle_threshold = self.timing.throttle_threshold.clamp(0.01, 1.0);
+        self.timing.normalize();
         self.presets.normalize();
         normalize_overlay_layers(self);
     }
@@ -200,7 +185,8 @@ impl OverlayConfig {
         ) {
             ("normal", "last_lap") => self.presets.qualifying.clone(),
             ("high_refresh", "personal_best") => self.presets.race.clone(),
-            ("eco", "session_best") => self.presets.endurance.clone(),
+            ("eco", "session_best") if self.widgets.pedals => self.presets.endurance.clone(),
+            ("eco", "session_best") => self.presets.minimal.clone(),
             ("eco", _) => self.presets.minimal.clone(),
             _ => self.presets.practice.clone(),
         };
@@ -330,6 +316,7 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
         if overlay.name.trim().is_empty() {
             overlay.name = format!("Overlay {}", index + 1);
         }
+        apply_performance_mode(&mut overlay.window, &config.performance.mode);
         overlay.window.width = overlay.window.width.clamp(280, 1200);
         overlay.window.height = overlay.window.height.clamp(140, 800);
         overlay.window.refresh_hz = overlay.window.refresh_hz.clamp(15, 144);
@@ -343,6 +330,40 @@ fn normalize_overlay_layers(config: &mut OverlayConfig) {
                 true
             }
         });
+    }
+}
+
+fn apply_performance_mode(window: &mut WindowConfig, mode: &str) {
+    match mode {
+        "eco" => {
+            window.refresh_hz = 30;
+            window.sample_ms = 20;
+        }
+        "high_refresh" => {
+            window.refresh_hz = 120;
+            window.sample_ms = 10;
+        }
+        "normal" => {
+            window.refresh_hz = 60;
+            window.sample_ms = 10;
+        }
+        "custom" => {}
+        _ => {}
+    }
+}
+
+fn normalize_performance_mode(mode: &mut String) {
+    if !matches!(mode.as_str(), "eco" | "normal" | "high_refresh" | "custom") {
+        *mode = "normal".to_string();
+    }
+}
+
+fn normalize_reference_mode(mode: &mut String) {
+    if !matches!(
+        mode.as_str(),
+        "personal_best" | "session_best" | "best_valid_lap" | "last_lap"
+    ) {
+        *mode = "personal_best".to_string();
     }
 }
 
@@ -1066,6 +1087,15 @@ pub struct TimingConfig {
     pub throttle_threshold: f64,
 }
 
+impl TimingConfig {
+    fn normalize(&mut self) {
+        normalize_reference_mode(&mut self.reference_mode);
+        self.mini_sectors = self.mini_sectors.clamp(1, 200);
+        self.brake_threshold = self.brake_threshold.clamp(0.01, 1.0);
+        self.throttle_threshold = self.throttle_threshold.clamp(0.01, 1.0);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HotkeyConfig {
@@ -1151,6 +1181,12 @@ fn normalize_hotkey(value: &str) -> Option<String> {
 #[serde(default, deny_unknown_fields)]
 pub struct PerformanceConfig {
     pub mode: String,
+}
+
+impl PerformanceConfig {
+    fn normalize(&mut self) {
+        normalize_performance_mode(&mut self.mode);
+    }
 }
 
 impl Default for PerformanceConfig {
@@ -1426,6 +1462,8 @@ impl PresetProfileConfig {
     }
 
     fn normalize(&mut self) {
+        normalize_performance_mode(&mut self.performance_mode);
+        normalize_reference_mode(&mut self.reference_mode);
         self.mini_sectors = self.mini_sectors.clamp(1, 200);
         self.style.opacity = self.style.opacity.clamp(32, 255);
         self.style.scale = self.style.scale.clamp(0.65, 1.75);
@@ -2151,6 +2189,64 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_performance_mode_for_every_overlay_surface() {
+        let mut config = OverlayConfig {
+            performance: PerformanceConfig {
+                mode: "high_refresh".to_string(),
+            },
+            overlays: vec![
+                OverlayLayerConfig {
+                    id: "main".to_string(),
+                    window: WindowConfig {
+                        refresh_hz: 30,
+                        sample_ms: 20,
+                        ..WindowConfig::default()
+                    },
+                    ..OverlayLayerConfig::default()
+                },
+                OverlayLayerConfig {
+                    id: "race".to_string(),
+                    window: WindowConfig {
+                        refresh_hz: 60,
+                        sample_ms: 20,
+                        ..WindowConfig::default()
+                    },
+                    ..OverlayLayerConfig::default()
+                },
+            ],
+            ..OverlayConfig::default()
+        };
+
+        config.normalize();
+
+        assert_eq!(config.window.refresh_hz, 120);
+        assert_eq!(config.window.sample_ms, 10);
+        for overlay in config.overlays {
+            assert_eq!(overlay.window.refresh_hz, 120);
+            assert_eq!(overlay.window.sample_ms, 10);
+        }
+    }
+
+    #[test]
+    fn normalizes_invalid_performance_and_timing_modes() {
+        let mut config = OverlayConfig {
+            performance: PerformanceConfig {
+                mode: "turbo".to_string(),
+            },
+            timing: TimingConfig {
+                reference_mode: "unknown_lap".to_string(),
+                ..TimingConfig::default()
+            },
+            ..OverlayConfig::default()
+        };
+
+        config.normalize();
+
+        assert_eq!(config.performance.mode, "normal");
+        assert_eq!(config.timing.reference_mode, "personal_best");
+    }
+
+    #[test]
     fn migrates_v3_configs_to_explicit_display_units() {
         let mut config = OverlayConfig {
             config_version: 3,
@@ -2429,6 +2525,23 @@ mod tests {
             config.widgets.performance_monitor,
             config.presets.qualifying.performance_monitor
         );
+    }
+
+    #[test]
+    fn cycling_presets_advances_past_the_shared_eco_signature() {
+        let mut config = OverlayConfig::default();
+        config.performance.mode = "eco".to_string();
+        config.timing.reference_mode = "session_best".to_string();
+        config.timing.mini_sectors = 20;
+        config.widgets.pedals = true;
+
+        config.cycle_preset();
+        assert_eq!(config.performance.mode, "eco");
+        assert!(!config.widgets.pedals);
+
+        config.cycle_preset();
+        assert_eq!(config.performance.mode, "normal");
+        assert_eq!(config.timing.reference_mode, "personal_best");
     }
 
     #[test]

@@ -18,6 +18,12 @@ use tauri::Manager;
 #[derive(Default)]
 struct OverlayProcesses(Mutex<Vec<Child>>);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupDecision {
+    ReuseReadyHost,
+    Launch,
+}
+
 #[derive(Debug, Serialize)]
 struct ConfigResponse {
     path: String,
@@ -91,8 +97,8 @@ fn start_overlay(
     app: tauri::AppHandle,
     processes: tauri::State<'_, OverlayProcesses>,
 ) -> Result<(), String> {
-    if host_is_running() {
-        return wait_for_host_startup();
+    if startup_decision(host_control_is_ready()) == StartupDecision::ReuseReadyHost {
+        return Ok(());
     }
     let mut running = processes
         .0
@@ -174,19 +180,17 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 
 #[tauri::command]
 fn overlay_status() -> Result<bool, String> {
-    Ok(send_host_command("status").is_ok_and(|response| host_ready_response(&response)))
+    Ok(host_control_is_ready())
 }
 
 fn reload_overlay_config_after_save() -> Result<(), String> {
-    if !host_is_running() {
+    if !host_control_is_ready() {
         return Ok(());
     }
-    let response = send_host_command("reload").map_err(|error| {
-        format!("Configuration was saved, but overlay reload failed: {error}")
-    })?;
-    validate_reload_response(&response).map_err(|error| {
-        format!("Configuration was saved, but overlay reload failed: {error}")
-    })
+    let response = send_host_command("reload")
+        .map_err(|error| format!("Configuration was saved, but overlay reload failed: {error}"))?;
+    validate_reload_response(&response)
+        .map_err(|error| format!("Configuration was saved, but overlay reload failed: {error}"))
 }
 
 fn validate_reload_response(response: &str) -> Result<(), String> {
@@ -201,9 +205,21 @@ fn host_ready_response(response: &str) -> bool {
     response == "running"
 }
 
+fn host_control_is_ready() -> bool {
+    send_host_command("status").is_ok_and(|response| host_ready_response(&response))
+}
+
+fn startup_decision(host_control_ready: bool) -> StartupDecision {
+    if host_control_ready {
+        StartupDecision::ReuseReadyHost
+    } else {
+        StartupDecision::Launch
+    }
+}
+
 #[cfg(test)]
 mod startup_status_tests {
-    use super::{host_ready_response, validate_reload_response};
+    use super::{host_ready_response, startup_decision, validate_reload_response, StartupDecision};
 
     #[test]
     fn only_reports_running_after_host_control_confirms_ready() {
@@ -212,6 +228,12 @@ mod startup_status_tests {
         assert!(!host_ready_response("stopping"));
         assert!(!host_ready_response("invalid"));
         assert!(!host_ready_response("error:window creation failed"));
+    }
+
+    #[test]
+    fn launches_when_a_mutex_is_not_backed_by_a_ready_control_service() {
+        assert_eq!(startup_decision(false), StartupDecision::Launch);
+        assert_eq!(startup_decision(true), StartupDecision::ReuseReadyHost);
     }
 
     #[test]
@@ -322,12 +344,12 @@ fn host_is_running() -> bool {
 fn wait_for_host_startup() -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline {
-        if send_host_command("status").is_ok_and(|response| response == "running") {
+        if host_control_is_ready() {
             return Ok(());
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    Err("HashOverlay started but its control service did not become ready in time".to_string())
+    Err("HashOverlay could not confirm that its overlay window is ready. If a previous HashOverlay process is still open, close it and try Start overlay again.".to_string())
 }
 
 #[tauri::command]
