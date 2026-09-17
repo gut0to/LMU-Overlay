@@ -171,7 +171,7 @@ h1 {
   text-transform: uppercase;
 }
 h1 span {
-  color: var(--green);
+  color: var(--blue);
   font-weight: 500;
 }
 .topbar p {
@@ -246,17 +246,17 @@ h1 span {
 }
 .iconButton:hover,
 .secondaryButton:hover {
-  border-color: var(--green);
-  color: var(--green);
+  border-color: var(--blue);
+  color: var(--blue);
   transform: translateY(-1px);
 }
 .primaryButton {
-  border-color: var(--green);
-  background: var(--green);
-  color: #05110a;
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #0b1625;
 }
 .primaryButton:hover {
-  background: var(--green-wash);
+  background: #b8d2ff;
   transform: translateY(-1px);
 }
 .primaryButton.wide {
@@ -344,14 +344,14 @@ h1 span {
 }
 .sceneChoices button.selected,
 .layerChoices button.selected {
-  border-color: var(--green);
-  background: rgba(109, 241, 139, 0.12);
-  color: var(--green);
+  border-color: var(--violet);
+  background: rgba(195, 166, 255, 0.14);
+  color: var(--violet);
 }
 .sceneChoices button.customScene,
 .layerChoices .addLayerButton {
   border-style: dashed;
-  color: var(--green);
+  color: var(--blue);
 }
 .layerChoices button small {
   color: inherit;
@@ -411,7 +411,7 @@ h1 span {
   white-space: nowrap;
 }
 .stripMetric strong {
-  color: var(--green);
+  color: var(--blue);
   font-size: 21px;
 }
 .stripHint {
@@ -461,9 +461,9 @@ h1 span {
   color: var(--ink);
 }
 .tabs .selected {
-  border-left-color: var(--green);
-  background: rgba(109, 241, 139, 0.12);
-  color: var(--green);
+  border-left-color: var(--blue);
+  background: rgba(124, 175, 255, 0.12);
+  color: var(--blue);
 }
 .grid {
   grid-column: 2;
@@ -494,7 +494,7 @@ h1 span {
   text-transform: uppercase;
 }
 .panel h2 svg {
-  color: var(--green);
+  color: var(--blue);
   stroke-width: 1.75;
 }
 .fields {
@@ -547,7 +547,7 @@ h1 span {
   padding: 0;
 }
 .range output {
-  color: var(--green);
+  color: var(--blue);
   font-family: var(--display);
   font-size: 14px;
   text-align: right;
