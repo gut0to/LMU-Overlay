@@ -474,6 +474,26 @@ h1 span {
   align-items: start;
   border-top: 1px solid var(--line-bright);
 }
+.layoutStudio {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(340px, 0.78fr);
+  align-items: start;
+  gap: 30px;
+}
+.layoutStudio > .panel,
+.layoutInspector > .panel {
+  padding-top: 24px;
+}
+.layoutInspector {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 0;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 .panel {
   min-width: 0;
   padding: 24px 0 28px;
