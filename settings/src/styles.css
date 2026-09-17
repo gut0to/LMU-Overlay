@@ -886,6 +886,21 @@ h1 span {
     margin-top: 18px;
   }
 }
+@media (pointer: coarse) {
+  .iconButton,
+  .primaryButton,
+  .dangerButton,
+  .secondaryButton,
+  .sceneChoices button,
+  .layerChoices button,
+  .tabs button,
+  .tidyLayoutButton {
+    min-height: 44px;
+  }
+  .previewWidget {
+    touch-action: none;
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
   .statusPill.live .statusDot {
     animation: telemetry-pulse 1.7s ease-in-out infinite;
