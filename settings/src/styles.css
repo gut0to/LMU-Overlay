@@ -1,25 +1,28 @@
 @import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;1,600&family=Manrope:wght@400;500;600;700&display=swap");
 
 :root {
-  color: #e5eee6;
-  background: #07130e;
+  color: #edf2f7;
+  background: #0c1118;
   font-family: "Manrope", "Segoe UI Variable", sans-serif;
   font-synthesis: none;
   text-rendering: geometricPrecision;
-  --void: #07130e;
-  --rail: #0b1d15;
-  --surface: #0f271c;
-  --surface-raised: #153525;
-  --field: #091912;
-  --ink: #e5eee6;
-  --muted: #91ab99;
-  --line: #2a513c;
-  --line-bright: #417c59;
-  --green: #6df18b;
-  --green-deep: #1a9e54;
-  --green-wash: #d7ffe1;
-  --amber: #f6c66c;
-  --danger: #ff7a70;
+  --void: #0c1118;
+  --rail: #111923;
+  --surface: #17212d;
+  --surface-raised: #202c3a;
+  --field: #0f1721;
+  --ink: #edf2f7;
+  --muted: #a4b2c3;
+  --line: #344457;
+  --line-bright: #536a82;
+  --green: #71dd9b;
+  --green-deep: #238a62;
+  --green-wash: #cbf6dc;
+  --blue: #7cafff;
+  --blue-deep: #3d73c9;
+  --violet: #c3a6ff;
+  --amber: #f1bb69;
+  --danger: #fb837b;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
 }
 * {
