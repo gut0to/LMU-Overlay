@@ -68,16 +68,16 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--blue);
   outline-offset: 3px;
 }
 input::placeholder,
 textarea::placeholder {
-  color: #62816d;
+  color: #71849a;
 }
 input[type="checkbox"],
 input[type="range"] {
-  accent-color: var(--green);
+  accent-color: var(--blue);
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -540,7 +540,7 @@ h1 span {
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   padding: 6px 9px;
   background: var(--field);
   color: var(--ink);
@@ -551,7 +551,7 @@ h1 span {
 .field textarea:hover,
 .presetItem input:hover,
 .layerControls > input:hover {
-  border-color: var(--line-bright);
+  border-color: var(--blue-deep);
 }
 .field.invalid {
   color: var(--danger);
@@ -596,9 +596,9 @@ h1 span {
   color: var(--ink);
 }
 .segmented .selected {
-  border-color: var(--green);
-  background: rgba(109, 241, 139, 0.12);
-  color: var(--green);
+  border-color: var(--blue);
+  background: rgba(124, 175, 255, 0.13);
+  color: var(--blue);
 }
 .toggle {
   display: flex;
