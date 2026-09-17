@@ -1002,6 +1002,25 @@ function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; lab
   return [...legacy, ...extra];
 }
 
+function layoutCollisions(config: OverlayConfig) {
+  const entries = layoutEntries(config);
+  const collisions: Array<[string, string]> = [];
+  for (let left = 0; left < entries.length; left += 1) {
+    for (let right = left + 1; right < entries.length; right += 1) {
+      const first = entries[left];
+      const second = entries[right];
+      const overlaps = first.layout.x < second.layout.x + second.layout.width
+        && first.layout.x + first.layout.width > second.layout.x
+        && first.layout.y < second.layout.y + second.layout.height
+        && first.layout.y + first.layout.height > second.layout.y;
+      if (overlaps) {
+        collisions.push([first.label, second.label]);
+      }
+    }
+  }
+  return collisions;
+}
+
 function overlayPreviewConfig(config: OverlayConfig, overlayId: string): OverlayConfig {
   const layer = config.overlays.find((overlay) => overlay.id === overlayId);
   if (!layer) {
