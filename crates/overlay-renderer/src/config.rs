@@ -186,7 +186,8 @@ impl OverlayConfig {
         ) {
             ("normal", "last_lap") => self.presets.qualifying.clone(),
             ("high_refresh", "personal_best") => self.presets.race.clone(),
-            ("eco", "session_best") => self.presets.endurance.clone(),
+            ("eco", "session_best") if self.widgets.pedals => self.presets.endurance.clone(),
+            ("eco", "session_best") => self.presets.minimal.clone(),
             ("eco", _) => self.presets.minimal.clone(),
             _ => self.presets.practice.clone(),
         };
@@ -2474,6 +2475,23 @@ mod tests {
             config.widgets.performance_monitor,
             config.presets.qualifying.performance_monitor
         );
+    }
+
+    #[test]
+    fn cycling_presets_advances_past_the_shared_eco_signature() {
+        let mut config = OverlayConfig::default();
+        config.performance.mode = "eco".to_string();
+        config.timing.reference_mode = "session_best".to_string();
+        config.timing.mini_sectors = 20;
+        config.widgets.pedals = true;
+
+        config.cycle_preset();
+        assert_eq!(config.performance.mode, "eco");
+        assert!(!config.widgets.pedals);
+
+        config.cycle_preset();
+        assert_eq!(config.performance.mode, "normal");
+        assert_eq!(config.timing.reference_mode, "personal_best");
     }
 
     #[test]
