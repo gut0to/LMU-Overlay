@@ -640,25 +640,25 @@ function App() {
       </nav>
 
       <div className="grid">
-        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Activity />} title="Live Preview">
-          <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
-          <OverlayPreview
-            config={activeOverlayConfig ?? config}
-            selected={selectedLayout}
-            onSelect={setSelectedLayout}
-            onLayoutChange={(widget, layout) => setConfig(updateOverlayLayoutSelection(config, activeOverlayId, widget, layout))}
-          />
-        </Section>}
-
-        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<LayoutGrid />} title="Window">
-          <p className="previewHint">To move the whole overlay on screen, press F10 in the game and drag its border.</p>
-          <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
-          <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
-          <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
-          <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
-        </Section>}
-
-        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Magnet />} title="Widget Layout">
+        {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
+          <Section icon={<Activity />} title="Live Preview">
+            <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
+            <OverlayPreview
+              config={activeOverlayConfig ?? config}
+              selected={selectedLayout}
+              onSelect={setSelectedLayout}
+              onLayoutChange={(widget, layout) => setConfig(updateOverlayLayoutSelection(config, activeOverlayId, widget, layout))}
+            />
+          </Section>
+          <aside className="layoutInspector">
+            <Section icon={<LayoutGrid />} title="Overlay Window">
+              <p className="previewHint">Press F10 in the game, then drag the overlay border to move it on-screen.</p>
+              <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
+              <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
+              <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
+              <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
+            </Section>
+            <Section icon={<Magnet />} title="Selected Widget">
           <div className="segmented">
             {availableLayoutEntries.map(({ key, label }) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
@@ -717,7 +717,9 @@ function App() {
               />
             </>
           )}
-        </Section>}
+            </Section>
+          </aside>
+        </section>}
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
