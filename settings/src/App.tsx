@@ -402,6 +402,34 @@ function App() {
     setStatus("Layout reset");
   }
 
+  function tidyActiveOverlayLayout() {
+    setConfig((current) => {
+      if (!current) {
+        return current;
+      }
+      const arranged = arrangeProfileLayout(currentProfile(current));
+      const currentOverlay = current.overlays.find((overlay) => overlay.id === activeOverlayId);
+      if (!currentOverlay) {
+        return current;
+      }
+      const window = {
+        ...currentOverlay.window,
+        height: Math.max(currentOverlay.window.height, arranged.height),
+      };
+      return {
+        ...current,
+        overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId
+          ? {
+              ...overlay,
+              window,
+              layout_overrides: layoutOverridesFromArrangedProfile(arranged.layout, arranged.widgets),
+            }
+          : overlay),
+      };
+    });
+    setStatus("Overlay layout arranged");
+  }
+
   function applyPreset(name: StandardPresetKey) {
     setConfig((current) => {
       if (!current) {
@@ -640,25 +668,26 @@ function App() {
       </nav>
 
       <div className="grid">
-        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Activity />} title="Live Preview">
-          <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
-          <OverlayPreview
-            config={activeOverlayConfig ?? config}
-            selected={selectedLayout}
-            onSelect={setSelectedLayout}
-            onLayoutChange={(widget, layout) => setConfig(updateOverlayLayoutSelection(config, activeOverlayId, widget, layout))}
-          />
-        </Section>}
-
-        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<LayoutGrid />} title="Window">
-          <p className="previewHint">To move the whole overlay on screen, press F10 in the game and drag its border.</p>
-          <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
-          <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
-          <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
-          <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
-        </Section>}
-
-        {showPanel(activePage, "Dashboard", "Layout") && <Section icon={<Magnet />} title="Widget Layout">
+        {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
+          <Section icon={<Activity />} title="Live Preview">
+            <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
+            <OverlayPreview
+              config={activeOverlayConfig ?? config}
+              selected={selectedLayout}
+              onSelect={setSelectedLayout}
+              onLayoutChange={(widget, layout) => setConfig(updateOverlayLayoutSelection(config, activeOverlayId, widget, layout))}
+              onTidyLayout={tidyActiveOverlayLayout}
+            />
+          </Section>
+          <aside className="layoutInspector">
+            <Section icon={<LayoutGrid />} title="Overlay Window">
+              <p className="previewHint">Press F10 in the game, then drag the overlay border to move it on-screen.</p>
+              <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
+              <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
+              <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
+              <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
+            </Section>
+            <Section icon={<Magnet />} title="Selected Widget">
           <div className="segmented">
             {availableLayoutEntries.map(({ key, label }) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
@@ -717,7 +746,9 @@ function App() {
               />
             </>
           )}
-        </Section>}
+            </Section>
+          </aside>
+        </section>}
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
@@ -885,6 +916,7 @@ function OverlayPreview(props: {
   selected: LayoutSelection;
   onSelect: (value: LayoutSelection) => void;
   onLayoutChange: (widget: LayoutSelection, layout: WidgetLayout) => void;
+  onTidyLayout: () => void;
 }) {
   const [drag, setDrag] = useState<{
     widget: LayoutSelection;
@@ -893,9 +925,16 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
-  const scale = Math.min(1, 520 / props.config.window.width);
+  const maxPreviewWidth = 760;
+  const maxPreviewHeight = 680;
+  const scale = Math.min(
+    1.45,
+    maxPreviewWidth / props.config.window.width,
+    maxPreviewHeight / props.config.window.height,
+  );
   const previewWidth = props.config.window.width * scale;
   const previewHeight = props.config.window.height * scale;
+  const collisions = layoutCollisions(props.config);
 
   function moveWidget(clientX: number, clientY: number) {
     if (!drag) {
@@ -918,8 +957,16 @@ function OverlayPreview(props: {
   }
 
   return (
-    <div className="previewWrap">
-      <div
+    <div className="previewFrame">
+      <div className="previewStatus" aria-live="polite">
+        <span>{Math.round(scale * 100)}% workspace scale</span>
+        <span className={collisions.length > 0 ? "layoutWarning" : "layoutClear"}>
+          {collisions.length > 0 ? `${collisions.length} overlap${collisions.length === 1 ? "" : "s"} detected` : "Layout clear"}
+        </span>
+        {collisions.length > 0 && <button className="tidyLayoutButton" onClick={props.onTidyLayout}>Arrange widgets</button>}
+      </div>
+      <div className="previewWrap">
+        <div
         className="preview"
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
@@ -975,6 +1022,7 @@ function OverlayPreview(props: {
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );
@@ -992,6 +1040,25 @@ function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; lab
     .filter(([, widget]) => widget.enabled)
     .map(([id, widget]) => ({ key: `extra:${id}` as LayoutSelection, label: id.replace(/_/g, " "), layout: widget.layout }));
   return [...legacy, ...extra];
+}
+
+function layoutCollisions(config: OverlayConfig) {
+  const entries = layoutEntries(config);
+  const collisions: Array<[string, string]> = [];
+  for (let left = 0; left < entries.length; left += 1) {
+    for (let right = left + 1; right < entries.length; right += 1) {
+      const first = entries[left];
+      const second = entries[right];
+      const overlaps = first.layout.x < second.layout.x + second.layout.width
+        && first.layout.x + first.layout.width > second.layout.x
+        && first.layout.y < second.layout.y + second.layout.height
+        && first.layout.y + first.layout.height > second.layout.y;
+      if (overlaps) {
+        collisions.push([first.label, second.label]);
+      }
+    }
+  }
+  return collisions;
 }
 
 function overlayPreviewConfig(config: OverlayConfig, overlayId: string): OverlayConfig {

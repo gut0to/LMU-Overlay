@@ -1,25 +1,28 @@
 @import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;1,600&family=Manrope:wght@400;500;600;700&display=swap");
 
 :root {
-  color: #e5eee6;
-  background: #07130e;
+  color: #edf2f7;
+  background: #0c1118;
   font-family: "Manrope", "Segoe UI Variable", sans-serif;
   font-synthesis: none;
   text-rendering: geometricPrecision;
-  --void: #07130e;
-  --rail: #0b1d15;
-  --surface: #0f271c;
-  --surface-raised: #153525;
-  --field: #091912;
-  --ink: #e5eee6;
-  --muted: #91ab99;
-  --line: #2a513c;
-  --line-bright: #417c59;
-  --green: #6df18b;
-  --green-deep: #1a9e54;
-  --green-wash: #d7ffe1;
-  --amber: #f6c66c;
-  --danger: #ff7a70;
+  --void: #0c1118;
+  --rail: #111923;
+  --surface: #17212d;
+  --surface-raised: #202c3a;
+  --field: #0f1721;
+  --ink: #edf2f7;
+  --muted: #a4b2c3;
+  --line: #344457;
+  --line-bright: #536a82;
+  --green: #71dd9b;
+  --green-deep: #238a62;
+  --green-wash: #cbf6dc;
+  --blue: #7cafff;
+  --blue-deep: #3d73c9;
+  --violet: #c3a6ff;
+  --amber: #f1bb69;
+  --danger: #fb837b;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
 }
 * {
@@ -45,7 +48,7 @@ body::before {
   content: "";
   background: linear-gradient(
     180deg,
-    rgba(109, 241, 139, 0.025),
+    rgba(124, 175, 255, 0.045),
     transparent 36%
   );
   pointer-events: none;
@@ -65,16 +68,16 @@ button:disabled {
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid var(--green);
+  outline: 2px solid var(--blue);
   outline-offset: 3px;
 }
 input::placeholder,
 textarea::placeholder {
-  color: #62816d;
+  color: #71849a;
 }
 input[type="checkbox"],
 input[type="range"] {
-  accent-color: var(--green);
+  accent-color: var(--blue);
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -133,8 +136,8 @@ input[type="range"] {
   width: 50px;
   height: 50px;
   padding: 5px 7px;
-  border: 1px solid var(--green);
-  color: var(--green);
+  border: 1px solid var(--blue);
+  color: var(--blue);
   font-family: var(--display);
   font-size: 22px;
   font-weight: 700;
@@ -150,7 +153,7 @@ input[type="range"] {
 .brandKicker,
 .eyebrow,
 .stripLabel {
-  color: var(--green);
+  color: var(--blue);
   font-family: var(--display);
   font-size: 12px;
   font-weight: 600;
@@ -168,7 +171,7 @@ h1 {
   text-transform: uppercase;
 }
 h1 span {
-  color: var(--green);
+  color: var(--blue);
   font-weight: 500;
 }
 .topbar p {
@@ -243,17 +246,17 @@ h1 span {
 }
 .iconButton:hover,
 .secondaryButton:hover {
-  border-color: var(--green);
-  color: var(--green);
+  border-color: var(--blue);
+  color: var(--blue);
   transform: translateY(-1px);
 }
 .primaryButton {
-  border-color: var(--green);
-  background: var(--green);
-  color: #05110a;
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #0b1625;
 }
 .primaryButton:hover {
-  background: var(--green-wash);
+  background: #b8d2ff;
   transform: translateY(-1px);
 }
 .primaryButton.wide {
@@ -341,14 +344,14 @@ h1 span {
 }
 .sceneChoices button.selected,
 .layerChoices button.selected {
-  border-color: var(--green);
-  background: rgba(109, 241, 139, 0.12);
-  color: var(--green);
+  border-color: var(--violet);
+  background: rgba(195, 166, 255, 0.14);
+  color: var(--violet);
 }
 .sceneChoices button.customScene,
 .layerChoices .addLayerButton {
   border-style: dashed;
-  color: var(--green);
+  color: var(--blue);
 }
 .layerChoices button small {
   color: inherit;
@@ -376,16 +379,17 @@ h1 span {
   display: grid;
   grid-template-columns: 1.25fr repeat(3, 0.65fr) 1.1fr;
   gap: 0;
-  margin: 19px 0 18px;
+  margin: 22px 0 22px;
   border-top: 1px solid var(--line-bright);
   border-bottom: 1px solid var(--line);
+  background: var(--rail);
 }
 .controlLead,
 .stripMetric,
 .stripHint {
   min-width: 0;
   min-height: 65px;
-  padding: 13px 16px;
+  padding: 15px 18px;
   border-right: 1px solid var(--line);
 }
 .controlLead,
@@ -408,7 +412,7 @@ h1 span {
   white-space: nowrap;
 }
 .stripMetric strong {
-  color: var(--green);
+  color: var(--blue);
   font-size: 21px;
 }
 .stripHint {
@@ -454,13 +458,13 @@ h1 span {
     border-color 150ms ease;
 }
 .tabs button:hover {
-  background: rgba(109, 241, 139, 0.06);
+  background: rgba(124, 175, 255, 0.08);
   color: var(--ink);
 }
 .tabs .selected {
-  border-left-color: var(--green);
-  background: rgba(109, 241, 139, 0.12);
-  color: var(--green);
+  border-left-color: var(--blue);
+  background: rgba(124, 175, 255, 0.12);
+  color: var(--blue);
 }
 .grid {
   grid-column: 2;
@@ -471,9 +475,29 @@ h1 span {
   align-items: start;
   border-top: 1px solid var(--line-bright);
 }
+.layoutStudio {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(340px, 0.78fr);
+  align-items: start;
+  gap: 30px;
+}
+.layoutStudio > .panel,
+.layoutInspector > .panel {
+  padding-top: 24px;
+}
+.layoutInspector {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 0;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 .panel {
   min-width: 0;
-  padding: 24px 0 28px;
+  padding: 28px 0 32px;
   border-bottom: 1px solid var(--line);
   background: transparent;
 }
@@ -491,7 +515,7 @@ h1 span {
   text-transform: uppercase;
 }
 .panel h2 svg {
-  color: var(--green);
+  color: var(--blue);
   stroke-width: 1.75;
 }
 .fields {
@@ -517,7 +541,7 @@ h1 span {
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 6px;
   padding: 6px 9px;
   background: var(--field);
   color: var(--ink);
@@ -528,7 +552,7 @@ h1 span {
 .field textarea:hover,
 .presetItem input:hover,
 .layerControls > input:hover {
-  border-color: var(--line-bright);
+  border-color: var(--blue-deep);
 }
 .field.invalid {
   color: var(--danger);
@@ -544,7 +568,7 @@ h1 span {
   padding: 0;
 }
 .range output {
-  color: var(--green);
+  color: var(--blue);
   font-family: var(--display);
   font-size: 14px;
   text-align: right;
@@ -573,9 +597,9 @@ h1 span {
   color: var(--ink);
 }
 .segmented .selected {
-  border-color: var(--green);
-  background: rgba(109, 241, 139, 0.12);
-  color: var(--green);
+  border-color: var(--blue);
+  background: rgba(124, 175, 255, 0.13);
+  color: var(--blue);
 }
 .toggle {
   display: flex;
@@ -595,10 +619,53 @@ h1 span {
 .previewWrap {
   display: grid;
   place-items: center;
-  min-height: 296px;
-  padding: 18px;
+  min-height: clamp(540px, 64vh, 760px);
+  padding: clamp(20px, 3vw, 42px);
   border: 1px solid var(--line);
-  background: #081710;
+  background: var(--field);
+  overflow: auto;
+}
+.previewFrame {
+  display: grid;
+  gap: 10px;
+}
+.previewStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.layoutClear,
+.layoutWarning {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.layoutClear {
+  color: var(--green-wash);
+  background: rgba(113, 221, 155, 0.14);
+}
+.layoutWarning {
+  color: #251809;
+  background: var(--amber);
+}
+.tidyLayoutButton {
+  min-height: 30px;
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 700;
+}
+.tidyLayoutButton:hover {
+  background: rgba(241, 187, 105, 0.12);
 }
 .previewHint {
   grid-column: 1 / -1;
@@ -609,9 +676,10 @@ h1 span {
 .preview {
   position: relative;
   overflow: hidden;
-  border: 1px solid var(--green-deep);
-  border-radius: 3px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+  flex: 0 0 auto;
+  border: 1px solid var(--blue-deep);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(2, 8, 16, 0.44);
 }
 .previewWidget {
   position: absolute;
@@ -620,17 +688,17 @@ h1 span {
   min-height: 0;
   overflow: hidden;
   padding: 0;
-  border: 1px solid rgba(109, 241, 139, 0.55);
-  border-radius: 2px;
-  background: rgba(7, 19, 14, 0.82);
+  border: 1px solid rgba(124, 175, 255, 0.62);
+  border-radius: 4px;
+  background: rgba(15, 23, 33, 0.9);
   cursor: grab;
 }
 .previewWidget:active {
   cursor: grabbing;
 }
 .previewWidget.selected {
-  border: 2px solid var(--green) !important;
-  background: rgba(109, 241, 139, 0.16);
+  border: 2px solid var(--violet) !important;
+  background: rgba(195, 166, 255, 0.17);
 }
 .previewWidget span {
   max-width: 100%;
@@ -731,6 +799,19 @@ h1 span {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+@media (max-width: 1280px) {
+  .layoutStudio {
+    grid-template-columns: 1fr;
+  }
+  .layoutInspector {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .previewWrap {
+    min-height: 500px;
+  }
+}
 @media (max-width: 1060px) {
   .shell {
     grid-template-columns: 180px minmax(0, 1fr);
@@ -793,8 +874,31 @@ h1 span {
   .grid {
     grid-template-columns: 1fr;
   }
+  .previewWrap {
+    min-height: 420px;
+    padding: 16px;
+  }
+  .previewStatus {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
   .status {
     margin-top: 18px;
+  }
+}
+@media (pointer: coarse) {
+  .iconButton,
+  .primaryButton,
+  .dangerButton,
+  .secondaryButton,
+  .sceneChoices button,
+  .layerChoices button,
+  .tabs button,
+  .tidyLayoutButton {
+    min-height: 44px;
+  }
+  .previewWidget {
+    touch-action: none;
   }
 }
 @media (prefers-reduced-motion: no-preference) {
