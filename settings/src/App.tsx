@@ -575,7 +575,7 @@ function App() {
     );
   }
 
-  const statusNeedsAttention = /could not|failed|error|conflict|invalid/i.test(status);
+  const statusNeedsAttention = /could not|did not|failed|error|conflict|invalid/i.test(status);
 
   return (
     <main className="shell">
