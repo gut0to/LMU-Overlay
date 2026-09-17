@@ -799,6 +799,19 @@ h1 span {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+@media (max-width: 1280px) {
+  .layoutStudio {
+    grid-template-columns: 1fr;
+  }
+  .layoutInspector {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .previewWrap {
+    min-height: 500px;
+  }
+}
 @media (max-width: 1060px) {
   .shell {
     grid-template-columns: 180px minmax(0, 1fr);
@@ -860,6 +873,14 @@ h1 span {
   }
   .grid {
     grid-template-columns: 1fr;
+  }
+  .previewWrap {
+    min-height: 420px;
+    padding: 16px;
+  }
+  .previewStatus {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
   .status {
     margin-top: 18px;
