@@ -895,7 +895,13 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
-  const scale = Math.min(1, 520 / props.config.window.width);
+  const maxPreviewWidth = 760;
+  const maxPreviewHeight = 680;
+  const scale = Math.min(
+    1.45,
+    maxPreviewWidth / props.config.window.width,
+    maxPreviewHeight / props.config.window.height,
+  );
   const previewWidth = props.config.window.width * scale;
   const previewHeight = props.config.window.height * scale;
 
