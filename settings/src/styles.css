@@ -508,7 +508,10 @@ h1 span {
 }
 .layoutStudio > .panel,
 .layoutInspector > .panel {
-  padding-top: 24px;
+  padding-top: var(--panel-space);
+}
+.layoutInspector > .panel:first-child {
+  padding-top: 0;
 }
 .layoutInspector {
   position: sticky;
