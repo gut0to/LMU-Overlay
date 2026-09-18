@@ -785,7 +785,7 @@ function App() {
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
           <NumberField label="Render FPS" value={config.window.refresh_hz} onChange={(value) => setPerformanceWindow(config, setConfig, "refresh_hz", value)} />
           <NumberField label="Sample ms" value={config.window.sample_ms} onChange={(value) => setPerformanceWindow(config, setConfig, "sample_ms", value)} />
-          <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setWindow(config, setConfig, "history_samples", value)} />
+          <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setPerformanceWindow(config, setConfig, "history_samples", value)} />
           <RangeField label="Line thickness" min={1} max={8} step={1} value={config.style.line_thickness} onChange={(value) => setStyle(config, setConfig, "line_thickness", value)} />
         </Section>}
 
@@ -1349,7 +1349,7 @@ function setWindow<K extends keyof WindowConfig>(config: OverlayConfig, setConfi
   setConfig({ ...config, window: { ...config.window, [key]: value } });
 }
 
-function setPerformanceWindow<K extends keyof Pick<WindowConfig, "refresh_hz" | "sample_ms">>(
+function setPerformanceWindow<K extends keyof Pick<WindowConfig, "refresh_hz" | "sample_ms" | "history_samples">>(
   config: OverlayConfig,
   setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
   key: K,
