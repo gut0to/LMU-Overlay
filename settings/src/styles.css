@@ -502,9 +502,9 @@ h1 span {
 .layoutStudio {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(340px, 0.78fr);
+  grid-template-columns: minmax(560px, 1.65fr) minmax(330px, 0.85fr);
   align-items: start;
-  gap: 30px;
+  gap: var(--content-gap);
 }
 .layoutStudio > .panel,
 .layoutInspector > .panel {
@@ -514,7 +514,7 @@ h1 span {
   position: sticky;
   top: 16px;
   display: grid;
-  gap: 0;
+  gap: var(--space-2);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   scrollbar-gutter: stable;
