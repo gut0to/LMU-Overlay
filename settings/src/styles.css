@@ -548,8 +548,8 @@ h1 span {
 }
 .field {
   display: grid;
-  grid-template-columns: minmax(105px, 1fr) minmax(130px, 1.2fr);
-  gap: 12px;
+  grid-template-columns: minmax(126px, 0.8fr) minmax(170px, 1.4fr);
+  gap: var(--space-3);
   align-items: center;
   min-height: 37px;
   color: var(--muted);
@@ -586,7 +586,7 @@ h1 span {
   color: var(--danger);
 }
 .range {
-  grid-template-columns: minmax(105px, 1fr) minmax(130px, 1.2fr) 46px;
+  grid-template-columns: minmax(126px, 0.8fr) minmax(170px, 1.4fr) 52px;
 }
 .range input {
   padding: 0;
