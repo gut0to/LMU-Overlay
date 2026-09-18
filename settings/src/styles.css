@@ -838,8 +838,8 @@ h1 span {
 }
 @media (max-width: 1060px) {
   .shell {
-    grid-template-columns: 180px minmax(0, 1fr);
-    column-gap: 18px;
+    grid-template-columns: 172px minmax(0, 1fr);
+    column-gap: var(--space-4);
     padding: 18px;
   }
   .controlStrip {
@@ -851,6 +851,13 @@ h1 span {
   }
   .layersBar {
     grid-template-columns: 1fr;
+  }
+  .field,
+  .range {
+    grid-template-columns: minmax(112px, 0.8fr) minmax(150px, 1.3fr) 48px;
+  }
+  .field:not(.range) {
+    grid-template-columns: minmax(112px, 0.8fr) minmax(150px, 1.3fr);
   }
 }
 @media (max-width: 800px) {
