@@ -521,7 +521,7 @@ h1 span {
 }
 .panel {
   min-width: 0;
-  padding: 28px 0 32px;
+  padding: var(--panel-space) 0 calc(var(--panel-space) + var(--space-1));
   border-bottom: 1px solid var(--line);
   background: transparent;
 }
@@ -529,7 +529,7 @@ h1 span {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 18px;
+  margin: 0 0 var(--space-5);
   color: var(--ink);
   font-family: var(--display);
   font-size: 25px;
@@ -544,7 +544,7 @@ h1 span {
 }
 .fields {
   display: grid;
-  gap: 8px;
+  gap: var(--space-3);
 }
 .field {
   display: grid;
