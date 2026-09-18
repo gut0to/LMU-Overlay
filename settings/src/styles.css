@@ -123,8 +123,8 @@ input[type="range"] {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 24px;
-  padding: 0 0 19px;
+  gap: var(--content-gap);
+  padding: 0 0 var(--space-5);
   border-bottom: 1px solid var(--line-bright);
 }
 .brandBlock,
@@ -192,7 +192,8 @@ h1 span {
 .topbarRight {
   align-items: flex-end;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
+  min-width: min(100%, 430px);
 }
 .statusPill {
   gap: 7px;
@@ -238,7 +239,7 @@ h1 span {
 .actions {
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 7px;
+  gap: var(--space-2);
 }
 .iconButton,
 .primaryButton,
