@@ -601,10 +601,10 @@ h1 span {
 .toggles {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  gap: var(--space-2);
 }
 .segmented button {
-  min-height: 34px;
+  min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 3px;
   background: transparent;
@@ -628,8 +628,8 @@ h1 span {
 .toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 31px;
+  gap: var(--space-2);
+  min-height: 34px;
   color: var(--ink);
   font-size: 12px;
 }
