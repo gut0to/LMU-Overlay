@@ -905,6 +905,17 @@ h1 span {
   .grid {
     grid-template-columns: 1fr;
   }
+  .field,
+  .field:not(.range),
+  .range {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .range output,
+  .field small {
+    grid-column: 1;
+    text-align: left;
+  }
   .previewWrap {
     min-height: 420px;
     padding: 16px;
