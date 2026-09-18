@@ -643,21 +643,21 @@ h1 span {
 .previewWrap {
   display: grid;
   place-items: center;
-  min-height: clamp(540px, 64vh, 760px);
-  padding: clamp(20px, 3vw, 42px);
+  min-height: clamp(560px, 68vh, 820px);
+  padding: clamp(24px, 3.5vw, 56px);
   border: 1px solid var(--line);
   background: var(--field);
   overflow: auto;
 }
 .previewFrame {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .previewStatus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   color: var(--muted);
   font-size: 12px;
 }
