@@ -1211,7 +1211,19 @@ function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: Widg
   if (config.layout.snap_to_widgets) {
     next = snapToWidgets(config, widget, next);
   }
-  return next;
+  return constrainLayoutToWindow(config.window, next);
+}
+
+function constrainLayoutToWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
+  const width = clamp(layout.width, 48, window.width);
+  const height = clamp(layout.height, 20, window.height);
+  return {
+    ...layout,
+    width,
+    height,
+    x: clamp(layout.x, 0, Math.max(0, window.width - width)),
+    y: clamp(layout.y, 0, Math.max(0, window.height - height)),
+  };
 }
 
 function snapNumber(value: number, gridSize: number) {
