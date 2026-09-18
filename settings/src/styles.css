@@ -780,15 +780,15 @@ h1 span {
 }
 .widgetBrowser {
   display: grid;
-  gap: 8px;
-  margin-top: 17px;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
 }
 .widgetCatalogRow {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
   align-items: start;
-  padding: 10px 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
 }
