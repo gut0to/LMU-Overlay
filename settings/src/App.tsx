@@ -561,15 +561,8 @@ function App() {
     if (!config) {
       return null;
     }
-    return presetNames.find((name) => {
-      const preset = config.presets[name];
-      return (
-        config.performance.mode === preset.performance_mode &&
-        config.timing.reference_mode === preset.reference_mode &&
-        config.timing.mini_sectors === preset.mini_sectors &&
-        widgetLabels.every(([key]) => config.widgets[key] === preset[key])
-      );
-    });
+    const profile = currentProfile(config);
+    return presetNames.find((name) => profilesMatch(profile, config.presets[name]));
   }, [config]);
 
   if (!config) {
@@ -1838,6 +1831,10 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
     extra_widgets: structuredClone(config.extra_widgets),
     ...config.widgets,
   };
+}
+
+function profilesMatch(left: PresetProfileConfig, right: PresetProfileConfig): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
