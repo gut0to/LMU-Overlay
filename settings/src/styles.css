@@ -459,8 +459,8 @@ h1 span {
   grid-row: 3 / span 2;
   display: grid;
   align-content: start;
-  gap: 3px;
-  padding: 4px 0;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--line-bright);
 }
 .tabs button {
@@ -494,8 +494,8 @@ h1 span {
   grid-column: 2;
   grid-row: 4;
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  gap: 0 26px;
+  grid-template-columns: repeat(2, minmax(300px, 1fr));
+  gap: 0 var(--content-gap);
   align-items: start;
   border-top: 1px solid var(--line-bright);
 }
