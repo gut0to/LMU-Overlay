@@ -625,6 +625,11 @@ h1 span {
   background: rgba(117, 202, 208, 0.14);
   color: var(--blue);
 }
+.fields > .segmented + .field,
+.fields > .segmented + .toggles,
+.fields > .segmented + .swatches {
+  margin-top: var(--space-2);
+}
 .toggle {
   display: flex;
   align-items: center;
