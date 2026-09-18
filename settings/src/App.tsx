@@ -1337,10 +1337,6 @@ function Segmented(props: { value: string; options: string[][]; onChange: (value
   );
 }
 
-function setWindow<K extends keyof WindowConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: WindowConfig[K]) {
-  setConfig({ ...config, window: { ...config.window, [key]: value } });
-}
-
 function setPerformanceWindow<K extends keyof Pick<WindowConfig, "refresh_hz" | "sample_ms" | "history_samples">>(
   config: OverlayConfig,
   setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
