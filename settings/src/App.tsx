@@ -461,6 +461,11 @@ function App() {
     await persistConfig(next, `${name} preset applied`);
   }
 
+  async function saveCustomPreset(next: OverlayConfig, successStatus: string) {
+    setConfig(next);
+    await persistConfig(next, successStatus);
+  }
+
   function setCatalogWidget(id: string, enabled: boolean) {
     const legacy = legacyWidgetById[id];
     const surface = catalogSurfaceId(id);
@@ -490,10 +495,11 @@ function App() {
       if (!current) {
         return current;
       }
-      const id = `overlay-${current.overlays.length + 1}`;
+      const id = nextOverlayId(current.overlays);
+      const ordinal = overlayOrdinal(id);
       const layer: OverlayLayerConfig = {
         id,
-        name: `Overlay ${current.overlays.length + 1}`,
+        name: `Overlay ${ordinal}`,
         enabled: true,
         window: { ...current.window, x: current.window.x + 36, y: current.window.y + 36 },
         widgets: ["coaching"],
@@ -555,15 +561,8 @@ function App() {
     if (!config) {
       return null;
     }
-    return presetNames.find((name) => {
-      const preset = config.presets[name];
-      return (
-        config.performance.mode === preset.performance_mode &&
-        config.timing.reference_mode === preset.reference_mode &&
-        config.timing.mini_sectors === preset.mini_sectors &&
-        widgetLabels.every(([key]) => config.widgets[key] === preset[key])
-      );
-    });
+    const profile = currentProfile(config);
+    return presetNames.find((name) => profilesMatch(profile, config.presets[name]));
   }, [config]);
 
   if (!config) {
@@ -777,9 +776,9 @@ function App() {
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
-          <NumberField label="Render FPS" value={config.window.refresh_hz} onChange={(value) => setWindow(config, setConfig, "refresh_hz", value)} />
-          <NumberField label="Sample ms" value={config.window.sample_ms} onChange={(value) => setWindow(config, setConfig, "sample_ms", value)} />
-          <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setWindow(config, setConfig, "history_samples", value)} />
+          <NumberField label="Render FPS" value={config.window.refresh_hz} onChange={(value) => setPerformanceWindow(config, setConfig, "refresh_hz", value)} />
+          <NumberField label="Sample ms" value={config.window.sample_ms} onChange={(value) => setPerformanceWindow(config, setConfig, "sample_ms", value)} />
+          <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setPerformanceWindow(config, setConfig, "history_samples", value)} />
           <RangeField label="Line thickness" min={1} max={8} step={1} value={config.style.line_thickness} onChange={(value) => setStyle(config, setConfig, "line_thickness", value)} />
         </Section>}
 
@@ -880,7 +879,7 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
-          <button className="primaryButton wide" onClick={() => setConfig(addCustomPreset(config))}>
+          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config), "Custom preset created")} disabled={saving}>
             <Plus size={18} />
             New from current
           </button>
@@ -891,13 +890,13 @@ function App() {
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
                 />
-                <button title="Apply preset" onClick={() => setConfig(applyCustomPreset(config, index, activeOverlayId))}>
+                <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
                 </button>
-                <button title="Save current into preset" onClick={() => setConfig(saveCurrentIntoCustomPreset(config, index))}>
+                <button title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
                   <Save size={16} />
                 </button>
-                <button title="Delete preset" onClick={() => setConfig(deleteCustomPreset(config, index))}>
+                <button title="Delete preset" onClick={() => void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted")} disabled={saving}>
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -1133,6 +1132,20 @@ function catalogSurfaceId(id: string): string {
   return key ? legacySurfaceByWidgetKey[key] ?? id : id;
 }
 
+function nextOverlayId(overlays: OverlayLayerConfig[]): string {
+  const ids = new Set(overlays.map((overlay) => overlay.id));
+  let ordinal = 1;
+  while (ids.has(`overlay-${ordinal}`)) {
+    ordinal += 1;
+  }
+  return `overlay-${ordinal}`;
+}
+
+function overlayOrdinal(id: string): number {
+  const ordinal = Number(id.replace("overlay-", ""));
+  return Number.isSafeInteger(ordinal) && ordinal > 0 ? ordinal : 1;
+}
+
 function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): WidgetLayout {
   if (selection.startsWith("extra:")) {
     return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
@@ -1190,7 +1203,19 @@ function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: Widg
   if (config.layout.snap_to_widgets) {
     next = snapToWidgets(config, widget, next);
   }
-  return next;
+  return constrainLayoutToWindow(config.window, next);
+}
+
+function constrainLayoutToWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
+  const width = clamp(layout.width, 48, window.width);
+  const height = clamp(layout.height, 20, window.height);
+  return {
+    ...layout,
+    width,
+    height,
+    x: clamp(layout.x, 0, Math.max(0, window.width - width)),
+    y: clamp(layout.y, 0, Math.max(0, window.height - height)),
+  };
 }
 
 function snapNumber(value: number, gridSize: number) {
@@ -1312,8 +1337,21 @@ function Segmented(props: { value: string; options: string[][]; onChange: (value
   );
 }
 
-function setWindow<K extends keyof WindowConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: WindowConfig[K]) {
-  setConfig({ ...config, window: { ...config.window, [key]: value } });
+function setPerformanceWindow<K extends keyof Pick<WindowConfig, "refresh_hz" | "sample_ms" | "history_samples">>(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  key: K,
+  value: WindowConfig[K],
+) {
+  setConfig({
+    ...config,
+    performance: { mode: "custom" },
+    window: { ...config.window, [key]: value },
+    overlays: config.overlays.map((overlay) => ({
+      ...overlay,
+      window: { ...overlay.window, [key]: value },
+    })),
+  });
 }
 
 function setOverlayWindow<K extends keyof WindowConfig>(
@@ -1788,6 +1826,10 @@ function currentProfile(config: OverlayConfig): PresetProfileConfig {
     extra_widgets: structuredClone(config.extra_widgets),
     ...config.widgets,
   };
+}
+
+function profilesMatch(left: PresetProfileConfig, right: PresetProfileConfig): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {

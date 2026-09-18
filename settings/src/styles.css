@@ -24,6 +24,14 @@
   --amber: #f0ac64;
   --danger: #f1796f;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --content-gap: clamp(20px, 2vw, 34px);
+  --panel-space: clamp(22px, 2.25vw, 36px);
 }
 * {
   box-sizing: border-box;
@@ -93,13 +101,13 @@ input[type="range"] {
 
 .shell {
   display: grid;
-  grid-template-columns: 222px minmax(0, 1fr);
+  grid-template-columns: minmax(196px, 0.26fr) minmax(0, 1fr);
   grid-template-rows: auto auto auto 1fr auto;
-  column-gap: 26px;
-  max-width: 1760px;
+  column-gap: var(--content-gap);
+  max-width: 1880px;
   min-height: 100vh;
   margin: 0 auto;
-  padding: 22px 30px 34px;
+  padding: var(--space-5) clamp(22px, 3vw, 52px) var(--space-6);
 }
 .loading {
   display: flex;
@@ -115,8 +123,8 @@ input[type="range"] {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 24px;
-  padding: 0 0 19px;
+  gap: var(--content-gap);
+  padding: 0 0 var(--space-5);
   border-bottom: 1px solid var(--line-bright);
 }
 .brandBlock,
@@ -184,7 +192,8 @@ h1 span {
 .topbarRight {
   align-items: flex-end;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
+  min-width: min(100%, 430px);
 }
 .statusPill {
   gap: 7px;
@@ -230,7 +239,7 @@ h1 span {
 .actions {
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 7px;
+  gap: var(--space-2);
 }
 .iconButton,
 .primaryButton,
@@ -240,7 +249,7 @@ h1 span {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 36px;
+  min-height: 38px;
   border: 1px solid var(--line-bright);
   border-radius: 3px;
   padding: 0 12px;
@@ -286,7 +295,7 @@ h1 span {
   transform: translateY(-1px);
 }
 .secondaryButton {
-  min-height: 32px;
+  min-height: 34px;
   color: var(--muted);
 }
 
@@ -294,8 +303,8 @@ h1 span {
 .layersBar {
   display: grid;
   align-content: start;
-  gap: 12px;
-  padding: 20px 0;
+  gap: var(--space-3);
+  padding: var(--space-5) 0;
   border-bottom: 1px solid var(--line);
 }
 .sceneBar {
@@ -307,7 +316,7 @@ h1 span {
   grid-row: 2;
   grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr);
   align-items: start;
-  column-gap: 28px;
+  column-gap: var(--content-gap);
 }
 .sceneHeading {
   display: grid;
@@ -329,7 +338,7 @@ h1 span {
   gap: 6px;
 }
 .layerChoices {
-  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 .sceneChoices button,
 .layerChoices button {
@@ -381,8 +390,8 @@ h1 span {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding-top: 4px;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
 }
 .layerControls > input {
   min-height: 34px;
@@ -392,9 +401,9 @@ h1 span {
   grid-column: 2;
   grid-row: 3;
   display: grid;
-  grid-template-columns: 1.25fr repeat(3, 0.65fr) 1.1fr;
+  grid-template-columns: minmax(190px, 1.35fr) repeat(3, minmax(115px, 0.72fr)) minmax(220px, 1fr);
   gap: 0;
-  margin: 22px 0 22px;
+  margin: var(--space-5) 0;
   border-top: 1px solid var(--line-bright);
   border-bottom: 1px solid var(--line);
   background: var(--rail);
@@ -404,7 +413,7 @@ h1 span {
 .stripHint {
   min-width: 0;
   min-height: 65px;
-  padding: 15px 18px;
+  padding: var(--space-4) var(--space-5);
   border-right: 1px solid var(--line);
 }
 .controlLead,
@@ -450,8 +459,8 @@ h1 span {
   grid-row: 3 / span 2;
   display: grid;
   align-content: start;
-  gap: 3px;
-  padding: 4px 0;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
   border-top: 1px solid var(--line-bright);
 }
 .tabs button {
@@ -485,34 +494,37 @@ h1 span {
   grid-column: 2;
   grid-row: 4;
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
-  gap: 0 26px;
+  grid-template-columns: repeat(2, minmax(300px, 1fr));
+  gap: 0 var(--content-gap);
   align-items: start;
   border-top: 1px solid var(--line-bright);
 }
 .layoutStudio {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(340px, 0.78fr);
+  grid-template-columns: minmax(560px, 1.65fr) minmax(330px, 0.85fr);
   align-items: start;
-  gap: 30px;
+  gap: var(--content-gap);
 }
 .layoutStudio > .panel,
 .layoutInspector > .panel {
-  padding-top: 24px;
+  padding-top: var(--panel-space);
+}
+.layoutInspector > .panel:first-child {
+  padding-top: 0;
 }
 .layoutInspector {
   position: sticky;
   top: 16px;
   display: grid;
-  gap: 0;
+  gap: var(--space-2);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
 .panel {
   min-width: 0;
-  padding: 28px 0 32px;
+  padding: var(--panel-space) 0 calc(var(--panel-space) + var(--space-1));
   border-bottom: 1px solid var(--line);
   background: transparent;
 }
@@ -520,7 +532,7 @@ h1 span {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 18px;
+  margin: 0 0 var(--space-5);
   color: var(--ink);
   font-family: var(--display);
   font-size: 25px;
@@ -535,12 +547,12 @@ h1 span {
 }
 .fields {
   display: grid;
-  gap: 8px;
+  gap: var(--space-3);
 }
 .field {
   display: grid;
-  grid-template-columns: minmax(105px, 1fr) minmax(130px, 1.2fr);
-  gap: 12px;
+  grid-template-columns: minmax(126px, 0.8fr) minmax(170px, 1.4fr);
+  gap: var(--space-3);
   align-items: center;
   min-height: 37px;
   color: var(--muted);
@@ -561,6 +573,11 @@ h1 span {
   background: var(--field);
   color: var(--ink);
 }
+.field > input,
+.field > textarea,
+.field > .hotkeyButton {
+  min-width: 0;
+}
 .field input:hover,
 .hotkeyButton:hover,
 .widgetBrowser > input:hover,
@@ -577,7 +594,7 @@ h1 span {
   color: var(--danger);
 }
 .range {
-  grid-template-columns: minmax(105px, 1fr) minmax(130px, 1.2fr) 46px;
+  grid-template-columns: minmax(126px, 0.8fr) minmax(170px, 1.4fr) 52px;
 }
 .range input {
   padding: 0;
@@ -592,10 +609,10 @@ h1 span {
 .toggles {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  gap: var(--space-2);
 }
 .segmented button {
-  min-height: 34px;
+  min-height: 38px;
   border: 1px solid var(--line);
   border-radius: 3px;
   background: transparent;
@@ -616,11 +633,16 @@ h1 span {
   background: rgba(117, 202, 208, 0.14);
   color: var(--blue);
 }
+.fields > .segmented + .field,
+.fields > .segmented + .toggles,
+.fields > .segmented + .swatches {
+  margin-top: var(--space-2);
+}
 .toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 31px;
+  gap: var(--space-2);
+  min-height: 34px;
   color: var(--ink);
   font-size: 12px;
 }
@@ -634,21 +656,21 @@ h1 span {
 .previewWrap {
   display: grid;
   place-items: center;
-  min-height: clamp(540px, 64vh, 760px);
-  padding: clamp(20px, 3vw, 42px);
+  min-height: clamp(560px, 68vh, 820px);
+  padding: clamp(24px, 3.5vw, 56px);
   border: 1px solid var(--line);
   background: var(--field);
   overflow: auto;
 }
 .previewFrame {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .previewStatus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   color: var(--muted);
   font-size: 12px;
 }
@@ -704,7 +726,7 @@ h1 span {
   overflow: hidden;
   padding: 0;
   border: 1px solid rgba(117, 202, 208, 0.62);
-  border-radius: 4px;
+  border-radius: 6px;
   background: rgba(15, 23, 33, 0.9);
   cursor: grab;
 }
@@ -718,7 +740,7 @@ h1 span {
 .previewWidget span {
   max-width: 100%;
   overflow: hidden;
-  padding: 2px 4px;
+  padding: var(--space-1) var(--space-2);
   color: var(--ink);
   font-family: var(--display);
   font-size: 13px;
@@ -752,12 +774,12 @@ h1 span {
 }
 .presetList {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
 }
 .presetItem {
   display: grid;
   grid-template-columns: minmax(120px, 1fr) auto 38px 38px;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .field.stack {
   grid-template-columns: 1fr;
@@ -771,15 +793,15 @@ h1 span {
 }
 .widgetBrowser {
   display: grid;
-  gap: 8px;
-  margin-top: 17px;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
 }
 .widgetCatalogRow {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
   align-items: start;
-  padding: 10px 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
 }
@@ -814,7 +836,12 @@ h1 span {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-@media (max-width: 1280px) {
+@media (min-width: 1640px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(300px, 1fr));
+  }
+}
+@media (max-width: 1380px) {
   .layoutStudio {
     grid-template-columns: 1fr;
   }
@@ -824,13 +851,13 @@ h1 span {
     overflow: visible;
   }
   .previewWrap {
-    min-height: 500px;
+    min-height: 540px;
   }
 }
 @media (max-width: 1060px) {
   .shell {
-    grid-template-columns: 180px minmax(0, 1fr);
-    column-gap: 18px;
+    grid-template-columns: 172px minmax(0, 1fr);
+    column-gap: var(--space-4);
     padding: 18px;
   }
   .controlStrip {
@@ -842,6 +869,13 @@ h1 span {
   }
   .layersBar {
     grid-template-columns: 1fr;
+  }
+  .field,
+  .range {
+    grid-template-columns: minmax(112px, 0.8fr) minmax(150px, 1.3fr) 48px;
+  }
+  .field:not(.range) {
+    grid-template-columns: minmax(112px, 0.8fr) minmax(150px, 1.3fr);
   }
 }
 @media (max-width: 800px) {
@@ -888,6 +922,17 @@ h1 span {
   }
   .grid {
     grid-template-columns: 1fr;
+  }
+  .field,
+  .field:not(.range),
+  .range {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+  .range output,
+  .field small {
+    grid-column: 1;
+    text-align: left;
   }
   .previewWrap {
     min-height: 420px;
