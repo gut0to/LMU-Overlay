@@ -573,6 +573,11 @@ h1 span {
   background: var(--field);
   color: var(--ink);
 }
+.field > input,
+.field > textarea,
+.field > .hotkeyButton {
+  min-width: 0;
+}
 .field input:hover,
 .hotkeyButton:hover,
 .widgetBrowser > input:hover,
