@@ -889,7 +889,6 @@ function App() {
                 <input
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
-                  onBlur={(event) => void saveCustomPreset(renameCustomPreset(config, index, event.target.value), "Custom preset renamed")}
                 />
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
