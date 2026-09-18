@@ -249,7 +249,7 @@ h1 span {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 36px;
+  min-height: 38px;
   border: 1px solid var(--line-bright);
   border-radius: 3px;
   padding: 0 12px;
@@ -295,7 +295,7 @@ h1 span {
   transform: translateY(-1px);
 }
 .secondaryButton {
-  min-height: 32px;
+  min-height: 34px;
   color: var(--muted);
 }
 
