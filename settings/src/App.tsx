@@ -1383,6 +1383,8 @@ function OverlayPreview(props: {
         className="preview"
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
+        onPointerCancel={() => setDrag(null)}
+        onPointerLeave={() => setDrag(null)}
         style={{
           width: previewWidth,
           height: previewHeight,
