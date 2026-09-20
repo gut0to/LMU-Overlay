@@ -920,6 +920,7 @@ function App() {
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
           <WidgetLayoutFields
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
+            defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
             windowWidth={(activeOverlayConfig ?? config).window.width}
             windowHeight={(activeOverlayConfig ?? config).window.height}
             onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
@@ -1616,6 +1617,7 @@ function Section({ icon, title, children }: SectionProps) {
 
 function WidgetLayoutFields(props: {
   layout: WidgetLayout;
+  defaultLayout: WidgetLayout;
   windowWidth: number;
   windowHeight: number;
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
@@ -1629,6 +1631,9 @@ function WidgetLayoutFields(props: {
         <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - props.layout.width))}>Align right</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - props.layout.height))}>Align bottom</button>
+        <button className="secondaryButton" onClick={() => {
+          (Object.keys(props.defaultLayout) as Array<keyof WidgetLayout>).forEach((key) => props.onChange(key, props.defaultLayout[key]));
+        }}>Reset widget</button>
         <button className="secondaryButton" onClick={() => {
           props.onChange("width", 320);
           props.onChange("height", 80);
