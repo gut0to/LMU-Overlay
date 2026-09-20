@@ -1540,13 +1540,14 @@ function setPerformanceWindow<K extends keyof Pick<WindowConfig, "refresh_hz" | 
   key: K,
   value: WindowConfig[K],
 ) {
+  const normalizedValue = normalizeWindowField(key, value);
   setConfig({
     ...config,
     performance: { mode: "custom" },
-    window: { ...config.window, [key]: value },
+    window: { ...config.window, [key]: normalizedValue },
     overlays: config.overlays.map((overlay) => ({
       ...overlay,
-      window: { ...overlay.window, [key]: value },
+      window: { ...overlay.window, [key]: normalizedValue },
     })),
   });
 }
@@ -1558,13 +1559,33 @@ function setOverlayWindow<K extends keyof WindowConfig>(
   key: K,
   value: WindowConfig[K],
 ) {
-  const next = { ...config, window: { ...config.window, [key]: value } };
+  const normalizedValue = normalizeWindowField(key, value);
+  const next = { ...config, window: { ...config.window, [key]: normalizedValue } };
   setConfig({
     ...next,
     overlays: next.overlays.map((overlay) => overlay.id === overlayId
-      ? { ...overlay, window: { ...overlay.window, [key]: value } }
+      ? { ...overlay, window: { ...overlay.window, [key]: normalizedValue } }
       : overlay),
   });
+}
+
+function normalizeWindowField<K extends keyof WindowConfig>(key: K, value: WindowConfig[K]): WindowConfig[K] {
+  if (key === "x" || key === "y") {
+    return Math.round(Number(value)) as WindowConfig[K];
+  }
+  if (key === "width" || key === "height") {
+    return Math.max(48, Math.min(7680, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  if (key === "refresh_hz") {
+    return Math.max(15, Math.min(240, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  if (key === "sample_ms") {
+    return Math.max(5, Math.min(1000, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  if (key === "history_samples") {
+    return Math.max(16, Math.min(10000, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  return value;
 }
 
 function setOverlayPosition(
