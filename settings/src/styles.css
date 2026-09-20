@@ -1180,6 +1180,15 @@ h1 span {
   font-size: 10px;
   text-transform: uppercase;
 }
+.collisionDetails {
+  margin: -4px 0 8px;
+  overflow: hidden;
+  color: var(--amber);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .status {
   grid-column: 2;
   grid-row: 5;

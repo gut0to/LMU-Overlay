@@ -1368,8 +1368,9 @@ function OverlayPreview(props: {
         <span className={collisions.length > 0 ? "layoutWarning" : "layoutClear"}>
           {collisions.length > 0 ? `${collisions.length} overlap${collisions.length === 1 ? "" : "s"} detected` : "Layout clear"}
         </span>
-        {collisions.length > 0 && <button className="tidyLayoutButton" onClick={props.onTidyLayout}>Arrange widgets</button>}
+        {collisions.length > 0 && <button className="tidyLayoutButton" title={collisions.map(([first, second]) => `${first} × ${second}`).join("\n")} onClick={props.onTidyLayout}>Arrange widgets</button>}
       </div>
+      {collisions.length > 0 && <p className="collisionDetails">{collisions.slice(0, 3).map(([first, second]) => `${first} × ${second}`).join(" · ")}{collisions.length > 3 ? " · …" : ""}</p>}
       <div className="previewShortcuts" aria-label="Preview keyboard shortcuts">
         <span><kbd>Click</kbd> select</span>
         <span><kbd>Drag</kbd> move</span>
