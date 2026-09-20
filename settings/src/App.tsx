@@ -241,6 +241,9 @@ function App() {
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
   const [workspace, setWorkspace] = useState<WorkspaceSize>(workspacePresets[0][1]);
+  const hydratedConfig = useRef(false);
+  const lastSavedConfig = useRef("");
+  const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     void loadConfig();
@@ -259,6 +262,20 @@ function App() {
     }
   }, [config, activeOverlayId]);
 
+  useEffect(() => {
+    if (!config || !hydratedConfig.current) return;
+    const serialized = JSON.stringify(config);
+    if (serialized === lastSavedConfig.current) return;
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void persistConfig(config, "Changes saved");
+      saveTimer.current = null;
+    }, 850);
+    return () => {
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    };
+  }, [config]);
+
   async function refreshOverlayStatus(): Promise<boolean> {
     try {
       const running = await invoke<boolean>("overlay_status");
@@ -273,7 +290,10 @@ function App() {
   async function loadConfig() {
     try {
       const response = await invoke<LoadResponse>("load_config");
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      setConfig(normalized);
+      lastSavedConfig.current = JSON.stringify(normalized);
+      hydratedConfig.current = true;
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config loaded");
@@ -289,7 +309,9 @@ function App() {
         config: nextConfig,
         expected_revision: revision,
       });
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      setConfig(normalized);
+      lastSavedConfig.current = JSON.stringify(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus(successStatus);
