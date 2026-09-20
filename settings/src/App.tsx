@@ -312,7 +312,11 @@ function App() {
     }
   }
 
-  async function loadConfig() {
+  async function loadConfig(force = false) {
+    if (!force && config && JSON.stringify(config) !== lastSavedConfig.current
+      && !window.confirm("You have unsaved changes. Reloading will discard them. Continue?")) {
+      return;
+    }
     try {
       const response = await invoke<LoadResponse>("load_config");
       const normalized = normalizeUiConfig(response.config);
@@ -391,6 +395,9 @@ function App() {
   }
 
   async function resetConfig() {
+    if (!window.confirm("Reset all settings to defaults? This cannot be undone.")) {
+      return;
+    }
     try {
       const response = await invoke<LoadResponse>("reset_config");
       setConfig(normalizeUiConfig(response.config));
@@ -735,7 +742,7 @@ function App() {
           <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
           </button>
-          <button className="iconButton" title="Reload config" onClick={loadConfig}>
+          <button className="iconButton" title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
             <RotateCcw size={18} />
           </button>
           <button className="primaryButton" onClick={startOverlay} disabled={saving}>
