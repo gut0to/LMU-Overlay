@@ -145,13 +145,13 @@ mod windows_overlay {
             },
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-                PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, ShowWindow,
-                TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM,
-                HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY,
-                MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-                WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
-                WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                GetWindowRect, PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes,
+                ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE,
+                HTBOTTOM, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA,
+                LWA_COLORKEY, MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED,
+                WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP,
+                WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_SIZE, WNDCLASSW, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -944,6 +944,10 @@ mod windows_overlay {
                 handle_mouse_up(hwnd);
                 0
             }
+            WM_EXITSIZEMOVE => {
+                handle_window_move_end(hwnd);
+                0
+            }
             WM_NCHITTEST => edit_mode_hit_test(hwnd, lparam)
                 .unwrap_or_else(|| DefWindowProcW(hwnd, message, wparam, lparam)),
             WM_DESTROY => {
@@ -1146,6 +1150,41 @@ mod windows_overlay {
         }
     }
 
+    unsafe fn handle_window_move_end(hwnd: HWND) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+        if !state.edit_mode.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let mut rect: RECT = zeroed();
+        if GetWindowRect(hwnd, &mut rect) == 0 {
+            return;
+        }
+        let width = (rect.right - rect.left).max(48);
+        let height = (rect.bottom - rect.top).max(20);
+        if let Ok(mut config) = state.config.lock() {
+            config.window.x = rect.left;
+            config.window.y = rect.top;
+            config.window.width = width;
+            config.window.height = height;
+            if let Some(layer_id) = state.overlay_layer.as_ref() {
+                if let Some(layer) = config
+                    .overlays
+                    .iter_mut()
+                    .find(|layer| layer.id == layer_id.as_str())
+                {
+                    layer.window.x = rect.left;
+                    layer.window.y = rect.top;
+                    layer.window.width = width;
+                    layer.window.height = height;
+                }
+            }
+        }
+        save_runtime_config(state, None);
+    }
+
     fn save_runtime_config(state: &SharedState, widget: Option<WidgetId>) {
         let Some(path) = &state.config_path else {
             return;
@@ -1244,6 +1283,32 @@ mod windows_overlay {
         runtime_config: &OverlayConfig,
         widget: Option<WidgetId>,
     ) {
+        if widget.is_none() {
+            if let Some(layer_id) = layer_id {
+                if let Some(layer) = latest
+                    .overlays
+                    .iter_mut()
+                    .find(|layer| layer.id == layer_id)
+                {
+                    if let Some(runtime_layer) = runtime_config
+                        .overlays
+                        .iter()
+                        .find(|layer| layer.id == layer_id)
+                    {
+                        layer.window.x = runtime_layer.window.x;
+                        layer.window.y = runtime_layer.window.y;
+                        layer.window.width = runtime_layer.window.width;
+                        layer.window.height = runtime_layer.window.height;
+                    }
+                }
+            } else {
+                latest.window.x = runtime_config.window.x;
+                latest.window.y = runtime_config.window.y;
+                latest.window.width = runtime_config.window.width;
+                latest.window.height = runtime_config.window.height;
+            }
+            return;
+        }
         let Some(widget) = widget else {
             return;
         };
@@ -4283,6 +4348,29 @@ mod windows_overlay {
 
             assert_eq!(latest.style.theme, "settings-newer");
             assert_eq!(latest.overlays[0].layout_overrides["coaching"].x, 444);
+        }
+
+        #[test]
+        fn runtime_window_mutation_preserves_newer_global_settings() {
+            let mut latest = OverlayConfig::default();
+            latest.normalize();
+            latest.style.theme = "settings-newer".to_string();
+            latest.overlays[0].id = "race".to_string();
+            let mut runtime = latest.for_overlay_layer(Some("race")).unwrap();
+            runtime.window.x = 420;
+            runtime.window.y = 180;
+            runtime.window.width = 900;
+            runtime.window.height = 240;
+            runtime.overlays = latest.overlays.clone();
+            runtime.overlays[0].window = runtime.window.clone();
+
+            apply_runtime_layout_mutation(&mut latest, Some("race"), &runtime, None);
+
+            assert_eq!(latest.style.theme, "settings-newer");
+            assert_eq!(latest.overlays[0].window.x, 420);
+            assert_eq!(latest.overlays[0].window.y, 180);
+            assert_eq!(latest.overlays[0].window.width, 900);
+            assert_eq!(latest.overlays[0].window.height, 240);
         }
 
         #[test]

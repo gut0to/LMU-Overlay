@@ -366,6 +366,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
     let host_control = match host_control::HostControl::start(
         host_running.clone(),
         shared_visible.clone(),
+        shared_edit_mode.clone(),
         reload_request_sender,
     ) {
         Ok(control) => control,

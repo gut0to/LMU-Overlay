@@ -710,6 +710,250 @@ h1 span {
   color: var(--muted);
   font-size: 11px;
 }
+.statusPill.hiddenState {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.statusPill.hiddenState .statusDot {
+  background: var(--amber);
+  box-shadow: none;
+}
+.secondaryButton.active {
+  border-color: var(--violet);
+  background: rgba(201, 162, 244, 0.14);
+  color: var(--violet);
+}
+.saveState {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.saveState.pending {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.saveState.saving {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.saveState.saved {
+  border-color: var(--green-deep);
+  color: var(--green);
+}
+.surfaceMapFrame {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 var(--space-5);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+}
+.surfaceMapHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mapHint,
+.mapWarning {
+  font-weight: 700;
+}
+.mapWarning {
+  color: var(--amber);
+}
+.surfaceMapActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mapFitButton {
+  min-height: 26px;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.mapFitButton:hover {
+  background: rgba(240, 172, 100, 0.14);
+}
+.workspacePresets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.workspacePresets button {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+.workspacePresets button:hover,
+.workspacePresets button.selected {
+  border-color: var(--blue);
+  background: rgba(117, 202, 208, 0.14);
+  color: var(--blue);
+}
+.customWorkspace {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(90px, 1fr)) auto;
+  gap: 7px;
+  align-items: end;
+}
+.customWorkspace label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.customWorkspace input {
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: var(--field);
+  color: var(--ink);
+  font-size: 11px;
+}
+.customWorkspace button {
+  min-height: 28px;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.customWorkspace .workspaceResetButton {
+  border-color: var(--line-bright);
+  color: var(--muted);
+}
+.customWorkspace .workspaceResetButton:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.surfaceMap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--blue-deep);
+  border-radius: 5px;
+  background:
+    linear-gradient(rgba(117, 202, 208, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(117, 202, 208, 0.08) 1px, transparent 1px),
+    #111820;
+  background-size: 10% 10%;
+  touch-action: none;
+}
+.surfaceMapItem {
+  position: absolute;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  min-width: 58px;
+  min-height: 30px;
+  overflow: hidden;
+  padding: 5px 7px;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  background: rgba(240, 172, 100, 0.2);
+  color: var(--ink);
+  cursor: grab;
+  text-align: left;
+  touch-action: none;
+}
+.surfaceMapItem:active {
+  cursor: grabbing;
+}
+.surfaceMapItem.selected {
+  border: 2px solid var(--violet);
+  background: rgba(201, 162, 244, 0.28);
+  box-shadow: 0 0 0 3px rgba(201, 162, 244, 0.16);
+}
+.surfaceMapItem.disabled {
+  border-style: dashed;
+  border-color: var(--line-bright);
+  background: rgba(72, 70, 62, 0.28);
+  color: var(--muted);
+  opacity: 0.7;
+}
+.surfaceMapItem strong,
+.surfaceMapItem small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.surfaceMapItem strong {
+  font-size: 11px;
+}
+.surfaceMapItem small {
+  color: var(--muted);
+  font-size: 9px;
+}
+.surfaceMapSelection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--violet);
+  border-radius: 6px;
+  background: rgba(195, 166, 255, 0.08);
+  color: var(--muted);
+  font-size: 11px;
+}
+.surfaceMapSelection strong {
+  color: var(--violet);
+  font-family: var(--display);
+  letter-spacing: 0.04em;
+}
+.surfaceMapSelection span {
+  font-family: var(--display);
+}
+.surfaceMapSelection small {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 10px;
+}
+.windowPositionFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(117, 202, 208, 0.06);
+}
+.windowPositionFields .field {
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
 .preview {
   position: relative;
   overflow: hidden;
@@ -732,6 +976,14 @@ h1 span {
 }
 .previewWidget:active {
   cursor: grabbing;
+}
+.previewWidget.locked {
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+.previewWidget.locked:active {
+  cursor: not-allowed;
 }
 .previewWidget.selected {
   border: 2px solid var(--violet) !important;
@@ -791,6 +1043,19 @@ h1 span {
   font-size: 11px;
   line-height: 1.45;
 }
+.textAreaLabel {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.textAreaLabel small {
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
 .widgetBrowser {
   display: grid;
   gap: var(--space-3);
@@ -822,6 +1087,107 @@ h1 span {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+}
+.selectionSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+.layoutPickerHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.layoutPickerHeader input {
+  min-width: 0;
+  flex: 1;
+  min-height: 32px;
+}
+.layoutPickerHeader span {
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.emptyHint {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.selectionSummary > div {
+  display: grid;
+  gap: 2px;
+}
+.selectionSummary strong {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+.selectionSummary span {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.selectionSummary .summaryLabel {
+  grid-column: 1 / -1;
+  color: var(--accent);
+  font-weight: 700;
+}
+.selectionSummary p {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.previewShortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 8px 0 10px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+.previewShortcuts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.previewShortcuts kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+.previewShortcuts strong {
+  margin-left: auto;
+  color: var(--amber);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.collisionDetails {
+  margin: -4px 0 8px;
+  overflow: hidden;
+  color: var(--amber);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .status {
   grid-column: 2;
@@ -937,6 +1303,12 @@ h1 span {
   .previewWrap {
     min-height: 420px;
     padding: 16px;
+  }
+  .customWorkspace {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .customWorkspace button {
+    grid-column: 1 / -1;
   }
   .previewStatus {
     align-items: flex-start;

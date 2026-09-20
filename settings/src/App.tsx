@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
+  Copy,
   FolderOpen,
   Gauge,
   LayoutGrid,
@@ -16,7 +17,7 @@ import {
   Timer,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachingConfig,
   CustomPresetConfig,
@@ -52,6 +53,16 @@ const presetNames = ["practice", "qualifying", "race", "endurance", "minimal"] a
 type StandardPresetKey = (typeof presetNames)[number];
 const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
+type WorkspaceSize = { width: number; height: number; originX: number; originY: number };
+const workspacePresets: Array<[string, WorkspaceSize]> = [
+  ["Primary 1080p", { width: 1920, height: 1080, originX: 0, originY: 0 }],
+  ["Primary 1440p", { width: 2560, height: 1440, originX: 0, originY: 0 }],
+  ["Left monitor", { width: 1920, height: 1080, originX: -1920, originY: 0 }],
+  ["Right monitor", { width: 1920, height: 1080, originX: 1920, originY: 0 }],
+  ["Ultrawide", { width: 3440, height: 1440, originX: 0, originY: 0 }],
+  ["4K", { width: 3840, height: 2160, originX: 0, originY: 0 }],
+];
+const workspaceStorageKey = "hashoverlay.editor.workspace";
 const performanceModes = [
   ["eco", "Eco"],
   ["normal", "Normal"],
@@ -224,7 +235,11 @@ function App() {
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
+  const [overlayEditMode, setOverlayEditMode] = useState(false);
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const [copiedWindowGeometry, setCopiedWindowGeometry] = useState(false);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
+  const [layoutSearch, setLayoutSearch] = useState("");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
@@ -232,6 +247,18 @@ function App() {
   const [widgetSearch, setWidgetSearch] = useState("");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
+  const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
+    try {
+      const saved = window.localStorage.getItem(workspaceStorageKey);
+      if (saved) return { ...workspacePresets[0][1], ...JSON.parse(saved) } as WorkspaceSize;
+    } catch {
+      // Ignore malformed editor-only state and use the safe default.
+    }
+    return workspacePresets[0][1];
+  });
+  const hydratedConfig = useRef(false);
+  const lastSavedConfig = useRef("");
+  const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     void loadConfig();
@@ -250,10 +277,36 @@ function App() {
     }
   }, [config, activeOverlayId]);
 
+  useEffect(() => {
+    if (!config || !hydratedConfig.current) return;
+    const serialized = JSON.stringify(config);
+    if (serialized === lastSavedConfig.current) return;
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void persistConfig(config, "Changes saved");
+      saveTimer.current = null;
+    }, 850);
+    return () => {
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    };
+  }, [config]);
+
+  useEffect(() => {
+    window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspace));
+  }, [workspace]);
+
   async function refreshOverlayStatus(): Promise<boolean> {
     try {
       const running = await invoke<boolean>("overlay_status");
       setOverlayRunning(running);
+      if (running) {
+        const editing = await invoke<boolean>("overlay_edit_status");
+        setOverlayEditMode(editing);
+        setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
+      } else {
+        setOverlayEditMode(false);
+        setOverlayVisible(false);
+      }
       return running;
     } catch (error) {
       setStatus(String(error));
@@ -261,10 +314,17 @@ function App() {
     }
   }
 
-  async function loadConfig() {
+  async function loadConfig(force = false) {
+    if (!force && config && JSON.stringify(config) !== lastSavedConfig.current
+      && !window.confirm("You have unsaved changes. Reloading will discard them. Continue?")) {
+      return;
+    }
     try {
       const response = await invoke<LoadResponse>("load_config");
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      setConfig(normalized);
+      lastSavedConfig.current = JSON.stringify(normalized);
+      hydratedConfig.current = true;
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config loaded");
@@ -280,7 +340,9 @@ function App() {
         config: nextConfig,
         expected_revision: revision,
       });
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      setConfig(normalized);
+      lastSavedConfig.current = JSON.stringify(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus(successStatus);
@@ -320,6 +382,10 @@ function App() {
   }
 
   async function importConfigText() {
+    if (config && JSON.stringify(config) !== lastSavedConfig.current
+      && !window.confirm("Importing will replace your pending changes. Continue?")) {
+      return;
+    }
     try {
       const response = await invoke<LoadResponse>("import_config", {
         text: configText,
@@ -335,6 +401,9 @@ function App() {
   }
 
   async function resetConfig() {
+    if (!window.confirm("Reset all settings to defaults? This cannot be undone.")) {
+      return;
+    }
     try {
       const response = await invoke<LoadResponse>("reset_config");
       setConfig(normalizeUiConfig(response.config));
@@ -511,6 +580,49 @@ function App() {
     setStatus("New overlay added");
   }
 
+  async function toggleOverlayEditMode() {
+    try {
+      const response = await invoke<string>("toggle_overlay_edit_mode");
+      const enabled = response === "edit_on";
+      setOverlayEditMode(enabled);
+      setStatus(enabled ? "Overlay edit mode enabled" : "Overlay edit mode disabled");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  async function toggleOverlayVisibility() {
+    try {
+      const visible = await invoke<boolean>("toggle_overlay_visibility");
+      setOverlayVisible(visible);
+      setStatus(visible ? "Overlay shown" : "Overlay hidden");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
+  function duplicateOverlayLayer(id: string) {
+    setConfig((current) => {
+      if (!current) return current;
+      const source = current.overlays.find((overlay) => overlay.id === id);
+      if (!source) return current;
+      const nextId = nextOverlayId(current.overlays);
+      const duplicate: OverlayLayerConfig = {
+        ...source,
+        id: nextId,
+        name: `${source.name} copy`,
+        window: { ...source.window, x: source.window.x + 36, y: source.window.y + 36 },
+        widgets: [...source.widgets],
+        layout_overrides: Object.fromEntries(
+          Object.entries(source.layout_overrides).map(([key, layout]) => [key, { ...layout }]),
+        ),
+      };
+      setActiveOverlayId(nextId);
+      return { ...current, overlays: [...current.overlays, duplicate] };
+    });
+    setStatus("Overlay duplicated");
+  }
+
   function updateOverlayLayer(id: string, update: Partial<OverlayLayerConfig>) {
     setConfig((current) => current ? {
       ...current,
@@ -518,7 +630,50 @@ function App() {
     } : current);
   }
 
+  function alignOverlay(id: string, mode: "top-left" | "center") {
+    setConfig((current) => {
+      if (!current) return current;
+      const target = current.overlays.find((overlay) => overlay.id === id);
+      if (!target) return current;
+      const x = mode === "center" ? workspace.originX + Math.max(0, Math.round((workspace.width - target.window.width) / 2)) : workspace.originX;
+      const y = mode === "center" ? workspace.originY + Math.max(0, Math.round((workspace.height - target.window.height) / 2)) : workspace.originY;
+      return {
+        ...current,
+        overlays: current.overlays.map((overlay) => overlay.id === id
+          ? { ...overlay, window: { ...overlay.window, x, y } }
+          : overlay),
+      };
+    });
+    setStatus(mode === "center" ? "Overlay centered" : "Overlay aligned to top-left");
+  }
+
+  function fitOverlaysToWorkspace() {
+    setConfig((current) => current ? {
+      ...current,
+      overlays: current.overlays.map((overlay) => ({
+        ...overlay,
+        window: {
+          ...overlay.window,
+          x: Math.max(workspace.originX, Math.min(overlay.window.x, workspace.originX + workspace.width - overlay.window.width)),
+          y: Math.max(workspace.originY, Math.min(overlay.window.y, workspace.originY + workspace.height - overlay.window.height)),
+        },
+      })),
+    } : current);
+    setStatus("Surfaces fitted to workspace");
+  }
+
+  function resetWorkspacePreference() {
+    const safeDefault = workspacePresets[0][1];
+    window.localStorage.removeItem(workspaceStorageKey);
+    setWorkspace(safeDefault);
+    setStatus("Workspace reset");
+  }
+
   function removeOverlayLayer(id: string) {
+    const target = config?.overlays.find((overlay) => overlay.id === id);
+    if (!target || !window.confirm(`Remove “${target.name}”? Its window and widget assignments will be deleted.`)) {
+      return;
+    }
     setConfig((current) => {
       if (!current || current.overlays.length <= 1) {
         return current;
@@ -550,6 +705,10 @@ function App() {
     [config, activeOverlayId],
   );
   const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
+  const filteredLayoutEntries = useMemo(() => {
+    const query = layoutSearch.trim().toLocaleLowerCase();
+    return availableLayoutEntries.filter((entry) => !query || entry.label.toLocaleLowerCase().includes(query));
+  }, [availableLayoutEntries, layoutSearch]);
 
   useEffect(() => {
     if (!availableLayoutEntries.some((entry) => entry.key === selectedLayout)) {
@@ -575,6 +734,7 @@ function App() {
   }
 
   const statusNeedsAttention = /could not|did not|failed|error|conflict|invalid/i.test(status);
+  const hasPendingChanges = JSON.stringify(config) !== lastSavedConfig.current;
 
   return (
     <main className="shell">
@@ -587,16 +747,16 @@ function App() {
           </div>
         </div>
         <div className="topbarRight">
-          <div className={`statusPill ${overlayRunning ? "live" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
+          <div className={`statusPill ${overlayRunning ? "live" : ""} ${overlayRunning && !overlayVisible ? "hiddenState" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
             <span className="statusDot" />
-            {overlayRunning ? "Overlay live" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
+            {overlayRunning ? overlayVisible ? "Overlay live" : "Overlay hidden" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
           </div>
           {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">
           <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
           </button>
-          <button className="iconButton" title="Reload config" onClick={loadConfig}>
+          <button className="iconButton" title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
             <RotateCcw size={18} />
           </button>
           <button className="primaryButton" onClick={startOverlay} disabled={saving}>
@@ -607,10 +767,19 @@ function App() {
             <Square size={16} />
             Stop overlay
           </button>
+          <button className={`secondaryButton ${overlayEditMode ? "active" : ""}`} onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
+            {overlayEditMode ? "Exit edit mode" : "Edit overlay"}
+          </button>
+          <button className="secondaryButton" onClick={() => void toggleOverlayVisibility()} disabled={!overlayRunning}>
+            {overlayVisible ? "Hide overlay" : "Show overlay"}
+          </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
             {saving ? "Saving" : "Save"}
           </button>
+          <span className={`saveState ${saving ? "saving" : hasPendingChanges ? "pending" : "saved"}`} aria-live="polite">
+            {saving ? "Saving changes" : hasPendingChanges ? "Changes pending" : "Auto-saved"}
+          </span>
           </div>
         </div>
       </header>
@@ -646,7 +815,7 @@ function App() {
           {config.overlays.map((overlay) => (
             <button key={overlay.id} className={activeOverlayId === overlay.id ? "selected" : ""} onClick={() => setActiveOverlayId(overlay.id)}>
               <span>{overlay.name}</span>
-              <small>{overlay.widgets.length} widgets</small>
+              <small>{overlay.enabled ? "ON" : "OFF"} · {overlay.widgets.length} widgets · {overlay.window.x},{overlay.window.y} · {overlay.window.width}×{overlay.window.height}</small>
             </button>
           ))}
           <button className="addLayerButton" onClick={addOverlayLayer}><Plus size={15} /> Add overlay</button>
@@ -655,8 +824,17 @@ function App() {
           const overlay = config.overlays.find((item) => item.id === activeOverlayId)!;
           return (
             <div className="layerControls">
-              <input value={overlay.name} onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })} aria-label="Overlay name" />
+              <input
+                value={overlay.name}
+                onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })}
+                onBlur={(event) => updateOverlayLayer(overlay.id, { name: event.target.value.trim() || "Unnamed overlay" })}
+                aria-label="Overlay name"
+                placeholder="Overlay name"
+              />
               <label className="toggle"><input type="checkbox" checked={overlay.enabled} onChange={(event) => updateOverlayLayer(overlay.id, { enabled: event.target.checked })} /><span>Run this overlay</span></label>
+              <button className="secondaryButton" onClick={() => duplicateOverlayLayer(overlay.id)}><Copy size={15} /> Duplicate</button>
+              <button className="secondaryButton" onClick={() => alignOverlay(overlay.id, "top-left")}>Top-left</button>
+              <button className="secondaryButton" onClick={() => alignOverlay(overlay.id, "center")}>Center</button>
               <button className="dangerButton" onClick={() => removeOverlayLayer(overlay.id)} disabled={config.overlays.length <= 1}><Trash2 size={15} /> Remove</button>
             </div>
           );
@@ -694,7 +872,18 @@ function App() {
       <div className="grid">
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
-            <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
+            <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
+            <SurfaceMap
+              config={config}
+              selected={activeOverlayId}
+              onSelect={setActiveOverlayId}
+              workspace={workspace}
+              onWorkspaceChange={setWorkspace}
+              onFitToWorkspace={fitOverlaysToWorkspace}
+              onCenterSelected={() => alignOverlay(activeOverlayId, "center")}
+              onResetWorkspace={resetWorkspacePreference}
+              onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
+            />
             <OverlayPreview
               config={activeOverlayConfig ?? config}
               selected={selectedLayout}
@@ -705,20 +894,41 @@ function App() {
           </Section>
           <aside className="layoutInspector">
             <Section icon={<LayoutGrid />} title="Overlay Window">
-              <p className="previewHint">Press F10 in the game, then drag the overlay border to move it on-screen.</p>
+              <p className="previewHint">This is the real screen position of the selected surface. Set it here, or use F10 in-game for direct adjustment.</p>
+              <button className="secondaryButton geometryCopyButton" onClick={() => {
+                const windowConfig = (activeOverlayConfig ?? config).window;
+                void navigator.clipboard?.writeText(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
+                setCopiedWindowGeometry(true);
+                window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
+                setStatus("Window geometry copied");
+              }}>{copiedWindowGeometry ? "Copied" : "Copy window geometry"}</button>
+              <div className="windowPositionFields">
+                <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
+                <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
+              </div>
               <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
               <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
               <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
               <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
             </Section>
             <Section icon={<Magnet />} title="Selected Widget">
+          <div className="layoutPickerHeader">
+            <input
+              value={layoutSearch}
+              onChange={(event) => setLayoutSearch(event.target.value)}
+              placeholder="Find widget..."
+              aria-label="Find widget"
+            />
+            <span>{filteredLayoutEntries.length}/{availableLayoutEntries.length}</span>
+          </div>
           <div className="segmented">
-            {availableLayoutEntries.map(({ key, label }) => (
+            {filteredLayoutEntries.map(({ key, label }) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
               </button>
             ))}
           </div>
+          {filteredLayoutEntries.length === 0 && <p className="emptyHint">No widgets match this search.</p>}
           <label className="toggle full">
             <input
               type="checkbox"
@@ -753,8 +963,23 @@ function App() {
           </label>
           <Segmented value={String(config.layout.grid_size)} options={gridSizes} onChange={(value) => setLayoutFlag(config, setConfig, "grid_size", Number(value))} />
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
+          <div className="selectionSummary">
+            <div>
+              <span className="summaryLabel">Selected geometry</span>
+              <strong>{Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).x)}, {Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).y)}</strong>
+              <span>position</span>
+            </div>
+            <div>
+              <strong>{Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).width)} × {Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).height)}</strong>
+              <span>size</span>
+            </div>
+            <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
+          </div>
           <WidgetLayoutFields
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
+            defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
+            windowWidth={(activeOverlayConfig ?? config).window.width}
+            windowHeight={(activeOverlayConfig ?? config).window.height}
             onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
@@ -912,6 +1137,9 @@ function App() {
             <button className="primaryButton" onClick={importConfigText} disabled={!configText.trim()}>
               Import
             </button>
+            <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
+              Clear text
+            </button>
             <button className="primaryButton" onClick={resetLayout} disabled={!defaultConfigState}>
               Reset layout
             </button>
@@ -920,14 +1148,175 @@ function App() {
             </button>
           </div>
           <label className="field stack">
-            <span>Config TOML</span>
-            <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} />
+            <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
+            <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
           </label>
+          <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
         </Section>}
       </div>
 
       <footer className="status">{status}</footer>
     </main>
+  );
+}
+
+function SurfaceMap(props: {
+  config: OverlayConfig;
+  selected: string;
+  workspace: WorkspaceSize;
+  onWorkspaceChange: (size: WorkspaceSize) => void;
+  onFitToWorkspace: () => void;
+  onCenterSelected: () => void;
+  onResetWorkspace: () => void;
+  onSelect: (id: string) => void;
+  onMove: (id: string, x: number, y: number) => void;
+}) {
+  const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  const [copiedGeometry, setCopiedGeometry] = useState(false);
+  const [customWorkspace, setCustomWorkspace] = useState(props.workspace);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [canvasWidth, setCanvasWidth] = useState(900);
+  const canvasHeight = 506;
+  const virtualWidth = props.workspace.width;
+  const virtualHeight = props.workspace.height;
+  const scale = canvasWidth / virtualWidth;
+  const outOfBounds = props.config.overlays.filter((overlay) =>
+    overlay.window.x < props.workspace.originX || overlay.window.y < props.workspace.originY
+      || overlay.window.x + overlay.window.width > props.workspace.originX + virtualWidth
+      || overlay.window.y + overlay.window.height > props.workspace.originY + virtualHeight,
+    ).length;
+  const selectedOverlay = props.config.overlays.find((overlay) => overlay.id === props.selected);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const updateSize = () => setCanvasWidth(mapRef.current?.clientWidth || 900);
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(mapRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    setCustomWorkspace(props.workspace);
+  }, [props.workspace.width, props.workspace.height, props.workspace.originX, props.workspace.originY]);
+
+  function move(clientX: number, clientY: number) {
+    if (!drag) return;
+    const overlay = props.config.overlays.find((item) => item.id === drag.id);
+    if (!overlay) return;
+    const nextX = Math.round(drag.x + (clientX - drag.startX) / scale);
+    const nextY = Math.round(drag.y + (clientY - drag.startY) / scale);
+    props.onMove(
+      drag.id,
+          clamp(nextX, props.workspace.originX, props.workspace.originX + Math.max(0, virtualWidth - overlay.window.width)),
+          clamp(nextY, props.workspace.originY, props.workspace.originY + Math.max(0, virtualHeight - overlay.window.height)),
+    );
+  }
+
+  return (
+    <div className="surfaceMapFrame">
+      <div className="surfaceMapHeader">
+        <span>Screen workspace · {virtualWidth} × {virtualHeight} · origin {props.workspace.originX}, {props.workspace.originY}</span>
+        <span className={outOfBounds > 0 ? "mapWarning" : "mapHint"}>
+          {outOfBounds > 0 ? `${outOfBounds} surface${outOfBounds === 1 ? "" : "s"} outside workspace` : "Drag surfaces to position"}
+        </span>
+        <div className="surfaceMapActions">
+          <button className="mapFitButton" onClick={props.onCenterSelected} disabled={!selectedOverlay}>Center selected</button>
+          {outOfBounds > 0 && <button className="mapFitButton" onClick={props.onFitToWorkspace}>Fit surfaces</button>}
+        </div>
+      </div>
+      <div className="workspacePresets" aria-label="Workspace resolution">
+        {workspacePresets.map(([label, size]) => (
+          <button
+            key={label}
+            className={size.width === virtualWidth && size.height === virtualHeight && size.originX === props.workspace.originX && size.originY === props.workspace.originY ? "selected" : ""}
+            onClick={() => {
+              setCustomWorkspace(size);
+              props.onWorkspaceChange(size);
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="customWorkspace">
+        <label>Width <input aria-label="Workspace width" type="number" min="320" max="16384" value={customWorkspace.width} onChange={(event) => setCustomWorkspace({ ...customWorkspace, width: Number(event.target.value) })} /></label>
+        <label>Height <input aria-label="Workspace height" type="number" min="240" max="8640" value={customWorkspace.height} onChange={(event) => setCustomWorkspace({ ...customWorkspace, height: Number(event.target.value) })} /></label>
+        <label>Origin X <input aria-label="Workspace origin X" type="number" value={customWorkspace.originX} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originX: Number(event.target.value) })} /></label>
+        <label>Origin Y <input aria-label="Workspace origin Y" type="number" value={customWorkspace.originY} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originY: Number(event.target.value) })} /></label>
+        <button onClick={() => props.onWorkspaceChange({
+          width: boundedInteger(customWorkspace.width, 320, 16384, virtualWidth),
+          height: boundedInteger(customWorkspace.height, 240, 8640, virtualHeight),
+          originX: finiteInteger(customWorkspace.originX, props.workspace.originX),
+          originY: finiteInteger(customWorkspace.originY, props.workspace.originY),
+        })}>Use custom</button>
+        <button className="workspaceResetButton" onClick={props.onResetWorkspace}>Reset editor</button>
+      </div>
+      <div
+        className="surfaceMap"
+        ref={mapRef}
+        onPointerMove={(event) => move(event.clientX, event.clientY)}
+        onPointerUp={() => setDrag(null)}
+        onPointerCancel={() => setDrag(null)}
+        onPointerLeave={() => setDrag(null)}
+        style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
+      >
+        {props.config.overlays.map((overlay) => (
+          <button
+            key={overlay.id}
+            className={`surfaceMapItem ${props.selected === overlay.id ? "selected" : ""} ${!overlay.enabled ? "disabled" : ""}`}
+            style={{
+              left: (overlay.window.x - props.workspace.originX) * scale,
+              top: (overlay.window.y - props.workspace.originY) * scale,
+              width: Math.max(58, overlay.window.width * scale),
+              height: Math.max(30, overlay.window.height * scale),
+            }}
+            onClick={() => props.onSelect(overlay.id)}
+            onPointerDown={(event) => {
+              props.onSelect(overlay.id);
+              setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            aria-pressed={props.selected === overlay.id}
+            onKeyDown={(event) => {
+              const step = event.shiftKey ? 10 : 1;
+              let dx = 0;
+              let dy = 0;
+              if (event.key === "ArrowLeft") dx = -step;
+              if (event.key === "ArrowRight") dx = step;
+              if (event.key === "ArrowUp") dy = -step;
+              if (event.key === "ArrowDown") dy = step;
+              if (dx === 0 && dy === 0) return;
+              event.preventDefault();
+              props.onMove(
+                overlay.id,
+                clamp(overlay.window.x + dx, props.workspace.originX, props.workspace.originX + Math.max(0, virtualWidth - overlay.window.width)),
+                clamp(overlay.window.y + dy, props.workspace.originY, props.workspace.originY + Math.max(0, virtualHeight - overlay.window.height)),
+              );
+            }}
+            aria-label={`${overlay.name}, position ${overlay.window.x}, ${overlay.window.y}. Use arrow keys to move.`}
+            title={`${overlay.name} · ${overlay.window.x}, ${overlay.window.y}`}
+          >
+            <strong>{overlay.name}</strong>
+            <small>{overlay.window.x}, {overlay.window.y}</small>
+          </button>
+        ))}
+      </div>
+      {selectedOverlay && (
+        <div className="surfaceMapSelection" aria-live="polite">
+          <strong>{selectedOverlay.name}</strong>
+          <span>{selectedOverlay.window.x}, {selectedOverlay.window.y}</span>
+          <span>{selectedOverlay.window.width} × {selectedOverlay.window.height}</span>
+          <span className={selectedOverlay.enabled ? "valueLive" : "valueMuted"}>{selectedOverlay.enabled ? "Enabled" : "Disabled"}</span>
+          <button className="mapFitButton" onClick={() => {
+            void navigator.clipboard?.writeText(`${selectedOverlay.name}: x=${selectedOverlay.window.x}, y=${selectedOverlay.window.y}, width=${selectedOverlay.window.width}, height=${selectedOverlay.window.height}`);
+            setCopiedGeometry(true);
+            window.setTimeout(() => setCopiedGeometry(false), 1400);
+          }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
+          <small>Focus a surface and use arrow keys to move it; hold Shift for 10 px.</small>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -987,13 +1376,24 @@ function OverlayPreview(props: {
         <span className={collisions.length > 0 ? "layoutWarning" : "layoutClear"}>
           {collisions.length > 0 ? `${collisions.length} overlap${collisions.length === 1 ? "" : "s"} detected` : "Layout clear"}
         </span>
-        {collisions.length > 0 && <button className="tidyLayoutButton" onClick={props.onTidyLayout}>Arrange widgets</button>}
+        {collisions.length > 0 && <button className="tidyLayoutButton" title={collisions.map(([first, second]) => `${first} × ${second}`).join("\n")} onClick={props.onTidyLayout}>Arrange widgets</button>}
+      </div>
+      {collisions.length > 0 && <p className="collisionDetails">{collisions.slice(0, 3).map(([first, second]) => `${first} × ${second}`).join(" · ")}{collisions.length > 3 ? " · …" : ""}</p>}
+      <div className="previewShortcuts" aria-label="Preview keyboard shortcuts">
+        <span><kbd>Click</kbd> select</span>
+        <span><kbd>Drag</kbd> move</span>
+        <span><kbd>Corner</kbd> resize</span>
+        <span><kbd>↑ ↓ ← →</kbd> nudge</span>
+        <span><kbd>Shift</kbd> 10 px</span>
+        {props.config.layout.lock_all && <strong>Editing locked</strong>}
       </div>
       <div className="previewWrap">
         <div
         className="preview"
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
+        onPointerCancel={() => setDrag(null)}
+        onPointerLeave={() => setDrag(null)}
         style={{
           width: previewWidth,
           height: previewHeight,
@@ -1008,7 +1408,7 @@ function OverlayPreview(props: {
           return (
             <button
               key={key}
-              className={`previewWidget ${props.selected === key ? "selected" : ""}`}
+              className={`previewWidget ${props.selected === key ? "selected" : ""} ${layout.locked ? "locked" : ""}`}
               style={{
                 left: layout.x * scale,
                 top: layout.y * scale,
@@ -1040,7 +1440,26 @@ function OverlayPreview(props: {
                 });
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
-              title={label}
+              onKeyDown={(event) => {
+                if (props.config.layout.lock_all || layout.locked) return;
+                const step = event.shiftKey ? 10 : 1;
+                let dx = 0;
+                let dy = 0;
+                if (event.key === "ArrowLeft") dx = -step;
+                if (event.key === "ArrowRight") dx = step;
+                if (event.key === "ArrowUp") dy = -step;
+                if (event.key === "ArrowDown") dy = step;
+                if (dx === 0 && dy === 0) return;
+                event.preventDefault();
+                props.onSelect(key);
+                props.onLayoutChange(key, {
+                  ...layout,
+                  x: clamp(layout.x + dx, 0, Math.max(0, props.config.window.width - layout.width)),
+                  y: clamp(layout.y + dy, 0, Math.max(0, props.config.window.height - layout.height)),
+                });
+              }}
+              aria-label={`${label}, position ${layout.x}, ${layout.y}${layout.locked ? ". Locked." : ". Use arrow keys to move."}`}
+              title={layout.locked ? `${label} · locked` : label}
             >
               <span>{label}</span>
             </button>
@@ -1054,6 +1473,14 @@ function OverlayPreview(props: {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function finiteInteger(value: number, fallback: number) {
+  return Number.isFinite(value) ? Math.round(value) : fallback;
+}
+
+function boundedInteger(value: number, min: number, max: number, fallback: number) {
+  return clamp(finiteInteger(value, fallback), min, max);
 }
 
 function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; label: string; layout: WidgetLayout }> {
@@ -1288,10 +1715,34 @@ function Section({ icon, title, children }: SectionProps) {
 
 function WidgetLayoutFields(props: {
   layout: WidgetLayout;
+  defaultLayout: WidgetLayout;
+  windowWidth: number;
+  windowHeight: number;
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
 }) {
+  const [copiedGeometry, setCopiedGeometry] = useState(false);
   return (
     <>
+      <div className="buttonRow geometryActions">
+        <button className="secondaryButton" onClick={() => {
+          void navigator.clipboard?.writeText(`x=${props.layout.x}, y=${props.layout.y}, width=${props.layout.width}, height=${props.layout.height}, scale=${props.layout.scale}`);
+          setCopiedGeometry(true);
+          window.setTimeout(() => setCopiedGeometry(false), 1400);
+        }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - props.layout.width) / 2)))}>Center horizontal</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - props.layout.height) / 2)))}>Center vertical</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", 0)}>Align left</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - props.layout.width))}>Align right</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - props.layout.height))}>Align bottom</button>
+        <button className="secondaryButton" onClick={() => {
+          (Object.keys(props.defaultLayout) as Array<keyof WidgetLayout>).forEach((key) => props.onChange(key, props.defaultLayout[key]));
+        }}>Reset widget</button>
+        <button className="secondaryButton" onClick={() => {
+          props.onChange("width", 320);
+          props.onChange("height", 80);
+        }}>Reset size</button>
+      </div>
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
       <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
       <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
@@ -1343,13 +1794,14 @@ function setPerformanceWindow<K extends keyof Pick<WindowConfig, "refresh_hz" | 
   key: K,
   value: WindowConfig[K],
 ) {
+  const normalizedValue = normalizeWindowField(key, value);
   setConfig({
     ...config,
     performance: { mode: "custom" },
-    window: { ...config.window, [key]: value },
+    window: { ...config.window, [key]: normalizedValue },
     overlays: config.overlays.map((overlay) => ({
       ...overlay,
-      window: { ...overlay.window, [key]: value },
+      window: { ...overlay.window, [key]: normalizedValue },
     })),
   });
 }
@@ -1361,11 +1813,47 @@ function setOverlayWindow<K extends keyof WindowConfig>(
   key: K,
   value: WindowConfig[K],
 ) {
-  const next = { ...config, window: { ...config.window, [key]: value } };
+  const normalizedValue = normalizeWindowField(key, value);
+  const next = { ...config, window: { ...config.window, [key]: normalizedValue } };
   setConfig({
     ...next,
     overlays: next.overlays.map((overlay) => overlay.id === overlayId
-      ? { ...overlay, window: { ...overlay.window, [key]: value } }
+      ? { ...overlay, window: { ...overlay.window, [key]: normalizedValue } }
+      : overlay),
+  });
+}
+
+function normalizeWindowField<K extends keyof WindowConfig>(key: K, value: WindowConfig[K]): WindowConfig[K] {
+  if (key === "x" || key === "y") {
+    return Math.round(Number(value)) as WindowConfig[K];
+  }
+  if (key === "width" || key === "height") {
+    return Math.max(48, Math.min(7680, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  if (key === "refresh_hz") {
+    return Math.max(15, Math.min(240, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  if (key === "sample_ms") {
+    return Math.max(5, Math.min(1000, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  if (key === "history_samples") {
+    return Math.max(16, Math.min(10000, Math.round(Number(value)))) as WindowConfig[K];
+  }
+  return value;
+}
+
+function setOverlayPosition(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  overlayId: string,
+  x: number,
+  y: number,
+) {
+  const next = { ...config, window: { ...config.window, x, y } };
+  setConfig({
+    ...next,
+    overlays: next.overlays.map((overlay) => overlay.id === overlayId
+      ? { ...overlay, window: { ...overlay.window, x, y } }
       : overlay),
   });
 }
