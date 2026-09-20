@@ -918,6 +918,18 @@ function App() {
           </label>
           <Segmented value={String(config.layout.grid_size)} options={gridSizes} onChange={(value) => setLayoutFlag(config, setConfig, "grid_size", Number(value))} />
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
+          <div className="selectionSummary">
+            <div>
+              <span className="summaryLabel">Selected geometry</span>
+              <strong>{Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).x)}, {Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).y)}</strong>
+              <span>position</span>
+            </div>
+            <div>
+              <strong>{Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).width)} × {Math.round(layoutForSelection(activeOverlayConfig ?? config, selectedLayout).height)}</strong>
+              <span>size</span>
+            </div>
+            <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
+          </div>
           <WidgetLayoutFields
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
             defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
