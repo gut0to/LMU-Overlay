@@ -5,7 +5,7 @@
 1. Download the Windows release ZIP and extract it anywhere you can write to.
 2. Open `HashOverlay Settings.exe`.
 3. Select **Practice**, **Qualifying** or **Race**, then open **Widgets** to choose what is visible.
-4. Use **Layout** to drag, resize, lock and snap widgets in the preview. Press **Save**.
+4. Use **Layout** to choose a surface, position its window on the screen map, then drag, resize, lock and snap widgets in the preview. Changes autosave after a short pause; the save indicator shows when they are persisted.
 5. Select **Start overlay** and wait for Settings to report **Overlay live**.
 6. Start Le Mans Ultimate and enter a session. The overlay reads LMU's built-in `LMU_Data` interface; no external telemetry plugin is required.
 
@@ -23,6 +23,26 @@ has a valid player sample. It never manufactures values while LMU is closed.
 - `Ctrl+Shift+F9`: cycle the saved profiles.
 
 All shortcuts can be changed in **Settings > Hotkeys**. Conflicting shortcuts are highlighted before saving.
+
+## Surface and Window Editing
+
+The surface map represents the selected monitor workspace. Click a surface to
+select it, drag its rectangle to move the real overlay window, or focus it and
+use the arrow keys for one-pixel movement. Hold `Shift` with an arrow for a
+ten-pixel step. The inspector exposes exact screen X/Y, width and height.
+
+The **Edit overlay** button in Settings enters the same native edit mode as
+`F10`; **Exit edit mode** returns to click-through racing mode. The Settings
+panel also provides **Show/Hide overlay** without stopping telemetry.
+
+Workspace presets cover common 1080p, 1440p, ultrawide, 4K and extended-desktop
+arrangements. Use the custom workspace fields for a different resolution or a
+monitor whose Windows origin is negative. If a surface is outside the selected
+workspace, use **Fit surfaces** to bring it back without changing its widgets.
+
+Surface positions and sizes are persisted independently per surface. Duplicating
+a surface copies its widget membership and layout overrides while offsetting the
+new window so it remains visible during setup.
 
 ## Choosing a Layout
 
