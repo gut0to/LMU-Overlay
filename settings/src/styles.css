@@ -710,6 +710,19 @@ h1 span {
   color: var(--muted);
   font-size: 11px;
 }
+.windowPositionFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(117, 202, 208, 0.06);
+}
+.windowPositionFields .field {
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
 .preview {
   position: relative;
   overflow: hidden;

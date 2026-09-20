@@ -705,7 +705,11 @@ function App() {
           </Section>
           <aside className="layoutInspector">
             <Section icon={<LayoutGrid />} title="Overlay Window">
-              <p className="previewHint">Press F10 in the game, then drag the overlay border to move it on-screen.</p>
+              <p className="previewHint">This is the real screen position of the selected surface. Set it here, or use F10 in-game for direct adjustment.</p>
+              <div className="windowPositionFields">
+                <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
+                <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
+              </div>
               <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
               <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
               <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
