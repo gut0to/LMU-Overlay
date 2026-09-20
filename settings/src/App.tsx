@@ -1248,6 +1248,7 @@ function SurfaceMap(props: {
         ref={mapRef}
         onPointerMove={(event) => move(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
+        onPointerCancel={() => setDrag(null)}
         onPointerLeave={() => setDrag(null)}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
@@ -1267,6 +1268,7 @@ function SurfaceMap(props: {
               setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
               event.currentTarget.setPointerCapture(event.pointerId);
             }}
+            aria-pressed={props.selected === overlay.id}
             onKeyDown={(event) => {
               const step = event.shiftKey ? 10 : 1;
               let dx = 0;
