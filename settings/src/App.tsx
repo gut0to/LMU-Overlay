@@ -237,6 +237,7 @@ function App() {
   const [overlayRunning, setOverlayRunning] = useState(false);
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
+  const [copiedWindowGeometry, setCopiedWindowGeometry] = useState(false);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [layoutSearch, setLayoutSearch] = useState("");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
@@ -897,8 +898,10 @@ function App() {
               <button className="secondaryButton geometryCopyButton" onClick={() => {
                 const windowConfig = (activeOverlayConfig ?? config).window;
                 void navigator.clipboard?.writeText(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
+                setCopiedWindowGeometry(true);
+                window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
                 setStatus("Window geometry copied");
-              }}>Copy window geometry</button>
+              }}>{copiedWindowGeometry ? "Copied" : "Copy window geometry"}</button>
               <div className="windowPositionFields">
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
                 <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
