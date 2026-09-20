@@ -710,6 +710,31 @@ h1 span {
   color: var(--muted);
   font-size: 11px;
 }
+.saveState {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.saveState.pending {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.saveState.saving {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.saveState.saved {
+  border-color: var(--green-deep);
+  color: var(--green);
+}
 .surfaceMapFrame {
   display: grid;
   gap: 8px;

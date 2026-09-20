@@ -645,6 +645,7 @@ function App() {
   }
 
   const statusNeedsAttention = /could not|did not|failed|error|conflict|invalid/i.test(status);
+  const hasPendingChanges = JSON.stringify(config) !== lastSavedConfig.current;
 
   return (
     <main className="shell">
@@ -681,6 +682,9 @@ function App() {
             <Save size={18} />
             {saving ? "Saving" : "Save"}
           </button>
+          <span className={`saveState ${saving ? "saving" : hasPendingChanges ? "pending" : "saved"}`} aria-live="polite">
+            {saving ? "Saving changes" : hasPendingChanges ? "Changes pending" : "Auto-saved"}
+          </span>
           </div>
         </div>
       </header>
