@@ -15,6 +15,7 @@ enum ControlCommand {
     Hide,
     ToggleEdit,
     Stop,
+    EditStatus,
     Shutdown,
 }
 
@@ -27,6 +28,7 @@ impl ControlCommand {
             "hide" => Some(Self::Hide),
             "edit" => Some(Self::ToggleEdit),
             "stop" => Some(Self::Stop),
+            "edit_status" => Some(Self::EditStatus),
             "shutdown" => Some(Self::Shutdown),
             _ => None,
         }
@@ -161,6 +163,13 @@ mod windows_control {
                     edit_mode.store(enabled, Ordering::Relaxed);
                     visible.store(true, Ordering::Relaxed);
                     if enabled {
+                        "edit_on".to_string()
+                    } else {
+                        "edit_off".to_string()
+                    }
+                }
+                Some(ControlCommand::EditStatus) => {
+                    if edit_mode.load(Ordering::Relaxed) {
                         "edit_on".to_string()
                     } else {
                         "edit_off".to_string()
@@ -334,6 +343,10 @@ mod tests {
         assert_eq!(
             ControlCommand::parse("edit"),
             Some(ControlCommand::ToggleEdit)
+        );
+        assert_eq!(
+            ControlCommand::parse("edit_status"),
+            Some(ControlCommand::EditStatus)
         );
         assert_eq!(ControlCommand::parse("stop"), Some(ControlCommand::Stop));
         assert_eq!(ControlCommand::parse("invalid"), None);

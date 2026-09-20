@@ -296,6 +296,12 @@ function App() {
     try {
       const running = await invoke<boolean>("overlay_status");
       setOverlayRunning(running);
+      if (running) {
+        const editing = await invoke<boolean>("overlay_edit_status");
+        setOverlayEditMode(editing);
+      } else {
+        setOverlayEditMode(false);
+      }
       return running;
     } catch (error) {
       setStatus(String(error));
