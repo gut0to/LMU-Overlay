@@ -664,6 +664,10 @@ function App() {
   }
 
   function removeOverlayLayer(id: string) {
+    const target = config?.overlays.find((overlay) => overlay.id === id);
+    if (!target || !window.confirm(`Remove “${target.name}”? Its window and widget assignments will be deleted.`)) {
+      return;
+    }
     setConfig((current) => {
       if (!current || current.overlays.length <= 1) {
         return current;
@@ -810,7 +814,13 @@ function App() {
           const overlay = config.overlays.find((item) => item.id === activeOverlayId)!;
           return (
             <div className="layerControls">
-              <input value={overlay.name} onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })} aria-label="Overlay name" />
+              <input
+                value={overlay.name}
+                onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })}
+                onBlur={(event) => updateOverlayLayer(overlay.id, { name: event.target.value.trim() || "Unnamed overlay" })}
+                aria-label="Overlay name"
+                placeholder="Overlay name"
+              />
               <label className="toggle"><input type="checkbox" checked={overlay.enabled} onChange={(event) => updateOverlayLayer(overlay.id, { enabled: event.target.checked })} /><span>Run this overlay</span></label>
               <button className="secondaryButton" onClick={() => duplicateOverlayLayer(overlay.id)}><Copy size={15} /> Duplicate</button>
               <button className="secondaryButton" onClick={() => alignOverlay(overlay.id, "top-left")}>Top-left</button>
