@@ -694,7 +694,13 @@ function App() {
       <div className="grid">
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
-            <p className="previewHint">Drag a widget to move it. Drag its lower-right corner to resize.</p>
+            <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
+            <SurfaceMap
+              config={config}
+              selected={activeOverlayId}
+              onSelect={setActiveOverlayId}
+              onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
+            />
             <OverlayPreview
               config={activeOverlayConfig ?? config}
               selected={selectedLayout}
@@ -932,6 +938,66 @@ function App() {
 
       <footer className="status">{status}</footer>
     </main>
+  );
+}
+
+function SurfaceMap(props: {
+  config: OverlayConfig;
+  selected: string;
+  onSelect: (id: string) => void;
+  onMove: (id: string, x: number, y: number) => void;
+}) {
+  const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  const canvasWidth = 900;
+  const canvasHeight = 506;
+  const virtualWidth = 1920;
+  const virtualHeight = 1080;
+  const scale = canvasWidth / virtualWidth;
+
+  function move(clientX: number, clientY: number) {
+    if (!drag) return;
+    const nextX = Math.round(drag.x + (clientX - drag.startX) / scale);
+    const nextY = Math.round(drag.y + (clientY - drag.startY) / scale);
+    props.onMove(drag.id, Math.max(0, nextX), Math.max(0, nextY));
+  }
+
+  return (
+    <div className="surfaceMapFrame">
+      <div className="surfaceMapHeader">
+        <span>Screen workspace · 1920 × 1080 reference</span>
+        <span>Drag surfaces to position</span>
+      </div>
+      <div
+        className="surfaceMap"
+        onPointerMove={(event) => move(event.clientX, event.clientY)}
+        onPointerUp={() => setDrag(null)}
+        onPointerLeave={() => setDrag(null)}
+        style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
+      >
+        {props.config.overlays.filter((overlay) => overlay.enabled).map((overlay) => (
+          <button
+            key={overlay.id}
+            className={`surfaceMapItem ${props.selected === overlay.id ? "selected" : ""}`}
+            style={{
+              left: overlay.window.x * scale,
+              top: overlay.window.y * scale,
+              width: Math.max(58, overlay.window.width * scale),
+              height: Math.max(30, overlay.window.height * scale),
+            }}
+            onClick={() => props.onSelect(overlay.id)}
+            onPointerDown={(event) => {
+              props.onSelect(overlay.id);
+              setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            title={`${overlay.name} · ${overlay.window.x}, ${overlay.window.y}`}
+          >
+            <strong>{overlay.name}</strong>
+            <small>{overlay.window.x}, {overlay.window.y}</small>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1370,6 +1436,22 @@ function setOverlayWindow<K extends keyof WindowConfig>(
     ...next,
     overlays: next.overlays.map((overlay) => overlay.id === overlayId
       ? { ...overlay, window: { ...overlay.window, [key]: value } }
+      : overlay),
+  });
+}
+
+function setOverlayPosition(
+  config: OverlayConfig,
+  setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>,
+  overlayId: string,
+  x: number,
+  y: number,
+) {
+  const next = { ...config, window: { ...config.window, x, y } };
+  setConfig({
+    ...next,
+    overlays: next.overlays.map((overlay) => overlay.id === overlayId
+      ? { ...overlay, window: { ...overlay.window, x, y } }
       : overlay),
   });
 }
