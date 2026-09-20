@@ -145,11 +145,13 @@ mod windows_overlay {
             },
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
+                GetWindowRect,
                 PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, ShowWindow,
                 TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM,
                 HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY,
                 MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-                WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT,
+                WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+                WM_NCHITTEST, WM_PAINT,
                 WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
                 WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
@@ -944,6 +946,10 @@ mod windows_overlay {
                 handle_mouse_up(hwnd);
                 0
             }
+            WM_EXITSIZEMOVE => {
+                handle_window_move_end(hwnd);
+                0
+            }
             WM_NCHITTEST => edit_mode_hit_test(hwnd, lparam)
                 .unwrap_or_else(|| DefWindowProcW(hwnd, message, wparam, lparam)),
             WM_DESTROY => {
@@ -1146,6 +1152,31 @@ mod windows_overlay {
         }
     }
 
+    unsafe fn handle_window_move_end(hwnd: HWND) {
+        let Some(state) = shared_state(hwnd) else {
+            return;
+        };
+        if !state.edit_mode.load(Ordering::Relaxed) {
+            return;
+        }
+
+        let mut rect: RECT = zeroed();
+        if GetWindowRect(hwnd, &mut rect) == 0 {
+            return;
+        }
+        if let Ok(mut config) = state.config.lock() {
+            config.window.x = rect.left;
+            config.window.y = rect.top;
+            if let Some(layer_id) = state.overlay_layer.as_ref() {
+                if let Some(layer) = config.overlays.iter_mut().find(|layer| layer.id == layer_id.as_str()) {
+                    layer.window.x = rect.left;
+                    layer.window.y = rect.top;
+                }
+            }
+        }
+        save_runtime_config(state, None);
+    }
+
     fn save_runtime_config(state: &SharedState, widget: Option<WidgetId>) {
         let Some(path) = &state.config_path else {
             return;
@@ -1244,9 +1275,21 @@ mod windows_overlay {
         runtime_config: &OverlayConfig,
         widget: Option<WidgetId>,
     ) {
-        let Some(widget) = widget else {
+        if widget.is_none() {
+            if let Some(layer_id) = layer_id {
+                if let Some(layer) = latest.overlays.iter_mut().find(|layer| layer.id == layer_id) {
+                    if let Some(runtime_layer) = runtime_config.overlays.iter().find(|layer| layer.id == layer_id) {
+                        layer.window.x = runtime_layer.window.x;
+                        layer.window.y = runtime_layer.window.y;
+                    }
+                }
+            } else {
+                latest.window.x = runtime_config.window.x;
+                latest.window.y = runtime_config.window.y;
+            }
             return;
-        };
+        }
+        let Some(widget) = widget else { return; };
         let layout = widget_layout(runtime_config, widget).clone();
         if let Some(layer_id) = layer_id {
             if let Some(layer) = latest
