@@ -1144,6 +1144,10 @@ function SurfaceMap(props: {
     return () => observer.disconnect();
   }, []);
 
+  useEffect(() => {
+    setCustomWorkspace(props.workspace);
+  }, [props.workspace.width, props.workspace.height, props.workspace.originX, props.workspace.originY]);
+
   function move(clientX: number, clientY: number) {
     if (!drag) return;
     const overlay = props.config.overlays.find((item) => item.id === drag.id);
@@ -1170,7 +1174,7 @@ function SurfaceMap(props: {
         {workspacePresets.map(([label, size]) => (
           <button
             key={label}
-            className={size.width === virtualWidth && size.height === virtualHeight ? "selected" : ""}
+            className={size.width === virtualWidth && size.height === virtualHeight && size.originX === props.workspace.originX && size.originY === props.workspace.originY ? "selected" : ""}
             onClick={() => {
               setCustomWorkspace(size);
               props.onWorkspaceChange(size);
@@ -1181,10 +1185,10 @@ function SurfaceMap(props: {
         ))}
       </div>
       <div className="customWorkspace">
-        <label>Width <input type="number" min="320" max="16384" value={customWorkspace.width} onChange={(event) => setCustomWorkspace({ ...customWorkspace, width: Number(event.target.value) })} /></label>
-        <label>Height <input type="number" min="240" max="8640" value={customWorkspace.height} onChange={(event) => setCustomWorkspace({ ...customWorkspace, height: Number(event.target.value) })} /></label>
-        <label>Origin X <input type="number" value={customWorkspace.originX} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originX: Number(event.target.value) })} /></label>
-        <label>Origin Y <input type="number" value={customWorkspace.originY} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originY: Number(event.target.value) })} /></label>
+        <label>Width <input aria-label="Workspace width" type="number" min="320" max="16384" value={customWorkspace.width} onChange={(event) => setCustomWorkspace({ ...customWorkspace, width: Number(event.target.value) })} /></label>
+        <label>Height <input aria-label="Workspace height" type="number" min="240" max="8640" value={customWorkspace.height} onChange={(event) => setCustomWorkspace({ ...customWorkspace, height: Number(event.target.value) })} /></label>
+        <label>Origin X <input aria-label="Workspace origin X" type="number" value={customWorkspace.originX} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originX: Number(event.target.value) })} /></label>
+        <label>Origin Y <input aria-label="Workspace origin Y" type="number" value={customWorkspace.originY} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originY: Number(event.target.value) })} /></label>
         <button onClick={() => props.onWorkspaceChange({
           width: boundedInteger(customWorkspace.width, 320, 16384, virtualWidth),
           height: boundedInteger(customWorkspace.height, 240, 8640, virtualHeight),
