@@ -911,6 +911,31 @@ h1 span {
   color: var(--muted);
   font-size: 9px;
 }
+.surfaceMapSelection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--violet);
+  border-radius: 6px;
+  background: rgba(195, 166, 255, 0.08);
+  color: var(--muted);
+  font-size: 11px;
+}
+.surfaceMapSelection strong {
+  color: var(--violet);
+  font-family: var(--display);
+  letter-spacing: 0.04em;
+}
+.surfaceMapSelection span {
+  font-family: var(--display);
+}
+.surfaceMapSelection small {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 10px;
+}
 .windowPositionFields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

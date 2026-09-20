@@ -1173,7 +1173,8 @@ function SurfaceMap(props: {
     overlay.window.x < props.workspace.originX || overlay.window.y < props.workspace.originY
       || overlay.window.x + overlay.window.width > props.workspace.originX + virtualWidth
       || overlay.window.y + overlay.window.height > props.workspace.originY + virtualHeight,
-  ).length;
+    ).length;
+  const selectedOverlay = props.config.overlays.find((overlay) => overlay.id === props.selected);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -1285,6 +1286,15 @@ function SurfaceMap(props: {
           </button>
         ))}
       </div>
+      {selectedOverlay && (
+        <div className="surfaceMapSelection" aria-live="polite">
+          <strong>{selectedOverlay.name}</strong>
+          <span>{selectedOverlay.window.x}, {selectedOverlay.window.y}</span>
+          <span>{selectedOverlay.window.width} × {selectedOverlay.window.height}</span>
+          <span className={selectedOverlay.enabled ? "valueLive" : "valueMuted"}>{selectedOverlay.enabled ? "Enabled" : "Disabled"}</span>
+          <small>Focus a surface and use arrow keys to move it; hold Shift for 10 px.</small>
+        </div>
+      )}
     </div>
   );
 }
