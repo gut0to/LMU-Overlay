@@ -381,6 +381,10 @@ function App() {
   }
 
   async function importConfigText() {
+    if (config && JSON.stringify(config) !== lastSavedConfig.current
+      && !window.confirm("Importing will replace your pending changes. Continue?")) {
+      return;
+    }
     try {
       const response = await invoke<LoadResponse>("import_config", {
         text: configText,
