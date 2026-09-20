@@ -1625,6 +1625,10 @@ function WidgetLayoutFields(props: {
       <div className="buttonRow geometryActions">
         <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - props.layout.width) / 2)))}>Center horizontal</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - props.layout.height) / 2)))}>Center vertical</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", 0)}>Align left</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - props.layout.width))}>Align right</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - props.layout.height))}>Align bottom</button>
         <button className="secondaryButton" onClick={() => {
           props.onChange("width", 320);
           props.onChange("height", 80);
