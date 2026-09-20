@@ -710,6 +710,11 @@ h1 span {
   color: var(--muted);
   font-size: 11px;
 }
+.secondaryButton.active {
+  border-color: var(--violet);
+  background: rgba(201, 162, 244, 0.14);
+  color: var(--violet);
+}
 .saveState {
   display: inline-flex;
   align-items: center;

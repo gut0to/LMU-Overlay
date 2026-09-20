@@ -235,6 +235,7 @@ function App() {
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
+  const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
@@ -560,7 +561,9 @@ function App() {
   async function toggleOverlayEditMode() {
     try {
       const response = await invoke<string>("toggle_overlay_edit_mode");
-      setStatus(response === "edit_on" ? "Overlay edit mode enabled" : "Overlay edit mode disabled");
+      const enabled = response === "edit_on";
+      setOverlayEditMode(enabled);
+      setStatus(enabled ? "Overlay edit mode enabled" : "Overlay edit mode disabled");
     } catch (error) {
       setStatus(String(error));
     }
@@ -724,8 +727,8 @@ function App() {
             <Square size={16} />
             Stop overlay
           </button>
-          <button className="secondaryButton" onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
-            Edit overlay
+          <button className={`secondaryButton ${overlayEditMode ? "active" : ""}`} onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
+            {overlayEditMode ? "Exit edit mode" : "Edit overlay"}
           </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
