@@ -53,12 +53,14 @@ const presetNames = ["practice", "qualifying", "race", "endurance", "minimal"] a
 type StandardPresetKey = (typeof presetNames)[number];
 const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
-type WorkspaceSize = { width: number; height: number };
+type WorkspaceSize = { width: number; height: number; originX: number; originY: number };
 const workspacePresets: Array<[string, WorkspaceSize]> = [
-  ["1080p", { width: 1920, height: 1080 }],
-  ["1440p", { width: 2560, height: 1440 }],
-  ["Ultrawide", { width: 3440, height: 1440 }],
-  ["4K", { width: 3840, height: 2160 }],
+  ["Primary 1080p", { width: 1920, height: 1080, originX: 0, originY: 0 }],
+  ["Primary 1440p", { width: 2560, height: 1440, originX: 0, originY: 0 }],
+  ["Left monitor", { width: 1920, height: 1080, originX: -1920, originY: 0 }],
+  ["Right monitor", { width: 1920, height: 1080, originX: 1920, originY: 0 }],
+  ["Ultrawide", { width: 3440, height: 1440, originX: 0, originY: 0 }],
+  ["4K", { width: 3840, height: 2160, originX: 0, originY: 0 }],
 ];
 const performanceModes = [
   ["eco", "Eco"],
@@ -576,8 +578,8 @@ function App() {
       if (!current) return current;
       const target = current.overlays.find((overlay) => overlay.id === id);
       if (!target) return current;
-      const x = mode === "center" ? Math.max(0, Math.round((workspace.width - target.window.width) / 2)) : 0;
-      const y = mode === "center" ? Math.max(0, Math.round((workspace.height - target.window.height) / 2)) : 0;
+      const x = mode === "center" ? workspace.originX + Math.max(0, Math.round((workspace.width - target.window.width) / 2)) : workspace.originX;
+      const y = mode === "center" ? workspace.originY + Math.max(0, Math.round((workspace.height - target.window.height) / 2)) : workspace.originY;
       return {
         ...current,
         overlays: current.overlays.map((overlay) => overlay.id === id
@@ -1036,9 +1038,9 @@ function SurfaceMap(props: {
   const virtualHeight = props.workspace.height;
   const scale = canvasWidth / virtualWidth;
   const outOfBounds = props.config.overlays.filter((overlay) =>
-    overlay.window.x < 0 || overlay.window.y < 0
-      || overlay.window.x + overlay.window.width > virtualWidth
-      || overlay.window.y + overlay.window.height > virtualHeight,
+    overlay.window.x < props.workspace.originX || overlay.window.y < props.workspace.originY
+      || overlay.window.x + overlay.window.width > props.workspace.originX + virtualWidth
+      || overlay.window.y + overlay.window.height > props.workspace.originY + virtualHeight,
   ).length;
 
   useEffect(() => {
@@ -1058,15 +1060,15 @@ function SurfaceMap(props: {
     const nextY = Math.round(drag.y + (clientY - drag.startY) / scale);
     props.onMove(
       drag.id,
-      clamp(nextX, 0, Math.max(0, virtualWidth - overlay.window.width)),
-      clamp(nextY, 0, Math.max(0, virtualHeight - overlay.window.height)),
+          clamp(nextX, props.workspace.originX, props.workspace.originX + Math.max(0, virtualWidth - overlay.window.width)),
+          clamp(nextY, props.workspace.originY, props.workspace.originY + Math.max(0, virtualHeight - overlay.window.height)),
     );
   }
 
   return (
     <div className="surfaceMapFrame">
       <div className="surfaceMapHeader">
-        <span>Screen workspace · {virtualWidth} × {virtualHeight}</span>
+        <span>Screen workspace · {virtualWidth} × {virtualHeight} · origin {props.workspace.originX}, {props.workspace.originY}</span>
         <span className={outOfBounds > 0 ? "mapWarning" : "mapHint"}>
           {outOfBounds > 0 ? `${outOfBounds} surface${outOfBounds === 1 ? "" : "s"} outside workspace` : "Drag surfaces to position"}
         </span>
@@ -1095,8 +1097,8 @@ function SurfaceMap(props: {
             key={overlay.id}
             className={`surfaceMapItem ${props.selected === overlay.id ? "selected" : ""} ${!overlay.enabled ? "disabled" : ""}`}
             style={{
-              left: overlay.window.x * scale,
-              top: overlay.window.y * scale,
+              left: (overlay.window.x - props.workspace.originX) * scale,
+              top: (overlay.window.y - props.workspace.originY) * scale,
               width: Math.max(58, overlay.window.width * scale),
               height: Math.max(30, overlay.window.height * scale),
             }}
@@ -1118,8 +1120,8 @@ function SurfaceMap(props: {
               event.preventDefault();
               props.onMove(
                 overlay.id,
-                clamp(overlay.window.x + dx, 0, Math.max(0, virtualWidth - overlay.window.width)),
-                clamp(overlay.window.y + dy, 0, Math.max(0, virtualHeight - overlay.window.height)),
+                clamp(overlay.window.x + dx, props.workspace.originX, props.workspace.originX + Math.max(0, virtualWidth - overlay.window.width)),
+                clamp(overlay.window.y + dy, props.workspace.originY, props.workspace.originY + Math.max(0, virtualHeight - overlay.window.height)),
               );
             }}
             aria-label={`${overlay.name}, position ${overlay.window.x}, ${overlay.window.y}. Use arrow keys to move.`}
