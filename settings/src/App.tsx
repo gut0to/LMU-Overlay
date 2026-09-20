@@ -557,6 +557,15 @@ function App() {
     setStatus("New overlay added");
   }
 
+  async function toggleOverlayEditMode() {
+    try {
+      const response = await invoke<string>("toggle_overlay_edit_mode");
+      setStatus(response === "edit_on" ? "Overlay edit mode enabled" : "Overlay edit mode disabled");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
   function duplicateOverlayLayer(id: string) {
     setConfig((current) => {
       if (!current) return current;
@@ -714,6 +723,9 @@ function App() {
           <button className="dangerButton" onClick={stopOverlay} disabled={!overlayRunning}>
             <Square size={16} />
             Stop overlay
+          </button>
+          <button className="secondaryButton" onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
+            Edit overlay
           </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />

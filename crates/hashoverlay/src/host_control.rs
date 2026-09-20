@@ -13,6 +13,7 @@ enum ControlCommand {
     Reload,
     Show,
     Hide,
+    ToggleEdit,
     Stop,
     Shutdown,
 }
@@ -24,6 +25,7 @@ impl ControlCommand {
             "reload" => Some(Self::Reload),
             "show" => Some(Self::Show),
             "hide" => Some(Self::Hide),
+            "edit" => Some(Self::ToggleEdit),
             "stop" => Some(Self::Stop),
             "shutdown" => Some(Self::Shutdown),
             _ => None,
@@ -65,13 +67,22 @@ mod windows_control {
         pub fn start(
             running: Arc<AtomicBool>,
             visible: Arc<AtomicBool>,
+            edit_mode: Arc<AtomicBool>,
             reload_requests: std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
         ) -> std::io::Result<Self> {
             let server_running = running.clone();
             let server_visible = visible.clone();
+            let server_edit_mode = edit_mode.clone();
             let handle = thread::Builder::new()
                 .name("hashoverlay-host-control".to_string())
-                .spawn(move || server_loop(server_running, server_visible, reload_requests))?;
+                .spawn(move || {
+                    server_loop(
+                        server_running,
+                        server_visible,
+                        server_edit_mode,
+                        reload_requests,
+                    )
+                })?;
             Ok(Self {
                 running,
                 handle: Some(handle),
@@ -100,6 +111,7 @@ mod windows_control {
     fn server_loop(
         running: Arc<AtomicBool>,
         visible: Arc<AtomicBool>,
+        edit_mode: Arc<AtomicBool>,
         reload_requests: std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
     ) {
         while running.load(Ordering::Relaxed) {
@@ -143,6 +155,16 @@ mod windows_control {
                 Some(ControlCommand::Hide) => {
                     visible.store(false, Ordering::Relaxed);
                     "hidden".to_string()
+                }
+                Some(ControlCommand::ToggleEdit) => {
+                    let enabled = !edit_mode.load(Ordering::Relaxed);
+                    edit_mode.store(enabled, Ordering::Relaxed);
+                    visible.store(true, Ordering::Relaxed);
+                    if enabled {
+                        "edit_on".to_string()
+                    } else {
+                        "edit_off".to_string()
+                    }
                 }
                 Some(ControlCommand::Stop) | Some(ControlCommand::Shutdown) => {
                     running.store(false, Ordering::Relaxed);
@@ -284,6 +306,7 @@ impl HostControl {
     pub fn start(
         _running: Arc<AtomicBool>,
         _visible: Arc<AtomicBool>,
+        _edit_mode: Arc<AtomicBool>,
         _reload_requests: std::sync::mpsc::Sender<SyncSender<Result<(), String>>>,
     ) -> std::io::Result<Self> {
         Ok(Self)
@@ -308,6 +331,10 @@ mod tests {
         );
         assert_eq!(ControlCommand::parse("show"), Some(ControlCommand::Show));
         assert_eq!(ControlCommand::parse("hide"), Some(ControlCommand::Hide));
+        assert_eq!(
+            ControlCommand::parse("edit"),
+            Some(ControlCommand::ToggleEdit)
+        );
         assert_eq!(ControlCommand::parse("stop"), Some(ControlCommand::Stop));
         assert_eq!(ControlCommand::parse("invalid"), None);
     }

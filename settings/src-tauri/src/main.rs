@@ -183,6 +183,17 @@ fn overlay_status() -> Result<bool, String> {
     Ok(host_control_is_ready())
 }
 
+#[tauri::command]
+fn toggle_overlay_edit_mode() -> Result<String, String> {
+    let response = send_host_command("edit")
+        .map_err(|error| format!("Could not reach overlay host: {error}"))?;
+    if response == "edit_on" || response == "edit_off" {
+        Ok(response)
+    } else {
+        Err(format!("host returned '{response}'"))
+    }
+}
+
 fn reload_overlay_config_after_save() -> Result<(), String> {
     if !host_control_is_ready() {
         return Ok(());
@@ -398,6 +409,7 @@ fn main() {
             start_overlay,
             stop_overlay,
             overlay_status,
+            toggle_overlay_edit_mode,
             open_config_folder
         ])
         .setup(|_| {
