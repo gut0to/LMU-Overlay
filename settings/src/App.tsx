@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
+  Copy,
   FolderOpen,
   Gauge,
   LayoutGrid,
@@ -511,6 +512,28 @@ function App() {
     setStatus("New overlay added");
   }
 
+  function duplicateOverlayLayer(id: string) {
+    setConfig((current) => {
+      if (!current) return current;
+      const source = current.overlays.find((overlay) => overlay.id === id);
+      if (!source) return current;
+      const nextId = nextOverlayId(current.overlays);
+      const duplicate: OverlayLayerConfig = {
+        ...source,
+        id: nextId,
+        name: `${source.name} copy`,
+        window: { ...source.window, x: source.window.x + 36, y: source.window.y + 36 },
+        widgets: [...source.widgets],
+        layout_overrides: Object.fromEntries(
+          Object.entries(source.layout_overrides).map(([key, layout]) => [key, { ...layout }]),
+        ),
+      };
+      setActiveOverlayId(nextId);
+      return { ...current, overlays: [...current.overlays, duplicate] };
+    });
+    setStatus("Overlay duplicated");
+  }
+
   function updateOverlayLayer(id: string, update: Partial<OverlayLayerConfig>) {
     setConfig((current) => current ? {
       ...current,
@@ -657,6 +680,7 @@ function App() {
             <div className="layerControls">
               <input value={overlay.name} onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })} aria-label="Overlay name" />
               <label className="toggle"><input type="checkbox" checked={overlay.enabled} onChange={(event) => updateOverlayLayer(overlay.id, { enabled: event.target.checked })} /><span>Run this overlay</span></label>
+              <button className="secondaryButton" onClick={() => duplicateOverlayLayer(overlay.id)}><Copy size={15} /> Duplicate</button>
               <button className="dangerButton" onClick={() => removeOverlayLayer(overlay.id)} disabled={config.overlays.length <= 1}><Trash2 size={15} /> Remove</button>
             </div>
           );
@@ -985,10 +1009,10 @@ function SurfaceMap(props: {
         onPointerLeave={() => setDrag(null)}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
-        {props.config.overlays.filter((overlay) => overlay.enabled).map((overlay) => (
+        {props.config.overlays.map((overlay) => (
           <button
             key={overlay.id}
-            className={`surfaceMapItem ${props.selected === overlay.id ? "selected" : ""}`}
+            className={`surfaceMapItem ${props.selected === overlay.id ? "selected" : ""} ${!overlay.enabled ? "disabled" : ""}`}
             style={{
               left: overlay.window.x * scale,
               top: overlay.window.y * scale,

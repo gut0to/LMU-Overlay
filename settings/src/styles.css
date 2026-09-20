@@ -767,6 +767,13 @@ h1 span {
   background: rgba(201, 162, 244, 0.28);
   box-shadow: 0 0 0 3px rgba(201, 162, 244, 0.16);
 }
+.surfaceMapItem.disabled {
+  border-style: dashed;
+  border-color: var(--line-bright);
+  background: rgba(72, 70, 62, 0.28);
+  color: var(--muted);
+  opacity: 0.7;
+}
 .surfaceMapItem strong,
 .surfaceMapItem small {
   max-width: 100%;
