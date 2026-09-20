@@ -62,6 +62,7 @@ const workspacePresets: Array<[string, WorkspaceSize]> = [
   ["Ultrawide", { width: 3440, height: 1440, originX: 0, originY: 0 }],
   ["4K", { width: 3840, height: 2160, originX: 0, originY: 0 }],
 ];
+const workspaceStorageKey = "hashoverlay.editor.workspace";
 const performanceModes = [
   ["eco", "Eco"],
   ["normal", "Normal"],
@@ -242,7 +243,15 @@ function App() {
   const [widgetSearch, setWidgetSearch] = useState("");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
-  const [workspace, setWorkspace] = useState<WorkspaceSize>(workspacePresets[0][1]);
+  const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
+    try {
+      const saved = window.localStorage.getItem(workspaceStorageKey);
+      if (saved) return { ...workspacePresets[0][1], ...JSON.parse(saved) } as WorkspaceSize;
+    } catch {
+      // Ignore malformed editor-only state and use the safe default.
+    }
+    return workspacePresets[0][1];
+  });
   const hydratedConfig = useRef(false);
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
@@ -277,6 +286,10 @@ function App() {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
   }, [config]);
+
+  useEffect(() => {
+    window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspace));
+  }, [workspace]);
 
   async function refreshOverlayStatus(): Promise<boolean> {
     try {
