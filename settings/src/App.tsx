@@ -1052,9 +1052,15 @@ function SurfaceMap(props: {
 
   function move(clientX: number, clientY: number) {
     if (!drag) return;
+    const overlay = props.config.overlays.find((item) => item.id === drag.id);
+    if (!overlay) return;
     const nextX = Math.round(drag.x + (clientX - drag.startX) / scale);
     const nextY = Math.round(drag.y + (clientY - drag.startY) / scale);
-    props.onMove(drag.id, Math.max(0, nextX), Math.max(0, nextY));
+    props.onMove(
+      drag.id,
+      clamp(nextX, 0, Math.max(0, virtualWidth - overlay.window.width)),
+      clamp(nextY, 0, Math.max(0, virtualHeight - overlay.window.height)),
+    );
   }
 
   return (
@@ -1112,8 +1118,8 @@ function SurfaceMap(props: {
               event.preventDefault();
               props.onMove(
                 overlay.id,
-                Math.max(0, overlay.window.x + dx),
-                Math.max(0, overlay.window.y + dy),
+                clamp(overlay.window.x + dx, 0, Math.max(0, virtualWidth - overlay.window.width)),
+                clamp(overlay.window.y + dy, 0, Math.max(0, virtualHeight - overlay.window.height)),
               );
             }}
             aria-label={`${overlay.name}, position ${overlay.window.x}, ${overlay.window.y}. Use arrow keys to move.`}
