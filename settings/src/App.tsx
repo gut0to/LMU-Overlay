@@ -541,6 +541,23 @@ function App() {
     } : current);
   }
 
+  function alignOverlay(id: string, mode: "top-left" | "center") {
+    setConfig((current) => {
+      if (!current) return current;
+      const target = current.overlays.find((overlay) => overlay.id === id);
+      if (!target) return current;
+      const x = mode === "center" ? Math.max(0, Math.round((1920 - target.window.width) / 2)) : 0;
+      const y = mode === "center" ? Math.max(0, Math.round((1080 - target.window.height) / 2)) : 0;
+      return {
+        ...current,
+        overlays: current.overlays.map((overlay) => overlay.id === id
+          ? { ...overlay, window: { ...overlay.window, x, y } }
+          : overlay),
+      };
+    });
+    setStatus(mode === "center" ? "Overlay centered" : "Overlay aligned to top-left");
+  }
+
   function removeOverlayLayer(id: string) {
     setConfig((current) => {
       if (!current || current.overlays.length <= 1) {
@@ -681,6 +698,8 @@ function App() {
               <input value={overlay.name} onChange={(event) => updateOverlayLayer(overlay.id, { name: event.target.value })} aria-label="Overlay name" />
               <label className="toggle"><input type="checkbox" checked={overlay.enabled} onChange={(event) => updateOverlayLayer(overlay.id, { enabled: event.target.checked })} /><span>Run this overlay</span></label>
               <button className="secondaryButton" onClick={() => duplicateOverlayLayer(overlay.id)}><Copy size={15} /> Duplicate</button>
+              <button className="secondaryButton" onClick={() => alignOverlay(overlay.id, "top-left")}>Top-left</button>
+              <button className="secondaryButton" onClick={() => alignOverlay(overlay.id, "center")}>Center</button>
               <button className="dangerButton" onClick={() => removeOverlayLayer(overlay.id)} disabled={config.overlays.length <= 1}><Trash2 size={15} /> Remove</button>
             </div>
           );
