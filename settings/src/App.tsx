@@ -894,6 +894,11 @@ function App() {
           <aside className="layoutInspector">
             <Section icon={<LayoutGrid />} title="Overlay Window">
               <p className="previewHint">This is the real screen position of the selected surface. Set it here, or use F10 in-game for direct adjustment.</p>
+              <button className="secondaryButton geometryCopyButton" onClick={() => {
+                const windowConfig = (activeOverlayConfig ?? config).window;
+                void navigator.clipboard?.writeText(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
+                setStatus("Window geometry copied");
+              }}>Copy window geometry</button>
               <div className="windowPositionFields">
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
                 <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
