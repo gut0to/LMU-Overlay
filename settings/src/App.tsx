@@ -726,9 +726,9 @@ function App() {
           </div>
         </div>
         <div className="topbarRight">
-          <div className={`statusPill ${overlayRunning ? "live" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
+          <div className={`statusPill ${overlayRunning ? "live" : ""} ${overlayRunning && !overlayVisible ? "hiddenState" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
             <span className="statusDot" />
-            {overlayRunning ? "Overlay live" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
+            {overlayRunning ? overlayVisible ? "Overlay live" : "Overlay hidden" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
           </div>
           {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">

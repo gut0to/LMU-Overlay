@@ -710,6 +710,14 @@ h1 span {
   color: var(--muted);
   font-size: 11px;
 }
+.statusPill.hiddenState {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.statusPill.hiddenState .statusDot {
+  background: var(--amber);
+  box-shadow: none;
+}
 .secondaryButton.active {
   border-color: var(--violet);
   background: rgba(201, 162, 244, 0.14);
