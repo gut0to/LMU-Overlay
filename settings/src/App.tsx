@@ -1339,6 +1339,25 @@ function OverlayPreview(props: {
                 });
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
+              onKeyDown={(event) => {
+                if (props.config.layout.lock_all || layout.locked) return;
+                const step = event.shiftKey ? 10 : 1;
+                let dx = 0;
+                let dy = 0;
+                if (event.key === "ArrowLeft") dx = -step;
+                if (event.key === "ArrowRight") dx = step;
+                if (event.key === "ArrowUp") dy = -step;
+                if (event.key === "ArrowDown") dy = step;
+                if (dx === 0 && dy === 0) return;
+                event.preventDefault();
+                props.onSelect(key);
+                props.onLayoutChange(key, {
+                  ...layout,
+                  x: clamp(layout.x + dx, 0, Math.max(0, props.config.window.width - layout.width)),
+                  y: clamp(layout.y + dy, 0, Math.max(0, props.config.window.height - layout.height)),
+                });
+              }}
+              aria-label={`${label}, position ${layout.x}, ${layout.y}. Use arrow keys to move.`}
               title={label}
             >
               <span>{label}</span>
