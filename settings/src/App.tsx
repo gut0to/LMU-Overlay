@@ -1164,6 +1164,7 @@ function SurfaceMap(props: {
   onMove: (id: string, x: number, y: number) => void;
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  const [copiedGeometry, setCopiedGeometry] = useState(false);
   const [customWorkspace, setCustomWorkspace] = useState(props.workspace);
   const mapRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
@@ -1299,6 +1300,11 @@ function SurfaceMap(props: {
           <span>{selectedOverlay.window.x}, {selectedOverlay.window.y}</span>
           <span>{selectedOverlay.window.width} × {selectedOverlay.window.height}</span>
           <span className={selectedOverlay.enabled ? "valueLive" : "valueMuted"}>{selectedOverlay.enabled ? "Enabled" : "Disabled"}</span>
+          <button className="mapFitButton" onClick={() => {
+            void navigator.clipboard?.writeText(`${selectedOverlay.name}: x=${selectedOverlay.window.x}, y=${selectedOverlay.window.y}, width=${selectedOverlay.window.width}, height=${selectedOverlay.window.height}`);
+            setCopiedGeometry(true);
+            window.setTimeout(() => setCopiedGeometry(false), 1400);
+          }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
           <small>Focus a surface and use arrow keys to move it; hold Shift for 10 px.</small>
         </div>
       )}
