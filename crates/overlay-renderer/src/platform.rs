@@ -4351,6 +4351,29 @@ mod windows_overlay {
         }
 
         #[test]
+        fn runtime_window_mutation_preserves_newer_global_settings() {
+            let mut latest = OverlayConfig::default();
+            latest.normalize();
+            latest.style.theme = "settings-newer".to_string();
+            latest.overlays[0].id = "race".to_string();
+            let mut runtime = latest.for_overlay_layer(Some("race")).unwrap();
+            runtime.window.x = 420;
+            runtime.window.y = 180;
+            runtime.window.width = 900;
+            runtime.window.height = 240;
+            runtime.overlays = latest.overlays.clone();
+            runtime.overlays[0].window = runtime.window.clone();
+
+            apply_runtime_layout_mutation(&mut latest, Some("race"), &runtime, None);
+
+            assert_eq!(latest.style.theme, "settings-newer");
+            assert_eq!(latest.overlays[0].window.x, 420);
+            assert_eq!(latest.overlays[0].window.y, 180);
+            assert_eq!(latest.overlays[0].window.width, 900);
+            assert_eq!(latest.overlays[0].window.height, 240);
+        }
+
+        #[test]
         fn picks_input_coaching_message_from_reference_gap() {
             let mut braking = snapshot();
             braking.brake = 0.4;
