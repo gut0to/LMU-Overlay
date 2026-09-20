@@ -920,6 +920,8 @@ function App() {
           <RangeField label="Snap distance" min={0} max={64} step={1} value={config.layout.snap_distance} onChange={(value) => setLayoutFlag(config, setConfig, "snap_distance", value)} />
           <WidgetLayoutFields
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
+            windowWidth={(activeOverlayConfig ?? config).window.width}
+            windowHeight={(activeOverlayConfig ?? config).window.height}
             onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
@@ -1614,10 +1616,20 @@ function Section({ icon, title, children }: SectionProps) {
 
 function WidgetLayoutFields(props: {
   layout: WidgetLayout;
+  windowWidth: number;
+  windowHeight: number;
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
 }) {
   return (
     <>
+      <div className="buttonRow geometryActions">
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - props.layout.width) / 2)))}>Center horizontal</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - props.layout.height) / 2)))}>Center vertical</button>
+        <button className="secondaryButton" onClick={() => {
+          props.onChange("width", 320);
+          props.onChange("height", 80);
+        }}>Reset size</button>
+      </div>
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
       <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
       <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
