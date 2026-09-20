@@ -1162,9 +1162,13 @@ mod windows_overlay {
         if GetWindowRect(hwnd, &mut rect) == 0 {
             return;
         }
+        let width = (rect.right - rect.left).max(48);
+        let height = (rect.bottom - rect.top).max(20);
         if let Ok(mut config) = state.config.lock() {
             config.window.x = rect.left;
             config.window.y = rect.top;
+            config.window.width = width;
+            config.window.height = height;
             if let Some(layer_id) = state.overlay_layer.as_ref() {
                 if let Some(layer) = config
                     .overlays
@@ -1173,6 +1177,8 @@ mod windows_overlay {
                 {
                     layer.window.x = rect.left;
                     layer.window.y = rect.top;
+                    layer.window.width = width;
+                    layer.window.height = height;
                 }
             }
         }
@@ -1291,11 +1297,15 @@ mod windows_overlay {
                     {
                         layer.window.x = runtime_layer.window.x;
                         layer.window.y = runtime_layer.window.y;
+                        layer.window.width = runtime_layer.window.width;
+                        layer.window.height = runtime_layer.window.height;
                     }
                 }
             } else {
                 latest.window.x = runtime_config.window.x;
                 latest.window.y = runtime_config.window.y;
+                latest.window.width = runtime_config.window.width;
+                latest.window.height = runtime_config.window.height;
             }
             return;
         }
