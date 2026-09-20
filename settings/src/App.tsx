@@ -1303,6 +1303,14 @@ function OverlayPreview(props: {
         </span>
         {collisions.length > 0 && <button className="tidyLayoutButton" onClick={props.onTidyLayout}>Arrange widgets</button>}
       </div>
+      <div className="previewShortcuts" aria-label="Preview keyboard shortcuts">
+        <span><kbd>Click</kbd> select</span>
+        <span><kbd>Drag</kbd> move</span>
+        <span><kbd>Corner</kbd> resize</span>
+        <span><kbd>↑ ↓ ← →</kbd> nudge</span>
+        <span><kbd>Shift</kbd> 10 px</span>
+        {props.config.layout.lock_all && <strong>Editing locked</strong>}
+      </div>
       <div className="previewWrap">
         <div
         className="preview"
