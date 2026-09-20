@@ -1025,6 +1025,23 @@ function SurfaceMap(props: {
               setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
               event.currentTarget.setPointerCapture(event.pointerId);
             }}
+            onKeyDown={(event) => {
+              const step = event.shiftKey ? 10 : 1;
+              let dx = 0;
+              let dy = 0;
+              if (event.key === "ArrowLeft") dx = -step;
+              if (event.key === "ArrowRight") dx = step;
+              if (event.key === "ArrowUp") dy = -step;
+              if (event.key === "ArrowDown") dy = step;
+              if (dx === 0 && dy === 0) return;
+              event.preventDefault();
+              props.onMove(
+                overlay.id,
+                Math.max(0, overlay.window.x + dx),
+                Math.max(0, overlay.window.y + dy),
+              );
+            }}
+            aria-label={`${overlay.name}, position ${overlay.window.x}, ${overlay.window.y}. Use arrow keys to move.`}
             title={`${overlay.name} · ${overlay.window.x}, ${overlay.window.y}`}
           >
             <strong>{overlay.name}</strong>
