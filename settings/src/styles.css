@@ -831,6 +831,14 @@ h1 span {
   font-weight: 700;
   text-transform: uppercase;
 }
+.customWorkspace .workspaceResetButton {
+  border-color: var(--line-bright);
+  color: var(--muted);
+}
+.customWorkspace .workspaceResetButton:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
 .surfaceMap {
   position: relative;
   width: 100%;

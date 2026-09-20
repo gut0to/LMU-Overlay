@@ -618,6 +618,13 @@ function App() {
     setStatus("Surfaces fitted to workspace");
   }
 
+  function resetWorkspacePreference() {
+    const safeDefault = workspacePresets[0][1];
+    window.localStorage.removeItem(workspaceStorageKey);
+    setWorkspace(safeDefault);
+    setStatus("Workspace reset");
+  }
+
   function removeOverlayLayer(id: string) {
     setConfig((current) => {
       if (!current || current.overlays.length <= 1) {
@@ -809,6 +816,7 @@ function App() {
               workspace={workspace}
               onWorkspaceChange={setWorkspace}
               onFitToWorkspace={fitOverlaysToWorkspace}
+              onResetWorkspace={resetWorkspacePreference}
               onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
             />
             <OverlayPreview
@@ -1057,6 +1065,7 @@ function SurfaceMap(props: {
   workspace: WorkspaceSize;
   onWorkspaceChange: (size: WorkspaceSize) => void;
   onFitToWorkspace: () => void;
+  onResetWorkspace: () => void;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
 }) {
@@ -1125,11 +1134,12 @@ function SurfaceMap(props: {
         <label>Origin X <input type="number" value={customWorkspace.originX} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originX: Number(event.target.value) })} /></label>
         <label>Origin Y <input type="number" value={customWorkspace.originY} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originY: Number(event.target.value) })} /></label>
         <button onClick={() => props.onWorkspaceChange({
-          width: Math.max(320, Math.min(16384, Math.round(customWorkspace.width))),
-          height: Math.max(240, Math.min(8640, Math.round(customWorkspace.height))),
-          originX: Math.round(customWorkspace.originX),
-          originY: Math.round(customWorkspace.originY),
+          width: boundedInteger(customWorkspace.width, 320, 16384, virtualWidth),
+          height: boundedInteger(customWorkspace.height, 240, 8640, virtualHeight),
+          originX: finiteInteger(customWorkspace.originX, props.workspace.originX),
+          originY: finiteInteger(customWorkspace.originY, props.workspace.originY),
         })}>Use custom</button>
+        <button className="workspaceResetButton" onClick={props.onResetWorkspace}>Reset editor</button>
       </div>
       <div
         className="surfaceMap"
@@ -1306,6 +1316,14 @@ function OverlayPreview(props: {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function finiteInteger(value: number, fallback: number) {
+  return Number.isFinite(value) ? Math.round(value) : fallback;
+}
+
+function boundedInteger(value: number, min: number, max: number, fallback: number) {
+  return clamp(finiteInteger(value, fallback), min, max);
 }
 
 function layoutEntries(config: OverlayConfig): Array<{ key: LayoutSelection; label: string; layout: WidgetLayout }> {
