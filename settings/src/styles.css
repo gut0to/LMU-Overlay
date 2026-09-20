@@ -761,6 +761,20 @@ h1 span {
 .mapWarning {
   color: var(--amber);
 }
+.mapFitButton {
+  min-height: 26px;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--amber);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.mapFitButton:hover {
+  background: rgba(240, 172, 100, 0.14);
+}
 .workspacePresets {
   display: flex;
   flex-wrap: wrap;

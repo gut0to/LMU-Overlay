@@ -590,6 +590,21 @@ function App() {
     setStatus(mode === "center" ? "Overlay centered" : "Overlay aligned to top-left");
   }
 
+  function fitOverlaysToWorkspace() {
+    setConfig((current) => current ? {
+      ...current,
+      overlays: current.overlays.map((overlay) => ({
+        ...overlay,
+        window: {
+          ...overlay.window,
+          x: Math.max(workspace.originX, Math.min(overlay.window.x, workspace.originX + workspace.width - overlay.window.width)),
+          y: Math.max(workspace.originY, Math.min(overlay.window.y, workspace.originY + workspace.height - overlay.window.height)),
+        },
+      })),
+    } : current);
+    setStatus("Surfaces fitted to workspace");
+  }
+
   function removeOverlayLayer(id: string) {
     setConfig((current) => {
       if (!current || current.overlays.length <= 1) {
@@ -780,6 +795,7 @@ function App() {
               onSelect={setActiveOverlayId}
               workspace={workspace}
               onWorkspaceChange={setWorkspace}
+              onFitToWorkspace={fitOverlaysToWorkspace}
               onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
             />
             <OverlayPreview
@@ -1027,6 +1043,7 @@ function SurfaceMap(props: {
   selected: string;
   workspace: WorkspaceSize;
   onWorkspaceChange: (size: WorkspaceSize) => void;
+  onFitToWorkspace: () => void;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
 }) {
@@ -1072,6 +1089,7 @@ function SurfaceMap(props: {
         <span className={outOfBounds > 0 ? "mapWarning" : "mapHint"}>
           {outOfBounds > 0 ? `${outOfBounds} surface${outOfBounds === 1 ? "" : "s"} outside workspace` : "Drag surfaces to position"}
         </span>
+        {outOfBounds > 0 && <button className="mapFitButton" onClick={props.onFitToWorkspace}>Fit surfaces</button>}
       </div>
       <div className="workspacePresets" aria-label="Workspace resolution">
         {workspacePresets.map(([label, size]) => (
