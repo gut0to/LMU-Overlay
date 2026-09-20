@@ -16,7 +16,7 @@ import {
   Timer,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CoachingConfig,
   CustomPresetConfig,
@@ -948,11 +948,21 @@ function SurfaceMap(props: {
   onMove: (id: string, x: number, y: number) => void;
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
-  const canvasWidth = 900;
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [canvasWidth, setCanvasWidth] = useState(900);
   const canvasHeight = 506;
   const virtualWidth = 1920;
   const virtualHeight = 1080;
   const scale = canvasWidth / virtualWidth;
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const updateSize = () => setCanvasWidth(mapRef.current?.clientWidth || 900);
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(mapRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   function move(clientX: number, clientY: number) {
     if (!drag) return;
@@ -969,6 +979,7 @@ function SurfaceMap(props: {
       </div>
       <div
         className="surfaceMap"
+        ref={mapRef}
         onPointerMove={(event) => move(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerLeave={() => setDrag(null)}
