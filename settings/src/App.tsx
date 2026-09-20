@@ -1048,6 +1048,7 @@ function SurfaceMap(props: {
   onMove: (id: string, x: number, y: number) => void;
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  const [customWorkspace, setCustomWorkspace] = useState(props.workspace);
   const mapRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
   const canvasHeight = 506;
@@ -1096,11 +1097,26 @@ function SurfaceMap(props: {
           <button
             key={label}
             className={size.width === virtualWidth && size.height === virtualHeight ? "selected" : ""}
-            onClick={() => props.onWorkspaceChange(size)}
+            onClick={() => {
+              setCustomWorkspace(size);
+              props.onWorkspaceChange(size);
+            }}
           >
             {label}
           </button>
         ))}
+      </div>
+      <div className="customWorkspace">
+        <label>Width <input type="number" min="320" max="16384" value={customWorkspace.width} onChange={(event) => setCustomWorkspace({ ...customWorkspace, width: Number(event.target.value) })} /></label>
+        <label>Height <input type="number" min="240" max="8640" value={customWorkspace.height} onChange={(event) => setCustomWorkspace({ ...customWorkspace, height: Number(event.target.value) })} /></label>
+        <label>Origin X <input type="number" value={customWorkspace.originX} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originX: Number(event.target.value) })} /></label>
+        <label>Origin Y <input type="number" value={customWorkspace.originY} onChange={(event) => setCustomWorkspace({ ...customWorkspace, originY: Number(event.target.value) })} /></label>
+        <button onClick={() => props.onWorkspaceChange({
+          width: Math.max(320, Math.min(16384, Math.round(customWorkspace.width))),
+          height: Math.max(240, Math.min(8640, Math.round(customWorkspace.height))),
+          originX: Math.round(customWorkspace.originX),
+          originY: Math.round(customWorkspace.originY),
+        })}>Use custom</button>
       </div>
       <div
         className="surfaceMap"

@@ -796,6 +796,41 @@ h1 span {
   background: rgba(117, 202, 208, 0.14);
   color: var(--blue);
 }
+.customWorkspace {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(90px, 1fr)) auto;
+  gap: 7px;
+  align-items: end;
+}
+.customWorkspace label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.customWorkspace input {
+  width: 100%;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 6px;
+  background: var(--field);
+  color: var(--ink);
+  font-size: 11px;
+}
+.customWorkspace button {
+  min-height: 28px;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
 .surfaceMap {
   position: relative;
   width: 100%;
@@ -1095,6 +1130,12 @@ h1 span {
   .previewWrap {
     min-height: 420px;
     padding: 16px;
+  }
+  .customWorkspace {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .customWorkspace button {
+    grid-column: 1 / -1;
   }
   .previewStatus {
     align-items: flex-start;
