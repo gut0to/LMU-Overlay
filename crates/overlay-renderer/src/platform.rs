@@ -145,15 +145,13 @@ mod windows_overlay {
             },
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
-                GetWindowRect,
-                PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes, ShowWindow,
-                TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE, HTBOTTOM,
-                HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA, LWA_COLORKEY,
-                MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-                WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-                WM_NCHITTEST, WM_PAINT,
-                WM_SIZE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-                WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+                GetWindowRect, PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes,
+                ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWL_EXSTYLE,
+                HTBOTTOM, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTRIGHT, HWND_TOPMOST, LWA_ALPHA,
+                LWA_COLORKEY, MSG, SWP_NOACTIVATE, SW_HIDE, SW_SHOW, WM_DESTROY, WM_DPICHANGED,
+                WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_HOTKEY, WM_LBUTTONDOWN, WM_LBUTTONUP,
+                WM_MOUSEMOVE, WM_NCHITTEST, WM_PAINT, WM_SIZE, WNDCLASSW, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
             },
         },
     };
@@ -1168,7 +1166,11 @@ mod windows_overlay {
             config.window.x = rect.left;
             config.window.y = rect.top;
             if let Some(layer_id) = state.overlay_layer.as_ref() {
-                if let Some(layer) = config.overlays.iter_mut().find(|layer| layer.id == layer_id.as_str()) {
+                if let Some(layer) = config
+                    .overlays
+                    .iter_mut()
+                    .find(|layer| layer.id == layer_id.as_str())
+                {
                     layer.window.x = rect.left;
                     layer.window.y = rect.top;
                 }
@@ -1277,8 +1279,16 @@ mod windows_overlay {
     ) {
         if widget.is_none() {
             if let Some(layer_id) = layer_id {
-                if let Some(layer) = latest.overlays.iter_mut().find(|layer| layer.id == layer_id) {
-                    if let Some(runtime_layer) = runtime_config.overlays.iter().find(|layer| layer.id == layer_id) {
+                if let Some(layer) = latest
+                    .overlays
+                    .iter_mut()
+                    .find(|layer| layer.id == layer_id)
+                {
+                    if let Some(runtime_layer) = runtime_config
+                        .overlays
+                        .iter()
+                        .find(|layer| layer.id == layer_id)
+                    {
                         layer.window.x = runtime_layer.window.x;
                         layer.window.y = runtime_layer.window.y;
                     }
@@ -1289,7 +1299,9 @@ mod windows_overlay {
             }
             return;
         }
-        let Some(widget) = widget else { return; };
+        let Some(widget) = widget else {
+            return;
+        };
         let layout = widget_layout(runtime_config, widget).clone();
         if let Some(layer_id) = layer_id {
             if let Some(layer) = latest
