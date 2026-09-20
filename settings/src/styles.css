@@ -754,6 +754,13 @@ h1 span {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+.mapHint,
+.mapWarning {
+  font-weight: 700;
+}
+.mapWarning {
+  color: var(--amber);
+}
 .workspacePresets {
   display: flex;
   flex-wrap: wrap;

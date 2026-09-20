@@ -1035,6 +1035,11 @@ function SurfaceMap(props: {
   const virtualWidth = props.workspace.width;
   const virtualHeight = props.workspace.height;
   const scale = canvasWidth / virtualWidth;
+  const outOfBounds = props.config.overlays.filter((overlay) =>
+    overlay.window.x < 0 || overlay.window.y < 0
+      || overlay.window.x + overlay.window.width > virtualWidth
+      || overlay.window.y + overlay.window.height > virtualHeight,
+  ).length;
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -1056,7 +1061,9 @@ function SurfaceMap(props: {
     <div className="surfaceMapFrame">
       <div className="surfaceMapHeader">
         <span>Screen workspace · {virtualWidth} × {virtualHeight}</span>
-        <span>Drag surfaces to position</span>
+        <span className={outOfBounds > 0 ? "mapWarning" : "mapHint"}>
+          {outOfBounds > 0 ? `${outOfBounds} surface${outOfBounds === 1 ? "" : "s"} outside workspace` : "Drag surfaces to position"}
+        </span>
       </div>
       <div className="workspacePresets" aria-label="Workspace resolution">
         {workspacePresets.map(([label, size]) => (
