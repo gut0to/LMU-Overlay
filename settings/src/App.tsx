@@ -238,6 +238,7 @@ function App() {
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
+  const [layoutSearch, setLayoutSearch] = useState("");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
@@ -699,6 +700,10 @@ function App() {
     [config, activeOverlayId],
   );
   const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
+  const filteredLayoutEntries = useMemo(() => {
+    const query = layoutSearch.trim().toLocaleLowerCase();
+    return availableLayoutEntries.filter((entry) => !query || entry.label.toLocaleLowerCase().includes(query));
+  }, [availableLayoutEntries, layoutSearch]);
 
   useEffect(() => {
     if (!availableLayoutEntries.some((entry) => entry.key === selectedLayout)) {
@@ -894,13 +899,23 @@ function App() {
               <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
             </Section>
             <Section icon={<Magnet />} title="Selected Widget">
+          <div className="layoutPickerHeader">
+            <input
+              value={layoutSearch}
+              onChange={(event) => setLayoutSearch(event.target.value)}
+              placeholder="Find widget..."
+              aria-label="Find widget"
+            />
+            <span>{filteredLayoutEntries.length}/{availableLayoutEntries.length}</span>
+          </div>
           <div className="segmented">
-            {availableLayoutEntries.map(({ key, label }) => (
+            {filteredLayoutEntries.map(({ key, label }) => (
               <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
               </button>
             ))}
           </div>
+          {filteredLayoutEntries.length === 0 && <p className="emptyHint">No widgets match this search.</p>}
           <label className="toggle full">
             <input
               type="checkbox"

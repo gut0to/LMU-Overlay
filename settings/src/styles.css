@@ -1055,6 +1055,28 @@ h1 span {
   border-radius: 8px;
   background: color-mix(in srgb, var(--panel) 72%, transparent);
 }
+.layoutPickerHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.layoutPickerHeader input {
+  min-width: 0;
+  flex: 1;
+  min-height: 32px;
+}
+.layoutPickerHeader span {
+  color: var(--muted);
+  font-family: var(--display);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.emptyHint {
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
 .selectionSummary > div {
   display: grid;
   gap: 2px;
