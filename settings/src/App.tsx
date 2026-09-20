@@ -879,6 +879,7 @@ function App() {
               workspace={workspace}
               onWorkspaceChange={setWorkspace}
               onFitToWorkspace={fitOverlaysToWorkspace}
+              onCenterSelected={() => alignOverlay(activeOverlayId, "center")}
               onResetWorkspace={resetWorkspacePreference}
               onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
             />
@@ -1157,6 +1158,7 @@ function SurfaceMap(props: {
   workspace: WorkspaceSize;
   onWorkspaceChange: (size: WorkspaceSize) => void;
   onFitToWorkspace: () => void;
+  onCenterSelected: () => void;
   onResetWorkspace: () => void;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
@@ -1209,7 +1211,10 @@ function SurfaceMap(props: {
         <span className={outOfBounds > 0 ? "mapWarning" : "mapHint"}>
           {outOfBounds > 0 ? `${outOfBounds} surface${outOfBounds === 1 ? "" : "s"} outside workspace` : "Drag surfaces to position"}
         </span>
-        {outOfBounds > 0 && <button className="mapFitButton" onClick={props.onFitToWorkspace}>Fit surfaces</button>}
+        <div className="surfaceMapActions">
+          <button className="mapFitButton" onClick={props.onCenterSelected} disabled={!selectedOverlay}>Center selected</button>
+          {outOfBounds > 0 && <button className="mapFitButton" onClick={props.onFitToWorkspace}>Fit surfaces</button>}
+        </div>
       </div>
       <div className="workspacePresets" aria-label="Workspace resolution">
         {workspacePresets.map(([label, size]) => (

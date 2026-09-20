@@ -774,6 +774,11 @@ h1 span {
 .mapWarning {
   color: var(--amber);
 }
+.surfaceMapActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .mapFitButton {
   min-height: 26px;
   border: 1px solid var(--amber);
