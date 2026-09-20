@@ -1124,6 +1124,9 @@ function App() {
             <button className="primaryButton" onClick={importConfigText} disabled={!configText.trim()}>
               Import
             </button>
+            <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
+              Clear text
+            </button>
             <button className="primaryButton" onClick={resetLayout} disabled={!defaultConfigState}>
               Reset layout
             </button>
@@ -1132,9 +1135,10 @@ function App() {
             </button>
           </div>
           <label className="field stack">
-            <span>Config TOML</span>
-            <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} />
+            <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
+            <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
           </label>
+          <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
         </Section>}
       </div>
 
