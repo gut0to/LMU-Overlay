@@ -947,6 +947,14 @@ h1 span {
 .previewWidget:active {
   cursor: grabbing;
 }
+.previewWidget.locked {
+  border-style: dashed;
+  cursor: not-allowed;
+  opacity: 0.82;
+}
+.previewWidget.locked:active {
+  cursor: not-allowed;
+}
 .previewWidget.selected {
   border: 2px solid var(--violet) !important;
   background: rgba(195, 166, 255, 0.17);

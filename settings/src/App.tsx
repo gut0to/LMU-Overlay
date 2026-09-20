@@ -1351,7 +1351,7 @@ function OverlayPreview(props: {
           return (
             <button
               key={key}
-              className={`previewWidget ${props.selected === key ? "selected" : ""}`}
+              className={`previewWidget ${props.selected === key ? "selected" : ""} ${layout.locked ? "locked" : ""}`}
               style={{
                 left: layout.x * scale,
                 top: layout.y * scale,
@@ -1401,8 +1401,8 @@ function OverlayPreview(props: {
                   y: clamp(layout.y + dy, 0, Math.max(0, props.config.window.height - layout.height)),
                 });
               }}
-              aria-label={`${label}, position ${layout.x}, ${layout.y}. Use arrow keys to move.`}
-              title={label}
+              aria-label={`${label}, position ${layout.x}, ${layout.y}${layout.locked ? ". Locked." : ". Use arrow keys to move."}`}
+              title={layout.locked ? `${label} · locked` : label}
             >
               <span>{label}</span>
             </button>
