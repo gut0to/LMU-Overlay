@@ -53,6 +53,13 @@ const presetNames = ["practice", "qualifying", "race", "endurance", "minimal"] a
 type StandardPresetKey = (typeof presetNames)[number];
 const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
+type WorkspaceSize = { width: number; height: number };
+const workspacePresets: Array<[string, WorkspaceSize]> = [
+  ["1080p", { width: 1920, height: 1080 }],
+  ["1440p", { width: 2560, height: 1440 }],
+  ["Ultrawide", { width: 3440, height: 1440 }],
+  ["4K", { width: 3840, height: 2160 }],
+];
 const performanceModes = [
   ["eco", "Eco"],
   ["normal", "Normal"],
@@ -233,6 +240,7 @@ function App() {
   const [widgetSearch, setWidgetSearch] = useState("");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
+  const [workspace, setWorkspace] = useState<WorkspaceSize>(workspacePresets[0][1]);
 
   useEffect(() => {
     void loadConfig();
@@ -546,8 +554,8 @@ function App() {
       if (!current) return current;
       const target = current.overlays.find((overlay) => overlay.id === id);
       if (!target) return current;
-      const x = mode === "center" ? Math.max(0, Math.round((1920 - target.window.width) / 2)) : 0;
-      const y = mode === "center" ? Math.max(0, Math.round((1080 - target.window.height) / 2)) : 0;
+      const x = mode === "center" ? Math.max(0, Math.round((workspace.width - target.window.width) / 2)) : 0;
+      const y = mode === "center" ? Math.max(0, Math.round((workspace.height - target.window.height) / 2)) : 0;
       return {
         ...current,
         overlays: current.overlays.map((overlay) => overlay.id === id
@@ -742,6 +750,8 @@ function App() {
               config={config}
               selected={activeOverlayId}
               onSelect={setActiveOverlayId}
+              workspace={workspace}
+              onWorkspaceChange={setWorkspace}
               onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
             />
             <OverlayPreview
@@ -987,6 +997,8 @@ function App() {
 function SurfaceMap(props: {
   config: OverlayConfig;
   selected: string;
+  workspace: WorkspaceSize;
+  onWorkspaceChange: (size: WorkspaceSize) => void;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
 }) {
@@ -994,8 +1006,8 @@ function SurfaceMap(props: {
   const mapRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
   const canvasHeight = 506;
-  const virtualWidth = 1920;
-  const virtualHeight = 1080;
+  const virtualWidth = props.workspace.width;
+  const virtualHeight = props.workspace.height;
   const scale = canvasWidth / virtualWidth;
 
   useEffect(() => {
@@ -1017,8 +1029,19 @@ function SurfaceMap(props: {
   return (
     <div className="surfaceMapFrame">
       <div className="surfaceMapHeader">
-        <span>Screen workspace · 1920 × 1080 reference</span>
+        <span>Screen workspace · {virtualWidth} × {virtualHeight}</span>
         <span>Drag surfaces to position</span>
+      </div>
+      <div className="workspacePresets" aria-label="Workspace resolution">
+        {workspacePresets.map(([label, size]) => (
+          <button
+            key={label}
+            className={size.width === virtualWidth && size.height === virtualHeight ? "selected" : ""}
+            onClick={() => props.onWorkspaceChange(size)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <div
         className="surfaceMap"
