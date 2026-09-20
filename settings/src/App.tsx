@@ -236,6 +236,7 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
   const [overlayEditMode, setOverlayEditMode] = useState(false);
+  const [overlayVisible, setOverlayVisible] = useState(true);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
@@ -299,8 +300,10 @@ function App() {
       if (running) {
         const editing = await invoke<boolean>("overlay_edit_status");
         setOverlayEditMode(editing);
+        setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
       } else {
         setOverlayEditMode(false);
+        setOverlayVisible(false);
       }
       return running;
     } catch (error) {
@@ -575,6 +578,16 @@ function App() {
     }
   }
 
+  async function toggleOverlayVisibility() {
+    try {
+      const visible = await invoke<boolean>("toggle_overlay_visibility");
+      setOverlayVisible(visible);
+      setStatus(visible ? "Overlay shown" : "Overlay hidden");
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
   function duplicateOverlayLayer(id: string) {
     setConfig((current) => {
       if (!current) return current;
@@ -735,6 +748,9 @@ function App() {
           </button>
           <button className={`secondaryButton ${overlayEditMode ? "active" : ""}`} onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
             {overlayEditMode ? "Exit edit mode" : "Edit overlay"}
+          </button>
+          <button className="secondaryButton" onClick={() => void toggleOverlayVisibility()} disabled={!overlayRunning}>
+            {overlayVisible ? "Hide overlay" : "Show overlay"}
           </button>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />

@@ -16,6 +16,8 @@ enum ControlCommand {
     ToggleEdit,
     Stop,
     EditStatus,
+    ToggleVisibility,
+    VisibilityStatus,
     Shutdown,
 }
 
@@ -29,6 +31,8 @@ impl ControlCommand {
             "edit" => Some(Self::ToggleEdit),
             "stop" => Some(Self::Stop),
             "edit_status" => Some(Self::EditStatus),
+            "toggle_visibility" => Some(Self::ToggleVisibility),
+            "visibility_status" => Some(Self::VisibilityStatus),
             "shutdown" => Some(Self::Shutdown),
             _ => None,
         }
@@ -173,6 +177,22 @@ mod windows_control {
                         "edit_on".to_string()
                     } else {
                         "edit_off".to_string()
+                    }
+                }
+                Some(ControlCommand::ToggleVisibility) => {
+                    let shown = !visible.load(Ordering::Relaxed);
+                    visible.store(shown, Ordering::Relaxed);
+                    if shown {
+                        "shown".to_string()
+                    } else {
+                        "hidden".to_string()
+                    }
+                }
+                Some(ControlCommand::VisibilityStatus) => {
+                    if visible.load(Ordering::Relaxed) {
+                        "shown".to_string()
+                    } else {
+                        "hidden".to_string()
                     }
                 }
                 Some(ControlCommand::Stop) | Some(ControlCommand::Shutdown) => {
@@ -347,6 +367,14 @@ mod tests {
         assert_eq!(
             ControlCommand::parse("edit_status"),
             Some(ControlCommand::EditStatus)
+        );
+        assert_eq!(
+            ControlCommand::parse("toggle_visibility"),
+            Some(ControlCommand::ToggleVisibility)
+        );
+        assert_eq!(
+            ControlCommand::parse("visibility_status"),
+            Some(ControlCommand::VisibilityStatus)
         );
         assert_eq!(ControlCommand::parse("stop"), Some(ControlCommand::Stop));
         assert_eq!(ControlCommand::parse("invalid"), None);
