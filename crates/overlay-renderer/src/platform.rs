@@ -3762,10 +3762,6 @@ mod windows_overlay {
         window_height: i32,
         snap_distance: i32,
     ) {
-        if snap_distance <= 0 {
-            return;
-        }
-
         let width = scaled_dimension(layout.width, layout.scale);
         let height = scaled_dimension(layout.height, layout.scale);
         if layout.x.abs() <= snap_distance {
@@ -3798,9 +3794,6 @@ mod windows_overlay {
 
     fn snap_widget_to_widgets(config: &mut OverlayConfig, widget: WidgetId) {
         let snap_distance = config.layout.snap_distance;
-        if snap_distance <= 0 {
-            return;
-        }
         let others = widget_areas(config)
             .into_iter()
             .filter(|(id, _)| *id != widget)
@@ -4282,6 +4275,20 @@ mod windows_overlay {
             assert_eq!(scaled_dimension(100, 0.25), 50);
             assert_eq!(scaled_dimension(100, 1.5), 150);
             assert_eq!(scaled_dimension(100, 3.0), 200);
+        }
+
+        #[test]
+        fn zero_snap_distance_keeps_exact_edge_alignment() {
+            let mut layout = WidgetLayout {
+                x: 350,
+                y: 260,
+                width: 100,
+                height: 40,
+                ..WidgetLayout::default()
+            };
+            snap_widget_to_edges(&mut layout, 450, 300, 0);
+            assert_eq!(layout.x, 350);
+            assert_eq!(layout.y, 260);
         }
 
         #[test]
