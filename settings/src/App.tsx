@@ -1178,7 +1178,7 @@ function SurfaceMap(props: {
   onMove: (id: string, x: number, y: number) => void;
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
-  const [copiedGeometry, setCopiedGeometry] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [customWorkspace, setCustomWorkspace] = useState(props.workspace);
   const mapRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
@@ -1313,11 +1313,11 @@ function SurfaceMap(props: {
           <span>{selectedOverlay.window.x}, {selectedOverlay.window.y}</span>
           <span>{selectedOverlay.window.width} × {selectedOverlay.window.height}</span>
           <span className={selectedOverlay.enabled ? "valueLive" : "valueMuted"}>{selectedOverlay.enabled ? "Enabled" : "Disabled"}</span>
-          <button className="mapFitButton" onClick={() => {
-            void navigator.clipboard?.writeText(`${selectedOverlay.name}: x=${selectedOverlay.window.x}, y=${selectedOverlay.window.y}, width=${selectedOverlay.window.width}, height=${selectedOverlay.window.height}`);
-            setCopiedGeometry(true);
-            window.setTimeout(() => setCopiedGeometry(false), 1400);
-          }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
+          <button className="mapFitButton" onClick={async () => {
+            const copied = await copyGeometryToClipboard(`${selectedOverlay.name}: x=${selectedOverlay.window.x}, y=${selectedOverlay.window.y}, width=${selectedOverlay.window.width}, height=${selectedOverlay.window.height}`);
+            setCopyStatus(copied ? "copied" : "failed");
+            window.setTimeout(() => setCopyStatus("idle"), 1800);
+          }}>{copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy unavailable" : "Copy geometry"}</button>
           <small>Focus a surface and use arrow keys to move it; hold Shift for 10 px.</small>
         </div>
       )}
@@ -1477,6 +1477,18 @@ function OverlayPreview(props: {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+async function copyGeometryToClipboard(value: string): Promise<boolean> {
+  if (!navigator.clipboard?.writeText) {
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function finiteInteger(value: number, fallback: number) {
@@ -1745,15 +1757,15 @@ function WidgetLayoutFields(props: {
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
   onReplace: (layout: WidgetLayout) => void;
 }) {
-  const [copiedGeometry, setCopiedGeometry] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <>
       <div className="buttonRow geometryActions">
-        <button className="secondaryButton" onClick={() => {
-          void navigator.clipboard?.writeText(`x=${props.layout.x}, y=${props.layout.y}, width=${props.layout.width}, height=${props.layout.height}, scale=${props.layout.scale}`);
-          setCopiedGeometry(true);
-          window.setTimeout(() => setCopiedGeometry(false), 1400);
-        }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
+        <button className="secondaryButton" onClick={async () => {
+          const copied = await copyGeometryToClipboard(`x=${props.layout.x}, y=${props.layout.y}, width=${props.layout.width}, height=${props.layout.height}, scale=${props.layout.scale}`);
+          setCopyStatus(copied ? "copied" : "failed");
+          window.setTimeout(() => setCopyStatus("idle"), 1800);
+        }}>{copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy unavailable" : "Copy geometry"}</button>
         <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)) / 2)))}>Center horizontal</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)) / 2)))}>Center vertical</button>
         <button className="secondaryButton" onClick={() => props.onChange("x", 0)}>Align left</button>
