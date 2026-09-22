@@ -981,6 +981,12 @@ function App() {
             windowWidth={(activeOverlayConfig ?? config).window.width}
             windowHeight={(activeOverlayConfig ?? config).window.height}
             onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
+            onReplace={(layout) => setConfig(updateOverlayLayoutSelection(
+              config,
+              activeOverlayId,
+              selectedLayout,
+              normalizeWidgetLayoutForWindow((activeOverlayConfig ?? config).window, layout),
+            ))}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
             <>
@@ -1734,6 +1740,7 @@ function WidgetLayoutFields(props: {
   windowWidth: number;
   windowHeight: number;
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
+  onReplace: (layout: WidgetLayout) => void;
 }) {
   const [copiedGeometry, setCopiedGeometry] = useState(false);
   return (
@@ -1751,11 +1758,10 @@ function WidgetLayoutFields(props: {
         <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)))}>Align bottom</button>
         <button className="secondaryButton" onClick={() => {
-          (Object.keys(props.defaultLayout) as Array<keyof WidgetLayout>).forEach((key) => props.onChange(key, props.defaultLayout[key]));
+          props.onReplace({ ...props.defaultLayout });
         }}>Reset widget</button>
         <button className="secondaryButton" onClick={() => {
-          props.onChange("width", 320);
-          props.onChange("height", 80);
+          props.onReplace({ ...props.layout, width: 320, height: 80 });
         }}>Reset size</button>
       </div>
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
