@@ -1128,10 +1128,12 @@ mod windows_overlay {
             let layout = widget_layout_mut(&mut config, drag.widget);
             if drag.resize {
                 let scale = layout.scale.clamp(0.5, 2.0);
+                let max_width = (f64::from(window_width) / scale).floor() as i32;
+                let max_height = (f64::from(window_height) / scale).floor() as i32;
                 layout.width = (drag.start_width + (f64::from(delta_x) / scale).round() as i32)
-                    .clamp(48, window_width.max(48));
+                    .clamp(48, max_width.max(48));
                 layout.height = (drag.start_height + (f64::from(delta_y) / scale).round() as i32)
-                    .clamp(20, window_height.max(20));
+                    .clamp(20, max_height.max(20));
             } else {
                 layout.x = drag.start_x + delta_x;
                 layout.y = drag.start_y + delta_y;
@@ -1139,6 +1141,13 @@ mod windows_overlay {
             if snap_to_grid {
                 snap_widget_to_grid(layout, grid_size);
             }
+            let scale = layout.scale.clamp(0.5, 2.0);
+            layout.width = layout
+                .width
+                .clamp(48, (f64::from(window_width) / scale).floor() as i32);
+            layout.height = layout
+                .height
+                .clamp(20, (f64::from(window_height) / scale).floor() as i32);
             if snap_to_edges {
                 snap_widget_to_edges(layout, window_width, window_height, snap_distance);
             }
