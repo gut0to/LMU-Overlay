@@ -1155,6 +1155,7 @@ mod windows_overlay {
             if snap_to_widgets {
                 snap_widget_to_widgets(&mut config, drag.widget);
             }
+            constrain_widget_to_window(&mut config, drag.widget);
         }
 
         InvalidateRect(hwnd, ptr::null(), 0);
@@ -3842,6 +3843,16 @@ mod windows_overlay {
         (f64::from(value) * scale.clamp(0.5, 2.0)).round() as i32
     }
 
+    fn constrain_widget_to_window(config: &mut OverlayConfig, widget: WidgetId) {
+        let window_width = config.window.width;
+        let window_height = config.window.height;
+        let layout = widget_layout_mut(config, widget);
+        let width = scaled_dimension(layout.width, layout.scale);
+        let height = scaled_dimension(layout.height, layout.scale);
+        layout.x = layout.x.clamp(0, (window_width - width).max(0));
+        layout.y = layout.y.clamp(0, (window_height - height).max(0));
+    }
+
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {
         let colors = colors(config);
         if NATIVE_TEXT_ENABLED.with(|state| state.get()) {
@@ -4297,6 +4308,23 @@ mod windows_overlay {
             snap_widget_to_edges(&mut layout, 450, 300, 0);
             assert_eq!(layout.x, 350);
             assert_eq!(layout.y, 260);
+        }
+
+        #[test]
+        fn constrains_scaled_widget_position_to_window_bounds() {
+            let mut config = OverlayConfig::default();
+            config.window.width = 420;
+            config.window.height = 220;
+            config.layout.telemetry.x = 999;
+            config.layout.telemetry.y = 999;
+            config.layout.telemetry.width = 200;
+            config.layout.telemetry.height = 100;
+            config.layout.telemetry.scale = 1.5;
+
+            constrain_widget_to_window(&mut config, WidgetId::Telemetry);
+
+            assert_eq!(config.layout.telemetry.x, 120);
+            assert_eq!(config.layout.telemetry.y, 70);
         }
 
         #[test]
