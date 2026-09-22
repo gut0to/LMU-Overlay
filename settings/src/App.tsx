@@ -1500,10 +1500,14 @@ function layoutCollisions(config: OverlayConfig) {
     for (let right = left + 1; right < entries.length; right += 1) {
       const first = entries[left];
       const second = entries[right];
-      const overlaps = first.layout.x < second.layout.x + second.layout.width
-        && first.layout.x + first.layout.width > second.layout.x
-        && first.layout.y < second.layout.y + second.layout.height
-        && first.layout.y + first.layout.height > second.layout.y;
+      const firstWidth = scaledDimension(first.layout.width, first.layout.scale);
+      const firstHeight = scaledDimension(first.layout.height, first.layout.scale);
+      const secondWidth = scaledDimension(second.layout.width, second.layout.scale);
+      const secondHeight = scaledDimension(second.layout.height, second.layout.scale);
+      const overlaps = first.layout.x < second.layout.x + secondWidth
+        && first.layout.x + firstWidth > second.layout.x
+        && first.layout.y < second.layout.y + secondHeight
+        && first.layout.y + firstHeight > second.layout.y;
       if (overlaps) {
         collisions.push([first.label, second.label]);
       }
