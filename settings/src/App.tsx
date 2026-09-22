@@ -1452,11 +1452,11 @@ function OverlayPreview(props: {
                 if (dx === 0 && dy === 0) return;
                 event.preventDefault();
                 props.onSelect(key);
-                props.onLayoutChange(key, {
+                props.onLayoutChange(key, snapLayout(props.config, key, {
                   ...layout,
-                  x: clamp(layout.x + dx, 0, Math.max(0, props.config.window.width - layout.width)),
-                  y: clamp(layout.y + dy, 0, Math.max(0, props.config.window.height - layout.height)),
-                });
+                  x: layout.x + dx,
+                  y: layout.y + dy,
+                }));
               }}
               aria-label={`${label}, position ${layout.x}, ${layout.y}${layout.locked ? ". Locked." : ". Use arrow keys to move."}`}
               title={layout.locked ? `${label} · locked` : label}
@@ -1746,12 +1746,12 @@ function WidgetLayoutFields(props: {
           setCopiedGeometry(true);
           window.setTimeout(() => setCopiedGeometry(false), 1400);
         }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - props.layout.width) / 2)))}>Center horizontal</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - props.layout.height) / 2)))}>Center vertical</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)) / 2)))}>Center horizontal</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)) / 2)))}>Center vertical</button>
         <button className="secondaryButton" onClick={() => props.onChange("x", 0)}>Align left</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - props.layout.width))}>Align right</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)))}>Align right</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - props.layout.height))}>Align bottom</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)))}>Align bottom</button>
         <button className="secondaryButton" onClick={() => {
           (Object.keys(props.defaultLayout) as Array<keyof WidgetLayout>).forEach((key) => props.onChange(key, props.defaultLayout[key]));
         }}>Reset widget</button>
