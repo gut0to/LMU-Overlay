@@ -1135,12 +1135,12 @@ mod windows_overlay {
             } else {
                 layout.x = drag.start_x + delta_x;
                 layout.y = drag.start_y + delta_y;
-                if snap_to_edges {
-                    snap_widget_to_edges(layout, window_width, window_height, snap_distance);
-                }
             }
             if snap_to_grid {
                 snap_widget_to_grid(layout, grid_size);
+            }
+            if snap_to_edges {
+                snap_widget_to_edges(layout, window_width, window_height, snap_distance);
             }
             config.normalize();
             if snap_to_widgets {
