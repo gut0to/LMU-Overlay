@@ -1358,8 +1358,8 @@ function OverlayPreview(props: {
     const next = drag.resize
       ? {
           ...drag.layout,
-          width: clamp(Math.round(drag.layout.width + deltaX), 48, props.config.window.width),
-          height: clamp(Math.round(drag.layout.height + deltaY), 20, props.config.window.height),
+          width: clamp(Math.round(drag.layout.width + deltaX / clamp(drag.layout.scale, 0.5, 2)), 48, Math.floor(props.config.window.width / clamp(drag.layout.scale, 0.5, 2))),
+          height: clamp(Math.round(drag.layout.height + deltaY / clamp(drag.layout.scale, 0.5, 2)), 20, Math.floor(props.config.window.height / clamp(drag.layout.scale, 0.5, 2))),
         }
       : {
           ...drag.layout,
