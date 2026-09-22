@@ -1696,27 +1696,30 @@ function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: W
     const nextHeight = scaledDimension(next.height, next.scale);
     const otherWidth = scaledDimension(other.width, other.scale);
     const otherHeight = scaledDimension(other.height, other.scale);
-    const nextVisualRight = next.x + nextWidth;
-    const nextVisualBottom = next.y + nextHeight;
     const otherRight = other.x + otherWidth;
     const otherBottom = other.y + otherHeight;
-    if (Math.abs(next.x - other.x) <= distance) {
-      next.x = other.x;
-    } else if (Math.abs(next.x - otherRight) <= distance) {
-      next.x = otherRight;
-    } else if (Math.abs(nextVisualRight - other.x) <= distance) {
-      next.x = other.x - nextWidth;
-    } else if (Math.abs(nextVisualRight - otherRight) <= distance) {
-      next.x = otherRight - nextWidth;
+    const xTargets = [
+      other.x,
+      otherRight,
+      other.x - nextWidth,
+      otherRight - nextWidth,
+    ];
+    const yTargets = [
+      other.y,
+      otherBottom,
+      other.y - nextHeight,
+      otherBottom - nextHeight,
+    ];
+    const nearest = (value: number, targets: number[]) => targets.reduce((best, target) =>
+      Math.abs(target - value) < Math.abs(best - value) ? target : best,
+    targets[0]);
+    const xTarget = nearest(next.x, xTargets);
+    const yTarget = nearest(next.y, yTargets);
+    if (Math.abs(xTarget - next.x) <= distance) {
+      next.x = xTarget;
     }
-    if (Math.abs(next.y - other.y) <= distance) {
-      next.y = other.y;
-    } else if (Math.abs(next.y - otherBottom) <= distance) {
-      next.y = otherBottom;
-    } else if (Math.abs(nextVisualBottom - other.y) <= distance) {
-      next.y = other.y - nextHeight;
-    } else if (Math.abs(nextVisualBottom - otherBottom) <= distance) {
-      next.y = otherBottom - nextHeight;
+    if (Math.abs(yTarget - next.y) <= distance) {
+      next.y = yTarget;
     }
   }
   return next;

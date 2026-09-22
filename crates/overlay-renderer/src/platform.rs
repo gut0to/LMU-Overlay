@@ -3803,24 +3803,32 @@ mod windows_overlay {
         let mut area = area_from_layout(layout);
 
         for other in others {
-            if (area.x - other.x).abs() <= snap_distance {
-                layout.x = other.x;
-            } else if (area.x - other.right()).abs() <= snap_distance {
-                layout.x = other.right();
-            } else if (area.right() - other.x).abs() <= snap_distance {
-                layout.x = other.x - area.width;
-            } else if (area.right() - other.right()).abs() <= snap_distance {
-                layout.x = other.right() - area.width;
+            let x_targets = [
+                other.x,
+                other.right(),
+                other.x - area.width,
+                other.right() - area.width,
+            ];
+            let y_targets = [
+                other.y,
+                other.bottom(),
+                other.y - area.height,
+                other.bottom() - area.height,
+            ];
+            let nearest = |value: i32, targets: &[i32]| {
+                targets
+                    .iter()
+                    .copied()
+                    .min_by_key(|target| (target - value).abs())
+                    .unwrap_or(value)
+            };
+            let x_target = nearest(area.x, &x_targets);
+            let y_target = nearest(area.y, &y_targets);
+            if (x_target - area.x).abs() <= snap_distance {
+                layout.x = x_target;
             }
-
-            if (area.y - other.y).abs() <= snap_distance {
-                layout.y = other.y;
-            } else if (area.y - other.bottom()).abs() <= snap_distance {
-                layout.y = other.bottom();
-            } else if (area.bottom() - other.y).abs() <= snap_distance {
-                layout.y = other.y - area.height;
-            } else if (area.bottom() - other.bottom()).abs() <= snap_distance {
-                layout.y = other.bottom() - area.height;
+            if (y_target - area.y).abs() <= snap_distance {
+                layout.y = y_target;
             }
             area = area_from_layout(layout);
         }
