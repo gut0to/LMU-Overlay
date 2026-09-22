@@ -980,6 +980,7 @@ function App() {
             defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
             windowWidth={(activeOverlayConfig ?? config).window.width}
             windowHeight={(activeOverlayConfig ?? config).window.height}
+            editingLocked={(activeOverlayConfig ?? config).layout.lock_all || layoutForSelection(activeOverlayConfig ?? config, selectedLayout).locked}
             onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
             onReplace={(layout) => setConfig(updateOverlayLayoutSelection(
               config,
@@ -1742,6 +1743,7 @@ function WidgetLayoutFields(props: {
   defaultLayout: WidgetLayout;
   windowWidth: number;
   windowHeight: number;
+  editingLocked: boolean;
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
   onReplace: (layout: WidgetLayout) => void;
 }) {
@@ -1749,29 +1751,29 @@ function WidgetLayoutFields(props: {
   return (
     <>
       <div className="buttonRow geometryActions">
-        <button className="secondaryButton" onClick={() => {
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => {
           void navigator.clipboard?.writeText(`x=${props.layout.x}, y=${props.layout.y}, width=${props.layout.width}, height=${props.layout.height}, scale=${props.layout.scale}`);
           setCopiedGeometry(true);
           window.setTimeout(() => setCopiedGeometry(false), 1400);
         }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)) / 2)))}>Center horizontal</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)) / 2)))}>Center vertical</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", 0)}>Align left</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)))}>Align right</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)))}>Align bottom</button>
-        <button className="secondaryButton" onClick={() => {
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)) / 2)))}>Center horizontal</button>
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)) / 2)))}>Center vertical</button>
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => props.onChange("x", 0)}>Align left</button>
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => props.onChange("x", Math.max(0, props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)))}>Align right</button>
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => props.onChange("y", 0)}>Align top</button>
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => props.onChange("y", Math.max(0, props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)))}>Align bottom</button>
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => {
           props.onReplace({ ...props.defaultLayout });
         }}>Reset widget</button>
-        <button className="secondaryButton" onClick={() => {
+        <button className="secondaryButton" disabled={props.editingLocked} onClick={() => {
           props.onReplace({ ...props.layout, width: 320, height: 80 });
         }}>Reset size</button>
       </div>
-      <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
-      <NumberField label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
-      <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
-      <RangeField label="Widget opacity" min={0.1} max={1} step={0.05} value={props.layout.opacity} onChange={(value) => props.onChange("opacity", value)} />
-      <NumberField label="Layer order" value={props.layout.z_index} onChange={(value) => props.onChange("z_index", value)} />
+      <NumberField disabled={props.editingLocked} label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
+      <NumberField disabled={props.editingLocked} label="Widget height" value={props.layout.height} onChange={(value) => props.onChange("height", value)} />
+      <RangeField disabled={props.editingLocked} label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
+      <RangeField disabled={props.editingLocked} label="Widget opacity" min={0.1} max={1} step={0.05} value={props.layout.opacity} onChange={(value) => props.onChange("opacity", value)} />
+      <NumberField disabled={props.editingLocked} label="Layer order" value={props.layout.z_index} onChange={(value) => props.onChange("z_index", value)} />
       <label className="toggle full">
         <input type="checkbox" checked={props.layout.locked} onChange={(event) => props.onChange("locked", event.target.checked)} />
         <Lock size={16} />
@@ -1781,20 +1783,20 @@ function WidgetLayoutFields(props: {
   );
 }
 
-function NumberField(props: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberField(props: { label: string; value: number; disabled?: boolean; onChange: (value: number) => void }) {
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input type="number" value={props.value} onChange={(event) => props.onChange(Number(event.target.value))} />
+      <input type="number" value={props.value} disabled={props.disabled} onChange={(event) => props.onChange(Number(event.target.value))} />
     </label>
   );
 }
 
-function RangeField(props: { label: string; min: number; max: number; step: number; value: number; onChange: (value: number) => void }) {
+function RangeField(props: { label: string; min: number; max: number; step: number; value: number; disabled?: boolean; onChange: (value: number) => void }) {
   return (
     <label className="field range">
       <span>{props.label}</span>
-      <input type="range" min={props.min} max={props.max} step={props.step} value={props.value} onChange={(event) => props.onChange(Number(event.target.value))} />
+      <input type="range" min={props.min} max={props.max} step={props.step} value={props.value} disabled={props.disabled} onChange={(event) => props.onChange(Number(event.target.value))} />
       <output>{props.value}</output>
     </label>
   );
