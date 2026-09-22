@@ -1,6 +1,6 @@
 [package]
 name = "hashoverlay-settings"
-version = "1.0.3"
+version = "1.0.5"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/gut0to/LMU-Overlay"

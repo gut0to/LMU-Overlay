@@ -147,7 +147,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hashoverlay"
-version = "1.0.3"
+version = "1.0.5"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -214,7 +214,7 @@ dependencies = [
 
 [[package]]
 name = "lap-engine"
-version = "1.0.3"
+version = "1.0.5"
 dependencies = [
  "lmu-telemetry",
  "serde",
@@ -223,7 +223,7 @@ dependencies = [
 
 [[package]]
 name = "lmu-telemetry"
-version = "1.0.3"
+version = "1.0.5"
 dependencies = [
  "windows-sys 0.59.0",
 ]
@@ -248,7 +248,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "overlay-renderer"
-version = "1.0.3"
+version = "1.0.5"
 dependencies = [
  "lmu-telemetry",
  "log",
@@ -363,7 +363,7 @@ dependencies = [
 
 [[package]]
 name = "storage"
-version = "1.0.3"
+version = "1.0.5"
 dependencies = [
  "lap-engine",
  "windows-sys 0.59.0",
@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "telemetry-engine"
-version = "1.0.3"
+version = "1.0.5"
 dependencies = [
  "lmu-telemetry",
 ]
