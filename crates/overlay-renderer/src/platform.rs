@@ -1075,6 +1075,15 @@ mod windows_overlay {
         if let Ok(mut selected) = state.selected_widget.lock() {
             *selected = Some(widget);
         }
+        let (start_width, start_height) = state
+            .config
+            .lock()
+            .ok()
+            .map(|config| {
+                let layout = widget_layout(&config, widget);
+                (layout.width, layout.height)
+            })
+            .unwrap_or((area.width, area.height));
         if let Ok(mut drag) = state.drag.lock() {
             *drag = Some(DragState {
                 widget,
@@ -1082,8 +1091,8 @@ mod windows_overlay {
                 start_mouse_y: mouse_y,
                 start_x: area.x,
                 start_y: area.y,
-                start_width: area.width,
-                start_height: area.height,
+                start_width,
+                start_height,
                 resize: area.right() - mouse_x <= EDIT_HIT_MARGIN
                     && area.bottom() - mouse_y <= EDIT_HIT_MARGIN,
             });
@@ -1118,8 +1127,11 @@ mod windows_overlay {
             let snap_distance = config.layout.snap_distance;
             let layout = widget_layout_mut(&mut config, drag.widget);
             if drag.resize {
-                layout.width = (drag.start_width + delta_x).clamp(48, window_width.max(48));
-                layout.height = (drag.start_height + delta_y).clamp(20, window_height.max(20));
+                let scale = layout.scale.clamp(0.5, 2.0);
+                layout.width = (drag.start_width + (f64::from(delta_x) / scale).round() as i32)
+                    .clamp(48, window_width.max(48));
+                layout.height = (drag.start_height + (f64::from(delta_y) / scale).round() as i32)
+                    .clamp(20, window_height.max(20));
             } else {
                 layout.x = drag.start_x + delta_x;
                 layout.y = drag.start_y + delta_y;
@@ -3745,19 +3757,21 @@ mod windows_overlay {
             return;
         }
 
+        let width = scaled_dimension(layout.width, layout.scale);
+        let height = scaled_dimension(layout.height, layout.scale);
         if layout.x.abs() <= snap_distance {
             layout.x = 0;
         }
         if layout.y.abs() <= snap_distance {
             layout.y = 0;
         }
-        let right_gap = window_width - (layout.x + layout.width);
+        let right_gap = window_width - (layout.x + width);
         if right_gap.abs() <= snap_distance {
-            layout.x = window_width - layout.width;
+            layout.x = window_width - width;
         }
-        let bottom_gap = window_height - (layout.y + layout.height);
+        let bottom_gap = window_height - (layout.y + height);
         if bottom_gap.abs() <= snap_distance {
-            layout.y = window_height - layout.height;
+            layout.y = window_height - height;
         }
     }
 
@@ -3812,6 +3826,10 @@ mod windows_overlay {
 
     fn snap_i32(value: i32, grid_size: i32) -> i32 {
         ((value as f64 / f64::from(grid_size)).round() as i32) * grid_size
+    }
+
+    fn scaled_dimension(value: i32, scale: f64) -> i32 {
+        (f64::from(value) * scale.clamp(0.5, 2.0)).round() as i32
     }
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {
@@ -4233,6 +4251,28 @@ mod windows_overlay {
             config.style.scale = 1.5;
             assert_eq!(text_font_height(&config), 21);
             assert_eq!(text_font_height_with_scale(&config, 1.25), 26);
+        }
+
+        #[test]
+        fn uses_visual_widget_size_for_edge_snapping() {
+            let mut layout = WidgetLayout {
+                x: 296,
+                y: 160,
+                width: 100,
+                height: 40,
+                scale: 1.5,
+                ..WidgetLayout::default()
+            };
+            snap_widget_to_edges(&mut layout, 450, 300, 5);
+            assert_eq!(layout.x, 300);
+            assert_eq!(layout.y, 160);
+        }
+
+        #[test]
+        fn scaled_dimension_is_clamped_to_supported_widget_scale() {
+            assert_eq!(scaled_dimension(100, 0.25), 50);
+            assert_eq!(scaled_dimension(100, 1.5), 150);
+            assert_eq!(scaled_dimension(100, 3.0), 200);
         }
 
         #[test]

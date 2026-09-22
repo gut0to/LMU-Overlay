@@ -1634,15 +1634,22 @@ function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: Widg
 }
 
 function constrainLayoutToWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
-  const width = clamp(layout.width, 48, window.width);
-  const height = clamp(layout.height, 20, window.height);
+  const scale = clamp(layout.scale, 0.5, 2);
+  const width = clamp(layout.width, 48, Math.floor(window.width / scale));
+  const height = clamp(layout.height, 20, Math.floor(window.height / scale));
+  const visualWidth = scaledDimension(width, scale);
+  const visualHeight = scaledDimension(height, scale);
   return {
     ...layout,
     width,
     height,
-    x: clamp(layout.x, 0, Math.max(0, window.width - width)),
-    y: clamp(layout.y, 0, Math.max(0, window.height - height)),
+    x: clamp(layout.x, 0, Math.max(0, window.width - visualWidth)),
+    y: clamp(layout.y, 0, Math.max(0, window.height - visualHeight)),
   };
+}
+
+function scaledDimension(value: number, scale: number) {
+  return Math.round(value * clamp(scale, 0.5, 2));
 }
 
 function snapNumber(value: number, gridSize: number) {
@@ -1653,17 +1660,19 @@ function snapNumber(value: number, gridSize: number) {
 function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout {
   const next = { ...layout };
   const distance = config.layout.snap_distance;
+  const width = scaledDimension(next.width, next.scale);
+  const height = scaledDimension(next.height, next.scale);
   if (Math.abs(next.x) <= distance) {
     next.x = 0;
   }
   if (Math.abs(next.y) <= distance) {
     next.y = 0;
   }
-  if (Math.abs(config.window.width - (next.x + next.width)) <= distance) {
-    next.x = config.window.width - next.width;
+  if (Math.abs(config.window.width - (next.x + width)) <= distance) {
+    next.x = config.window.width - width;
   }
-  if (Math.abs(config.window.height - (next.y + next.height)) <= distance) {
-    next.y = config.window.height - next.height;
+  if (Math.abs(config.window.height - (next.y + height)) <= distance) {
+    next.y = config.window.height - height;
   }
   return next;
 }
@@ -1675,27 +1684,31 @@ function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: W
     if (key === widget) {
       continue;
     }
-    const nextRight = next.x + next.width;
-    const nextBottom = next.y + next.height;
-    const otherRight = other.x + other.width;
-    const otherBottom = other.y + other.height;
+    const nextWidth = scaledDimension(next.width, next.scale);
+    const nextHeight = scaledDimension(next.height, next.scale);
+    const otherWidth = scaledDimension(other.width, other.scale);
+    const otherHeight = scaledDimension(other.height, other.scale);
+    const nextVisualRight = next.x + nextWidth;
+    const nextVisualBottom = next.y + nextHeight;
+    const otherRight = other.x + otherWidth;
+    const otherBottom = other.y + otherHeight;
     if (Math.abs(next.x - other.x) <= distance) {
       next.x = other.x;
     } else if (Math.abs(next.x - otherRight) <= distance) {
       next.x = otherRight;
-    } else if (Math.abs(nextRight - other.x) <= distance) {
-      next.x = other.x - next.width;
-    } else if (Math.abs(nextRight - otherRight) <= distance) {
-      next.x = otherRight - next.width;
+    } else if (Math.abs(nextVisualRight - other.x) <= distance) {
+      next.x = other.x - nextWidth;
+    } else if (Math.abs(nextVisualRight - otherRight) <= distance) {
+      next.x = otherRight - nextWidth;
     }
     if (Math.abs(next.y - other.y) <= distance) {
       next.y = other.y;
     } else if (Math.abs(next.y - otherBottom) <= distance) {
       next.y = otherBottom;
-    } else if (Math.abs(nextBottom - other.y) <= distance) {
-      next.y = other.y - next.height;
-    } else if (Math.abs(nextBottom - otherBottom) <= distance) {
-      next.y = otherBottom - next.height;
+    } else if (Math.abs(nextVisualBottom - other.y) <= distance) {
+      next.y = other.y - nextHeight;
+    } else if (Math.abs(nextVisualBottom - otherBottom) <= distance) {
+      next.y = otherBottom - nextHeight;
     }
   }
   return next;
