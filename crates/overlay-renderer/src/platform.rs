@@ -1075,6 +1075,15 @@ mod windows_overlay {
         if let Ok(mut selected) = state.selected_widget.lock() {
             *selected = Some(widget);
         }
+        let (start_width, start_height) = state
+            .config
+            .lock()
+            .ok()
+            .map(|config| {
+                let layout = widget_layout(&config, widget);
+                (layout.width, layout.height)
+            })
+            .unwrap_or((area.width, area.height));
         if let Ok(mut drag) = state.drag.lock() {
             *drag = Some(DragState {
                 widget,
@@ -1082,8 +1091,8 @@ mod windows_overlay {
                 start_mouse_y: mouse_y,
                 start_x: area.x,
                 start_y: area.y,
-                start_width: area.width,
-                start_height: area.height,
+                start_width,
+                start_height,
                 resize: area.right() - mouse_x <= EDIT_HIT_MARGIN
                     && area.bottom() - mouse_y <= EDIT_HIT_MARGIN,
             });
@@ -1118,22 +1127,35 @@ mod windows_overlay {
             let snap_distance = config.layout.snap_distance;
             let layout = widget_layout_mut(&mut config, drag.widget);
             if drag.resize {
-                layout.width = (drag.start_width + delta_x).clamp(48, window_width.max(48));
-                layout.height = (drag.start_height + delta_y).clamp(20, window_height.max(20));
+                let scale = layout.scale.clamp(0.5, 2.0);
+                let max_width = (f64::from(window_width) / scale).floor() as i32;
+                let max_height = (f64::from(window_height) / scale).floor() as i32;
+                layout.width = (drag.start_width + (f64::from(delta_x) / scale).round() as i32)
+                    .clamp(48, max_width.max(48));
+                layout.height = (drag.start_height + (f64::from(delta_y) / scale).round() as i32)
+                    .clamp(20, max_height.max(20));
             } else {
                 layout.x = drag.start_x + delta_x;
                 layout.y = drag.start_y + delta_y;
-                if snap_to_edges {
-                    snap_widget_to_edges(layout, window_width, window_height, snap_distance);
-                }
             }
             if snap_to_grid {
                 snap_widget_to_grid(layout, grid_size);
+            }
+            let scale = layout.scale.clamp(0.5, 2.0);
+            layout.width = layout
+                .width
+                .clamp(48, (f64::from(window_width) / scale).floor() as i32);
+            layout.height = layout
+                .height
+                .clamp(20, (f64::from(window_height) / scale).floor() as i32);
+            if snap_to_edges {
+                snap_widget_to_edges(layout, window_width, window_height, snap_distance);
             }
             config.normalize();
             if snap_to_widgets {
                 snap_widget_to_widgets(&mut config, drag.widget);
             }
+            constrain_widget_to_window(&mut config, drag.widget);
         }
 
         InvalidateRect(hwnd, ptr::null(), 0);
@@ -3741,23 +3763,21 @@ mod windows_overlay {
         window_height: i32,
         snap_distance: i32,
     ) {
-        if snap_distance <= 0 {
-            return;
-        }
-
+        let width = scaled_dimension(layout.width, layout.scale);
+        let height = scaled_dimension(layout.height, layout.scale);
         if layout.x.abs() <= snap_distance {
             layout.x = 0;
         }
         if layout.y.abs() <= snap_distance {
             layout.y = 0;
         }
-        let right_gap = window_width - (layout.x + layout.width);
+        let right_gap = window_width - (layout.x + width);
         if right_gap.abs() <= snap_distance {
-            layout.x = window_width - layout.width;
+            layout.x = window_width - width;
         }
-        let bottom_gap = window_height - (layout.y + layout.height);
+        let bottom_gap = window_height - (layout.y + height);
         if bottom_gap.abs() <= snap_distance {
-            layout.y = window_height - layout.height;
+            layout.y = window_height - height;
         }
     }
 
@@ -3775,9 +3795,6 @@ mod windows_overlay {
 
     fn snap_widget_to_widgets(config: &mut OverlayConfig, widget: WidgetId) {
         let snap_distance = config.layout.snap_distance;
-        if snap_distance <= 0 {
-            return;
-        }
         let others = widget_areas(config)
             .into_iter()
             .filter(|(id, _)| *id != widget)
@@ -3787,24 +3804,32 @@ mod windows_overlay {
         let mut area = area_from_layout(layout);
 
         for other in others {
-            if (area.x - other.x).abs() <= snap_distance {
-                layout.x = other.x;
-            } else if (area.x - other.right()).abs() <= snap_distance {
-                layout.x = other.right();
-            } else if (area.right() - other.x).abs() <= snap_distance {
-                layout.x = other.x - area.width;
-            } else if (area.right() - other.right()).abs() <= snap_distance {
-                layout.x = other.right() - area.width;
+            let x_targets = [
+                other.x,
+                other.right(),
+                other.x - area.width,
+                other.right() - area.width,
+            ];
+            let y_targets = [
+                other.y,
+                other.bottom(),
+                other.y - area.height,
+                other.bottom() - area.height,
+            ];
+            let nearest = |value: i32, targets: &[i32]| {
+                targets
+                    .iter()
+                    .copied()
+                    .min_by_key(|target| (target - value).abs())
+                    .unwrap_or(value)
+            };
+            let x_target = nearest(area.x, &x_targets);
+            let y_target = nearest(area.y, &y_targets);
+            if (x_target - area.x).abs() <= snap_distance {
+                layout.x = x_target;
             }
-
-            if (area.y - other.y).abs() <= snap_distance {
-                layout.y = other.y;
-            } else if (area.y - other.bottom()).abs() <= snap_distance {
-                layout.y = other.bottom();
-            } else if (area.bottom() - other.y).abs() <= snap_distance {
-                layout.y = other.y - area.height;
-            } else if (area.bottom() - other.bottom()).abs() <= snap_distance {
-                layout.y = other.bottom() - area.height;
+            if (y_target - area.y).abs() <= snap_distance {
+                layout.y = y_target;
             }
             area = area_from_layout(layout);
         }
@@ -3812,6 +3837,27 @@ mod windows_overlay {
 
     fn snap_i32(value: i32, grid_size: i32) -> i32 {
         ((value as f64 / f64::from(grid_size)).round() as i32) * grid_size
+    }
+
+    fn scaled_dimension(value: i32, scale: f64) -> i32 {
+        (f64::from(value) * scale.clamp(0.5, 2.0)).round() as i32
+    }
+
+    fn constrain_widget_to_window(config: &mut OverlayConfig, widget: WidgetId) {
+        let window_width = config.window.width;
+        let window_height = config.window.height;
+        let layout = widget_layout_mut(config, widget);
+        let scale = layout.scale.clamp(0.5, 2.0);
+        layout.width = layout
+            .width
+            .clamp(48, (f64::from(window_width) / scale).floor() as i32);
+        layout.height = layout
+            .height
+            .clamp(20, (f64::from(window_height) / scale).floor() as i32);
+        let width = scaled_dimension(layout.width, layout.scale);
+        let height = scaled_dimension(layout.height, layout.scale);
+        layout.x = layout.x.clamp(0, (window_width - width).max(0));
+        layout.y = layout.y.clamp(0, (window_height - height).max(0));
     }
 
     unsafe fn draw_edit_handles(hdc: HDC, config: &OverlayConfig, selected: Option<WidgetId>) {
@@ -4233,6 +4279,67 @@ mod windows_overlay {
             config.style.scale = 1.5;
             assert_eq!(text_font_height(&config), 21);
             assert_eq!(text_font_height_with_scale(&config, 1.25), 26);
+        }
+
+        #[test]
+        fn uses_visual_widget_size_for_edge_snapping() {
+            let mut layout = WidgetLayout {
+                x: 296,
+                y: 160,
+                width: 100,
+                height: 40,
+                scale: 1.5,
+                ..WidgetLayout::default()
+            };
+            snap_widget_to_edges(&mut layout, 450, 300, 5);
+            assert_eq!(layout.x, 300);
+            assert_eq!(layout.y, 160);
+        }
+
+        #[test]
+        fn scaled_dimension_is_clamped_to_supported_widget_scale() {
+            assert_eq!(scaled_dimension(100, 0.25), 50);
+            assert_eq!(scaled_dimension(100, 1.5), 150);
+            assert_eq!(scaled_dimension(100, 3.0), 200);
+        }
+
+        #[test]
+        fn zero_snap_distance_keeps_exact_edge_alignment() {
+            let mut layout = WidgetLayout {
+                x: 350,
+                y: 260,
+                width: 100,
+                height: 40,
+                ..WidgetLayout::default()
+            };
+            snap_widget_to_edges(&mut layout, 450, 300, 0);
+            assert_eq!(layout.x, 350);
+            assert_eq!(layout.y, 260);
+        }
+
+        #[test]
+        fn constrains_scaled_widget_position_to_window_bounds() {
+            let mut config = OverlayConfig::default();
+            config.window.width = 420;
+            config.window.height = 220;
+            config.layout.telemetry.x = 999;
+            config.layout.telemetry.y = 999;
+            config.layout.telemetry.width = 200;
+            config.layout.telemetry.height = 100;
+            config.layout.telemetry.scale = 1.5;
+
+            constrain_widget_to_window(&mut config, WidgetId::Telemetry);
+
+            assert_eq!(config.layout.telemetry.x, 120);
+            assert_eq!(config.layout.telemetry.y, 70);
+
+            config.layout.telemetry.width = 500;
+            config.layout.telemetry.height = 300;
+            constrain_widget_to_window(&mut config, WidgetId::Telemetry);
+            assert_eq!(config.layout.telemetry.width, 280);
+            assert_eq!(config.layout.telemetry.height, 146);
+            assert_eq!(config.layout.telemetry.x, 0);
+            assert_eq!(config.layout.telemetry.y, 1);
         }
 
         #[test]

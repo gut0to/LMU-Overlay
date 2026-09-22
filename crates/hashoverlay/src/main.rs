@@ -48,6 +48,7 @@ struct Cli {
     overlay_layer: Option<String>,
     configure: bool,
     print_config_path: bool,
+    version: bool,
     config_path: Option<PathBuf>,
     once: bool,
     wait: bool,
@@ -73,6 +74,11 @@ fn run(cli: Cli) -> Result<()> {
 
     if cli.print_config_path {
         println!("{}", overlay_config_path(cli.config_path).display());
+        return Ok(());
+    }
+
+    if cli.version {
+        println!("HashOverlay {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
@@ -131,6 +137,7 @@ impl Cli {
             overlay_layer: None,
             configure: false,
             print_config_path: false,
+            version: false,
             config_path: None,
             once: false,
             wait: false,
@@ -144,6 +151,7 @@ impl Cli {
                 "--overlay-layer" => cli.overlay_layer = args.next(),
                 "--configure" => cli.configure = true,
                 "--print-config-path" => cli.print_config_path = true,
+                "--version" | "-V" => cli.version = true,
                 "--config" => {
                     if let Some(value) = args.next() {
                         cli.config_path = Some(PathBuf::from(value));
@@ -181,6 +189,7 @@ Options:
   --overlay-layer <id>     Open only one configured overlay surface.
   --configure               Create and open the user overlay config.
   --print-config-path       Print the default overlay config path.
+  -V, --version             Print the HashOverlay version.
   --config <path>           Use a custom overlay config path.
   --once                    Print one telemetry sample and exit after telemetry is detected.
   --wait                    Keep waiting when LMU telemetry is not available yet.

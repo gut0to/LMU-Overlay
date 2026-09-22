@@ -981,6 +981,12 @@ function App() {
             windowWidth={(activeOverlayConfig ?? config).window.width}
             windowHeight={(activeOverlayConfig ?? config).window.height}
             onChange={(key, value) => setOverlayLayoutSelection(config, setConfig, activeOverlayId, selectedLayout, key, value)}
+            onReplace={(layout) => setConfig(updateOverlayLayoutSelection(
+              config,
+              activeOverlayId,
+              selectedLayout,
+              normalizeWidgetLayoutForWindow((activeOverlayConfig ?? config).window, layout),
+            ))}
           />
           {selectedLayout.startsWith("extra:") && config.extra_widgets[selectedLayout.slice("extra:".length)] && (
             <>
@@ -1258,7 +1264,6 @@ function SurfaceMap(props: {
         onPointerMove={(event) => move(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
-        onPointerLeave={() => setDrag(null)}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
         {props.config.overlays.map((overlay) => (
@@ -1358,8 +1363,8 @@ function OverlayPreview(props: {
     const next = drag.resize
       ? {
           ...drag.layout,
-          width: clamp(Math.round(drag.layout.width + deltaX), 48, props.config.window.width),
-          height: clamp(Math.round(drag.layout.height + deltaY), 20, props.config.window.height),
+          width: clamp(Math.round(drag.layout.width + deltaX / clamp(drag.layout.scale, 0.5, 2)), 48, Math.floor(props.config.window.width / clamp(drag.layout.scale, 0.5, 2))),
+          height: clamp(Math.round(drag.layout.height + deltaY / clamp(drag.layout.scale, 0.5, 2)), 20, Math.floor(props.config.window.height / clamp(drag.layout.scale, 0.5, 2))),
         }
       : {
           ...drag.layout,
@@ -1393,7 +1398,6 @@ function OverlayPreview(props: {
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
-        onPointerLeave={() => setDrag(null)}
         style={{
           width: previewWidth,
           height: previewHeight,
@@ -1452,11 +1456,11 @@ function OverlayPreview(props: {
                 if (dx === 0 && dy === 0) return;
                 event.preventDefault();
                 props.onSelect(key);
-                props.onLayoutChange(key, {
+                props.onLayoutChange(key, snapLayout(props.config, key, {
                   ...layout,
-                  x: clamp(layout.x + dx, 0, Math.max(0, props.config.window.width - layout.width)),
-                  y: clamp(layout.y + dy, 0, Math.max(0, props.config.window.height - layout.height)),
-                });
+                  x: layout.x + dx,
+                  y: layout.y + dy,
+                }));
               }}
               aria-label={`${label}, position ${layout.x}, ${layout.y}${layout.locked ? ". Locked." : ". Use arrow keys to move."}`}
               title={layout.locked ? `${label} · locked` : label}
@@ -1500,10 +1504,14 @@ function layoutCollisions(config: OverlayConfig) {
     for (let right = left + 1; right < entries.length; right += 1) {
       const first = entries[left];
       const second = entries[right];
-      const overlaps = first.layout.x < second.layout.x + second.layout.width
-        && first.layout.x + first.layout.width > second.layout.x
-        && first.layout.y < second.layout.y + second.layout.height
-        && first.layout.y + first.layout.height > second.layout.y;
+      const firstWidth = scaledDimension(first.layout.width, first.layout.scale);
+      const firstHeight = scaledDimension(first.layout.height, first.layout.scale);
+      const secondWidth = scaledDimension(second.layout.width, second.layout.scale);
+      const secondHeight = scaledDimension(second.layout.height, second.layout.scale);
+      const overlaps = first.layout.x < second.layout.x + secondWidth
+        && first.layout.x + firstWidth > second.layout.x
+        && first.layout.y < second.layout.y + secondHeight
+        && first.layout.y + firstHeight > second.layout.y;
       if (overlaps) {
         collisions.push([first.label, second.label]);
       }
@@ -1634,15 +1642,22 @@ function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: Widg
 }
 
 function constrainLayoutToWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
-  const width = clamp(layout.width, 48, window.width);
-  const height = clamp(layout.height, 20, window.height);
+  const scale = clamp(layout.scale, 0.5, 2);
+  const width = clamp(layout.width, 48, Math.floor(window.width / scale));
+  const height = clamp(layout.height, 20, Math.floor(window.height / scale));
+  const visualWidth = scaledDimension(width, scale);
+  const visualHeight = scaledDimension(height, scale);
   return {
     ...layout,
     width,
     height,
-    x: clamp(layout.x, 0, Math.max(0, window.width - width)),
-    y: clamp(layout.y, 0, Math.max(0, window.height - height)),
+    x: clamp(layout.x, 0, Math.max(0, window.width - visualWidth)),
+    y: clamp(layout.y, 0, Math.max(0, window.height - visualHeight)),
   };
+}
+
+function scaledDimension(value: number, scale: number) {
+  return Math.round(value * clamp(scale, 0.5, 2));
 }
 
 function snapNumber(value: number, gridSize: number) {
@@ -1653,17 +1668,19 @@ function snapNumber(value: number, gridSize: number) {
 function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout {
   const next = { ...layout };
   const distance = config.layout.snap_distance;
+  const width = scaledDimension(next.width, next.scale);
+  const height = scaledDimension(next.height, next.scale);
   if (Math.abs(next.x) <= distance) {
     next.x = 0;
   }
   if (Math.abs(next.y) <= distance) {
     next.y = 0;
   }
-  if (Math.abs(config.window.width - (next.x + next.width)) <= distance) {
-    next.x = config.window.width - next.width;
+  if (Math.abs(config.window.width - (next.x + width)) <= distance) {
+    next.x = config.window.width - width;
   }
-  if (Math.abs(config.window.height - (next.y + next.height)) <= distance) {
-    next.y = config.window.height - next.height;
+  if (Math.abs(config.window.height - (next.y + height)) <= distance) {
+    next.y = config.window.height - height;
   }
   return next;
 }
@@ -1675,27 +1692,34 @@ function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: W
     if (key === widget) {
       continue;
     }
-    const nextRight = next.x + next.width;
-    const nextBottom = next.y + next.height;
-    const otherRight = other.x + other.width;
-    const otherBottom = other.y + other.height;
-    if (Math.abs(next.x - other.x) <= distance) {
-      next.x = other.x;
-    } else if (Math.abs(next.x - otherRight) <= distance) {
-      next.x = otherRight;
-    } else if (Math.abs(nextRight - other.x) <= distance) {
-      next.x = other.x - next.width;
-    } else if (Math.abs(nextRight - otherRight) <= distance) {
-      next.x = otherRight - next.width;
+    const nextWidth = scaledDimension(next.width, next.scale);
+    const nextHeight = scaledDimension(next.height, next.scale);
+    const otherWidth = scaledDimension(other.width, other.scale);
+    const otherHeight = scaledDimension(other.height, other.scale);
+    const otherRight = other.x + otherWidth;
+    const otherBottom = other.y + otherHeight;
+    const xTargets = [
+      other.x,
+      otherRight,
+      other.x - nextWidth,
+      otherRight - nextWidth,
+    ];
+    const yTargets = [
+      other.y,
+      otherBottom,
+      other.y - nextHeight,
+      otherBottom - nextHeight,
+    ];
+    const nearest = (value: number, targets: number[]) => targets.reduce((best, target) =>
+      Math.abs(target - value) < Math.abs(best - value) ? target : best,
+    targets[0]);
+    const xTarget = nearest(next.x, xTargets);
+    const yTarget = nearest(next.y, yTargets);
+    if (Math.abs(xTarget - next.x) <= distance) {
+      next.x = xTarget;
     }
-    if (Math.abs(next.y - other.y) <= distance) {
-      next.y = other.y;
-    } else if (Math.abs(next.y - otherBottom) <= distance) {
-      next.y = otherBottom;
-    } else if (Math.abs(nextBottom - other.y) <= distance) {
-      next.y = other.y - next.height;
-    } else if (Math.abs(nextBottom - otherBottom) <= distance) {
-      next.y = otherBottom - next.height;
+    if (Math.abs(yTarget - next.y) <= distance) {
+      next.y = yTarget;
     }
   }
   return next;
@@ -1719,6 +1743,7 @@ function WidgetLayoutFields(props: {
   windowWidth: number;
   windowHeight: number;
   onChange: <K extends keyof WidgetLayout>(key: K, value: WidgetLayout[K]) => void;
+  onReplace: (layout: WidgetLayout) => void;
 }) {
   const [copiedGeometry, setCopiedGeometry] = useState(false);
   return (
@@ -1729,18 +1754,17 @@ function WidgetLayoutFields(props: {
           setCopiedGeometry(true);
           window.setTimeout(() => setCopiedGeometry(false), 1400);
         }}>{copiedGeometry ? "Copied" : "Copy geometry"}</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - props.layout.width) / 2)))}>Center horizontal</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - props.layout.height) / 2)))}>Center vertical</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, Math.round((props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)) / 2)))}>Center horizontal</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, Math.round((props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)) / 2)))}>Center vertical</button>
         <button className="secondaryButton" onClick={() => props.onChange("x", 0)}>Align left</button>
-        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - props.layout.width))}>Align right</button>
+        <button className="secondaryButton" onClick={() => props.onChange("x", Math.max(0, props.windowWidth - scaledDimension(props.layout.width, props.layout.scale)))}>Align right</button>
         <button className="secondaryButton" onClick={() => props.onChange("y", 0)}>Align top</button>
-        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - props.layout.height))}>Align bottom</button>
+        <button className="secondaryButton" onClick={() => props.onChange("y", Math.max(0, props.windowHeight - scaledDimension(props.layout.height, props.layout.scale)))}>Align bottom</button>
         <button className="secondaryButton" onClick={() => {
-          (Object.keys(props.defaultLayout) as Array<keyof WidgetLayout>).forEach((key) => props.onChange(key, props.defaultLayout[key]));
+          props.onReplace({ ...props.defaultLayout });
         }}>Reset widget</button>
         <button className="secondaryButton" onClick={() => {
-          props.onChange("width", 320);
-          props.onChange("height", 80);
+          props.onReplace({ ...props.layout, width: 320, height: 80 });
         }}>Reset size</button>
       </div>
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
@@ -2196,7 +2220,34 @@ function setOverlayLayoutSelection<K extends keyof WidgetLayout>(
 ) {
   const view = overlayPreviewConfig(config, overlayId);
   const layout = layoutForSelection(view, selection);
-  setConfig(updateOverlayLayoutSelection(config, overlayId, selection, { ...layout, [key]: value }));
+  const next = normalizeWidgetLayoutForWindow(view.window, { ...layout, [key]: value });
+  setConfig(updateOverlayLayoutSelection(config, overlayId, selection, next));
+}
+
+function normalizeWidgetLayoutForWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
+  const scale = clamp(Number.isFinite(layout.scale) ? layout.scale : 1, 0.5, 2);
+  const width = clamp(
+    Number.isFinite(layout.width) ? Math.round(layout.width) : 48,
+    48,
+    Math.max(48, Math.floor(window.width / scale)),
+  );
+  const height = clamp(
+    Number.isFinite(layout.height) ? Math.round(layout.height) : 20,
+    20,
+    Math.max(20, Math.floor(window.height / scale)),
+  );
+  const visualWidth = scaledDimension(width, scale);
+  const visualHeight = scaledDimension(height, scale);
+  return {
+    ...layout,
+    x: clamp(Number.isFinite(layout.x) ? Math.round(layout.x) : 0, 0, Math.max(0, window.width - visualWidth)),
+    y: clamp(Number.isFinite(layout.y) ? Math.round(layout.y) : 0, 0, Math.max(0, window.height - visualHeight)),
+    width,
+    height,
+    scale,
+    opacity: clamp(Number.isFinite(layout.opacity) ? layout.opacity : 1, 0.1, 1),
+    z_index: Number.isFinite(layout.z_index) ? Math.round(layout.z_index) : 0,
+  };
 }
 
 function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
