@@ -3847,6 +3847,13 @@ mod windows_overlay {
         let window_width = config.window.width;
         let window_height = config.window.height;
         let layout = widget_layout_mut(config, widget);
+        let scale = layout.scale.clamp(0.5, 2.0);
+        layout.width = layout
+            .width
+            .clamp(48, (f64::from(window_width) / scale).floor() as i32);
+        layout.height = layout
+            .height
+            .clamp(20, (f64::from(window_height) / scale).floor() as i32);
         let width = scaled_dimension(layout.width, layout.scale);
         let height = scaled_dimension(layout.height, layout.scale);
         layout.x = layout.x.clamp(0, (window_width - width).max(0));
@@ -4325,6 +4332,14 @@ mod windows_overlay {
 
             assert_eq!(config.layout.telemetry.x, 120);
             assert_eq!(config.layout.telemetry.y, 70);
+
+            config.layout.telemetry.width = 500;
+            config.layout.telemetry.height = 300;
+            constrain_widget_to_window(&mut config, WidgetId::Telemetry);
+            assert_eq!(config.layout.telemetry.width, 280);
+            assert_eq!(config.layout.telemetry.height, 146);
+            assert_eq!(config.layout.telemetry.x, 0);
+            assert_eq!(config.layout.telemetry.y, 1);
         }
 
         #[test]
