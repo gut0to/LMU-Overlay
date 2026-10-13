@@ -1370,3 +1370,5 @@ textarea { resize: vertical; min-height: 160px; }
 input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .widgetCatalogRow:focus-within { outline: 2px solid var(--violet); outline-offset: 3px; }
+
+.tabs button:focus-visible { outline-offset: -3px; }
