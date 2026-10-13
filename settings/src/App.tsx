@@ -1839,7 +1839,7 @@ function Segmented(props: { value: string; options: string[][]; onChange: (value
   return (
     <div className="segmented">
       {props.options.map(([value, label]) => (
-        <button key={value} className={props.value === value ? "selected" : ""} onClick={() => props.onChange(value)}>
+        <button key={value} aria-pressed={props.value === value} className={props.value === value ? "selected" : ""} onClick={() => props.onChange(value)}>
           {label}
         </button>
       ))}
