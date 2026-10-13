@@ -1176,7 +1176,7 @@ function App() {
           </div>
           <label className="field stack">
             <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
-            <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
+            <textarea aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
           </label>
           <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
         </Section>}
