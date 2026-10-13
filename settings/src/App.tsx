@@ -881,7 +881,7 @@ function App() {
         <p className="stripHint">Pick a surface, then set its layout and live data modules.</p>
       </section>
 
-      <nav className="tabs">
+      <nav className="tabs" aria-label="Settings pages">
         {pages.map((page) => (
           <button key={page} className={activePage === page ? "selected" : ""} onClick={() => setActivePage(page)}>
             {page}
