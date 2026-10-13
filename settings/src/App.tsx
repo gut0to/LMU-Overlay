@@ -2104,7 +2104,7 @@ function HotkeyField(props: { label: string; value: string; conflict: boolean; o
             parts.push("Alt");
           }
           const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
-          if (!["Control", "Shift", "Alt"].includes(key)) {
+          if (!event.metaKey && !["Control", "Shift", "Alt", "Meta"].includes(key)) {
             parts.push(key.toUpperCase());
             props.onChange(parts.join("+"));
           }
