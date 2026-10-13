@@ -1354,3 +1354,5 @@ h1 span {
 .runtimeNotice { overflow-wrap: anywhere; }
 
 .status { overflow-wrap: anywhere; }
+
+.stripMetric strong, .range output { font-variant-numeric: tabular-nums; }
