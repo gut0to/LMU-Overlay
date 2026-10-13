@@ -1081,6 +1081,7 @@ function App() {
               ))}
             </div>
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
+            {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
             {filteredWidgetCatalog.map((widget) => {
               const legacy = legacyWidgetById[widget.id];
               const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
