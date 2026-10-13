@@ -883,7 +883,7 @@ function App() {
 
       <nav className="tabs" aria-label="Settings pages">
         {pages.map((page) => (
-          <button key={page} className={activePage === page ? "selected" : ""} onClick={() => setActivePage(page)}>
+          <button key={page} aria-current={activePage === page ? "page" : undefined} className={activePage === page ? "selected" : ""} onClick={() => setActivePage(page)}>
             {page}
           </button>
         ))}
