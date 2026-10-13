@@ -1077,7 +1077,7 @@ function App() {
             <input value={widgetSearch} placeholder="Search widgets" onChange={(event) => setWidgetSearch(event.target.value)} />
             <div className="segmented">
               {widgetCategories.map((category) => (
-                <button key={category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
+                <button key={category} aria-pressed={widgetCategory === category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
               ))}
             </div>
             {filteredWidgetCatalog.map((widget) => {
