@@ -787,7 +787,7 @@ function App() {
             <Square size={16} />
             Stop overlay
           </button>
-          <button className={`secondaryButton ${overlayEditMode ? "active" : ""}`} onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
+          <button aria-pressed={overlayEditMode} className={`secondaryButton ${overlayEditMode ? "active" : ""}`} onClick={() => void toggleOverlayEditMode()} disabled={!overlayRunning}>
             {overlayEditMode ? "Exit edit mode" : "Edit overlay"}
           </button>
           <button className="secondaryButton" onClick={() => void toggleOverlayVisibility()} disabled={!overlayRunning}>
