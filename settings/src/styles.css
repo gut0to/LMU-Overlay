@@ -1362,3 +1362,5 @@ h1 span {
 .widgetCatalogRow small { overflow-wrap: anywhere; }
 
 .catalogSummary { color: var(--muted); font-size: 12px; margin: 10px 0; }
+
+textarea { resize: vertical; min-height: 160px; }
