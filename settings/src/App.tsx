@@ -1165,7 +1165,7 @@ function App() {
             <button className="primaryButton" onClick={exportConfigText}>
               Export
             </button>
-            <button className="primaryButton" onClick={importConfigText} disabled={!configText.trim()}>
+            <button className="primaryButton" onClick={importConfigText} disabled={saving || !configText.trim()}>
               Import
             </button>
             <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
