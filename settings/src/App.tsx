@@ -680,7 +680,11 @@ function App() {
 
   function resetWorkspacePreference() {
     const safeDefault = workspacePresets[0][1];
-    window.localStorage.removeItem(workspaceStorageKey);
+    try {
+      window.localStorage.removeItem(workspaceStorageKey);
+    } catch {
+      // Reset the in-memory preference even when persistence is unavailable.
+    }
     setWorkspace(safeDefault);
     setStatus("Workspace reset");
   }
