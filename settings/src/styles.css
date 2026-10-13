@@ -1364,3 +1364,5 @@ h1 span {
 .catalogSummary { color: var(--muted); font-size: 12px; margin: 10px 0; }
 
 textarea { resize: vertical; min-height: 160px; }
+
+.field textarea { font-family: Consolas, "Courier New", monospace; line-height: 1.5; tab-size: 2; }
