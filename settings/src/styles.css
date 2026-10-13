@@ -1360,3 +1360,5 @@ h1 span {
 .layerChoices button > span { overflow-wrap: anywhere; min-width: 0; }
 
 .widgetCatalogRow small { overflow-wrap: anywhere; }
+
+.catalogSummary { color: var(--muted); font-size: 12px; margin: 10px 0; }
