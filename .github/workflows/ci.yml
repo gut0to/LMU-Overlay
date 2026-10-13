@@ -62,6 +62,10 @@ jobs:
         run: npm run build
         working-directory: settings
 
+      - name: Test settings preference recovery
+        run: npm test
+        working-directory: settings
+
       - name: Build overlay resource
         run: cargo build --release
 
