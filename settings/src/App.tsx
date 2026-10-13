@@ -746,7 +746,7 @@ function App() {
 
   if (!config) {
     return (
-      <main className="shell loading">
+      <main className="shell loading" role="status" aria-live="polite">
         <Activity size={20} />
         <span>{status}</span>
       </main>
