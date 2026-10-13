@@ -2090,7 +2090,9 @@ function HotkeyField(props: { label: string; value: string; conflict: boolean; o
       <button
         className="hotkeyButton"
         onKeyDown={(event) => {
+          if (event.key === "Tab") return;
           event.preventDefault();
+          if (event.key === "Escape" || event.repeat) return;
           const parts = [];
           if (event.ctrlKey) {
             parts.push("Ctrl");
