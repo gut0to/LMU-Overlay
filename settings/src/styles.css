@@ -1350,3 +1350,5 @@ h1 span {
 .field > input, .field > textarea { min-width: 0; max-width: 100%; }
 
 .brandBlock p { overflow-wrap: anywhere; }
+
+.runtimeNotice { overflow-wrap: anywhere; }
