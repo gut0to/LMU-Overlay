@@ -250,7 +250,19 @@ function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
     try {
       const saved = window.localStorage.getItem(workspaceStorageKey);
-      if (saved) return { ...workspacePresets[0][1], ...JSON.parse(saved) } as WorkspaceSize;
+      if (saved) {
+        const parsed: unknown = JSON.parse(saved);
+        if (parsed && typeof parsed === "object") {
+          const value = parsed as Partial<WorkspaceSize>;
+          const defaults = workspacePresets[0][1];
+          return {
+            width: boundedInteger(Number(value.width), 320, 16384, defaults.width),
+            height: boundedInteger(Number(value.height), 240, 8640, defaults.height),
+            originX: finiteInteger(Number(value.originX), defaults.originX),
+            originY: finiteInteger(Number(value.originY), defaults.originY),
+          };
+        }
+      }
     } catch {
       // Ignore malformed editor-only state and use the safe default.
     }
