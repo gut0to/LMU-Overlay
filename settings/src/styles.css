@@ -1384,3 +1384,5 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 @media (pointer: coarse) { .widgetCatalogRow, .hotkeyButton, .workspacePresets button, .segmented button { min-height: 44px; } }
 
 .tabs { overscroll-behavior-x: contain; scrollbar-width: thin; }
+
+.statusError { color: var(--danger); }

@@ -24,6 +24,20 @@ has a valid player sample. It never manufactures values while LMU is closed.
 
 All shortcuts can be changed in **Settings > Hotkeys**. Conflicting shortcuts are highlighted before saving.
 
+While capturing a shortcut, Tab moves to the next control and Escape leaves the
+shortcut unchanged. Modifier keys alone do not replace the shortcut.
+
+## Finding Widgets and Recovering the Editor
+
+The widget search matches names, identifiers, descriptions and telemetry
+requirements. Combine it with a category filter; **Clear filters** resets both.
+The result count and empty-state message help explain a filtered catalog.
+
+The editor restores valid workspace dimensions and monitor origins from local
+preferences. Corrupt preferences recover safe defaults, and unavailable browser
+storage does not prevent editing. Use **Reset editor** to return to the default
+workspace. Negative origins remain supported for monitors left of the primary.
+
 ## Surface and Window Editing
 
 The surface map represents the selected monitor workspace. Click a surface to

@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
   CoachingConfig,
   CustomPresetConfig,
@@ -53,7 +54,6 @@ const presetNames = ["practice", "qualifying", "race", "endurance", "minimal"] a
 type StandardPresetKey = (typeof presetNames)[number];
 const pages = ["Dashboard", "Widgets", "Layout", "Appearance", "Timing", "Coaching", "Performance", "Hotkeys", "Presets", "Advanced"] as const;
 type Page = (typeof pages)[number];
-type WorkspaceSize = { width: number; height: number; originX: number; originY: number };
 const workspacePresets: Array<[string, WorkspaceSize]> = [
   ["Primary 1080p", { width: 1920, height: 1080, originX: 0, originY: 0 }],
   ["Primary 1440p", { width: 2560, height: 1440, originX: 0, originY: 0 }],
@@ -249,20 +249,7 @@ function App() {
   const [activeOverlayId, setActiveOverlayId] = useState("main");
   const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
     try {
-      const saved = window.localStorage.getItem(workspaceStorageKey);
-      if (saved) {
-        const parsed: unknown = JSON.parse(saved);
-        if (parsed && typeof parsed === "object") {
-          const value = parsed as Partial<WorkspaceSize>;
-          const defaults = workspacePresets[0][1];
-          return {
-            width: boundedInteger(Number(value.width), 320, 16384, defaults.width),
-            height: boundedInteger(Number(value.height), 240, 8640, defaults.height),
-            originX: finiteInteger(Number(value.originX), defaults.originX),
-            originY: finiteInteger(Number(value.originY), defaults.originY),
-          };
-        }
-      }
+      return restoreWorkspace(window.localStorage.getItem(workspaceStorageKey), workspacePresets[0][1]);
     } catch {
       // Ignore malformed editor-only state and use the safe default.
     }
@@ -812,6 +799,7 @@ function App() {
           {presetNames.map((name) => (
             <button
               key={name}
+              aria-pressed={activePreset === name}
               className={activePreset === name ? "selected" : ""}
               onClick={() => void applyPreset(name)}
               disabled={saving}
@@ -1186,7 +1174,7 @@ function App() {
         </Section>}
       </div>
 
-      <footer className="status" role="status" aria-live="polite" aria-atomic="true">{status}</footer>
+      <footer className={`status ${statusNeedsAttention ? "statusError" : ""}`} role="status" aria-live="polite" aria-atomic="true">{status}</footer>
     </main>
   );
 }
