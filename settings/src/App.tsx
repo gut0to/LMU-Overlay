@@ -304,7 +304,11 @@ function App() {
   }, [config]);
 
   useEffect(() => {
-    window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspace));
+    try {
+      window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspace));
+    } catch {
+      // The editor remains usable when storage is full or unavailable.
+    }
   }, [workspace]);
 
   async function refreshOverlayStatus(): Promise<boolean> {
