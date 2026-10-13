@@ -1080,6 +1080,7 @@ function App() {
                 <button key={category} aria-pressed={widgetCategory === category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
               ))}
             </div>
+            {(widgetSearch || widgetCategory !== "All") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); }}>Clear filters</button>}
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
             {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
             {filteredWidgetCatalog.map((widget) => {
