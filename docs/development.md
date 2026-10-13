@@ -16,10 +16,15 @@ cargo build --workspace --release
 ```powershell
 cd settings
 npm ci
+npm test
 npm audit --audit-level=moderate
 npm run build
 npm run tauri build
 ```
+
+The Settings tests require Node.js 22.6 or newer and validate recovery of editor
+workspace preferences, including malformed JSON, invalid field types, bounded
+dimensions and negative monitor origins. They do not require the Tauri host.
 
 The frontend build checks TypeScript and produces the Vite bundle. The Tauri
 build packages that bundle with the matching `hashoverlay.exe` resource. Run
