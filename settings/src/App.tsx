@@ -1148,7 +1148,7 @@ function App() {
                 <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
                   <Save size={16} />
                 </button>
-                <button title="Delete preset" onClick={() => void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted")} disabled={saving}>
+                <button aria-label={`Delete ${preset.name}`} title="Delete preset" onClick={() => void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted")} disabled={saving}>
                   <Trash2 size={16} />
                 </button>
               </div>
