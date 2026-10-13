@@ -1358,3 +1358,5 @@ h1 span {
 .stripMetric strong, .range output { font-variant-numeric: tabular-nums; }
 
 .layerChoices button > span { overflow-wrap: anywhere; min-width: 0; }
+
+.widgetCatalogRow small { overflow-wrap: anywhere; }
