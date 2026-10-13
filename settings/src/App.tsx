@@ -773,7 +773,7 @@ function App() {
           </div>
           {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">
-          <button className="iconButton" title="Open config folder" onClick={openConfigFolder}>
+          <button className="iconButton" aria-label="Open config folder" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
           </button>
           <button className="iconButton" title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
