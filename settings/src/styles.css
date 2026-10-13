@@ -1374,3 +1374,5 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .tabs button:focus-visible { outline-offset: -3px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+@media (forced-colors: active) { button, input, textarea { border: 1px solid ButtonText; } button[aria-pressed="true"], button[aria-current="page"] { outline: 2px solid Highlight; outline-offset: -3px; } }
