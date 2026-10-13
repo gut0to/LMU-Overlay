@@ -833,7 +833,7 @@ function App() {
         </div>
         <div className="layerChoices">
           {config.overlays.map((overlay) => (
-            <button key={overlay.id} className={activeOverlayId === overlay.id ? "selected" : ""} onClick={() => setActiveOverlayId(overlay.id)}>
+            <button key={overlay.id} aria-pressed={activeOverlayId === overlay.id} className={activeOverlayId === overlay.id ? "selected" : ""} onClick={() => setActiveOverlayId(overlay.id)}>
               <span>{overlay.name}</span>
               <small>{overlay.enabled ? "ON" : "OFF"} · {overlay.widgets.length} widgets · {overlay.window.x},{overlay.window.y} · {overlay.window.width}×{overlay.window.height}</small>
             </button>
