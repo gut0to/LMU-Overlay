@@ -776,7 +776,7 @@ function App() {
           <button className="iconButton" aria-label="Open config folder" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
           </button>
-          <button className="iconButton" title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
+          <button className="iconButton" aria-label={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
             <RotateCcw size={18} />
           </button>
           <button className="primaryButton" onClick={startOverlay} disabled={saving}>
