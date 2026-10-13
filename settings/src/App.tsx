@@ -712,7 +712,7 @@ function App() {
     () => widgetCatalog.filter((widget) => {
       const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
       const query = widgetSearch.trim().toLocaleLowerCase();
-      return matchesCategory && (!query || `${widget.name} ${widget.description}`.toLocaleLowerCase().includes(query));
+      return matchesCategory && (!query || `${widget.id} ${widget.name} ${widget.description}`.toLocaleLowerCase().includes(query));
     }),
     [widgetCatalog, widgetCategory, widgetSearch],
   );
