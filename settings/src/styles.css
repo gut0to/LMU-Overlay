@@ -1346,3 +1346,5 @@ h1 span {
 }
 
 :root { color-scheme: dark; }
+
+.field > input, .field > textarea { min-width: 0; max-width: 100%; }
