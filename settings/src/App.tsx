@@ -2089,6 +2089,8 @@ function HotkeyField(props: { label: string; value: string; conflict: boolean; o
       <span>{props.label}</span>
       <button
         className="hotkeyButton"
+        aria-label={`${props.label}: ${props.value || "Press a key"}`}
+        aria-invalid={props.conflict}
         onKeyDown={(event) => {
           if (event.key === "Tab") return;
           event.preventDefault();
