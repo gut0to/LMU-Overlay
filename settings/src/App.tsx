@@ -943,7 +943,7 @@ function App() {
           </div>
           <div className="segmented">
             {filteredLayoutEntries.map(({ key, label }) => (
-              <button key={key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
+              <button key={key} aria-pressed={selectedLayout === key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
               </button>
             ))}
