@@ -1141,6 +1141,7 @@ function App() {
             {config.presets.custom.map((preset, index) => (
               <div className="presetItem" key={`${preset.name}-${index}`}>
                 <input
+                  disabled={saving}
                   aria-label={`Preset ${index + 1} name`}
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
