@@ -1817,7 +1817,10 @@ function NumberField(props: { label: string; value: number; onChange: (value: nu
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input type="number" value={props.value} onChange={(event) => props.onChange(Number(event.target.value))} />
+      <input type="number" value={props.value} onChange={(event) => {
+        const value = event.target.valueAsNumber;
+        if (Number.isFinite(value)) props.onChange(value);
+      }} />
     </label>
   );
 }
