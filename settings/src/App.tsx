@@ -1182,7 +1182,7 @@ function App() {
         </Section>}
       </div>
 
-      <footer className="status">{status}</footer>
+      <footer className="status" role="status" aria-live="polite" aria-atomic="true">{status}</footer>
     </main>
   );
 }
