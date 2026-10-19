@@ -1454,6 +1454,7 @@ function OverlayPreview(props: {
               }}
               onClick={() => props.onSelect(key)}
               onPointerDown={(event) => {
+                if (event.button !== 0 || !event.isPrimary) return;
                 props.onSelect(key);
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
