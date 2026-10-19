@@ -31,13 +31,17 @@ pub fn relative_neighbors(
     let mut ahead = Vec::new();
     let mut behind = Vec::new();
     for (index, car) in field.iter().enumerate() {
-        if index == player || car.in_garage || (same_class_only && car.vehicle_class.as_deref() != player_class) {
+        if index == player
+            || car.in_garage
+            || (same_class_only && car.vehicle_class.as_deref() != player_class)
+        {
             continue;
         }
         let Some(distance) = car.lap_distance_m.filter(|value| value.is_finite()) else {
             continue;
         };
-        let mut delta = distance - player_distance;
+        let mut delta =
+            distance.rem_euclid(track_length_m) - player_distance.rem_euclid(track_length_m);
         if delta > track_length_m / 2.0 {
             delta -= track_length_m;
         } else if delta < -track_length_m / 2.0 {
@@ -123,16 +127,36 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_distances_outside_one_track_length() {
+        let field = vec![
+            car(1, 1, 10100.0, "GT", true),
+            car(2, 1, -4880.0, "GT", false),
+            car(3, 1, 10080.0, "GT", false),
+        ];
+        let result = relative_neighbors(&field, 1, false, Some(5000.0)).unwrap();
+        assert_eq!(result.ahead, vec![1]);
+        assert_eq!(result.behind, vec![2]);
+    }
+
+    #[test]
     fn garage_cars_do_not_appear_as_on_track_neighbors() {
         let mut field = vec![car(1, 1, 100.0, "GT", true), car(2, 1, 110.0, "GT", false)];
         field[1].in_garage = true;
-        assert_eq!(order_by_track_proximity(&field, 1, false, Some(5000.0)), Some(vec![0]));
+        assert_eq!(
+            order_by_track_proximity(&field, 1, false, Some(5000.0)),
+            Some(vec![0])
+        );
     }
 
     #[test]
     fn explicit_player_marker_wins_over_stale_slot_id() {
         let field = vec![car(1, 1, 100.0, "GT", false), car(2, 1, 200.0, "GT", true)];
-        assert_eq!(relative_neighbors(&field, 1, false, Some(5000.0)).unwrap().player, 1);
+        assert_eq!(
+            relative_neighbors(&field, 1, false, Some(5000.0))
+                .unwrap()
+                .player,
+            1
+        );
     }
 
     #[test]

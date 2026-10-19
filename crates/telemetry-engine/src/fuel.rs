@@ -77,7 +77,9 @@ impl FuelEngine {
                     && !(self.entered_pits || sample.metadata.in_pits)
                     && !(self.entered_garage || sample.metadata.in_garage)
                     && !(self.refueled || transition_refueled)
-                    && self.lap_number.is_some_and(|previous| previous.checked_add(1) == Some(lap))
+                    && self
+                        .lap_number
+                        .is_some_and(|previous| previous.checked_add(1) == Some(lap))
                     && used > 0.0
                     && used < capacity.unwrap_or(f64::INFINITY) * 0.75
                 {
