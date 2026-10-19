@@ -694,7 +694,7 @@ function App() {
   }
 
   const widgetCategories = useMemo(
-    () => ["All", ...new Set(widgetCatalog.map((widget) => widget.category))],
+    () => ["All", ...[...new Set(widgetCatalog.map((widget) => widget.category))].sort((left, right) => left.localeCompare(right))],
     [widgetCatalog],
   );
   const filteredWidgetCatalog = useMemo(
