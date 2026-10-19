@@ -1303,6 +1303,7 @@ function SurfaceMap(props: {
             }}
             onClick={() => props.onSelect(overlay.id)}
             onPointerDown={(event) => {
+              if (event.button !== 0 || !event.isPrimary) return;
               props.onSelect(overlay.id);
               setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
               event.currentTarget.setPointerCapture(event.pointerId);
