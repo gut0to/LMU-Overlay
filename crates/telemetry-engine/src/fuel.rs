@@ -77,6 +77,7 @@ impl FuelEngine {
                     && !(self.entered_pits || sample.metadata.in_pits)
                     && !(self.entered_garage || sample.metadata.in_garage)
                     && !(self.refueled || transition_refueled)
+                    && self.lap_number.is_some_and(|previous| previous.checked_add(1) == Some(lap))
                     && used > 0.0
                     && used < capacity.unwrap_or(f64::INFINITY) * 0.75
                 {
@@ -120,6 +121,14 @@ impl FuelEngine {
 mod tests {
     use super::*;
     use lmu_telemetry::{Gear, TelemetryMetadata, VehicleSystems};
+
+    #[test]
+    fn skipped_laps_do_not_become_single_lap_consumption() {
+        let mut engine = FuelEngine::default();
+        engine.update(&sample(1, 30.0));
+        assert_eq!(engine.update(&sample(3, 24.0)).last_lap_used, None);
+        assert_eq!(engine.update(&sample(4, 21.0)).last_lap_used, Some(3.0));
+    }
 
     #[test]
     fn estimates_only_after_two_valid_laps() {
