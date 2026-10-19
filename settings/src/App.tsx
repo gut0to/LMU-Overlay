@@ -933,6 +933,7 @@ function App() {
             <span>{filteredLayoutEntries.length}/{availableLayoutEntries.length}</span>
           </div>
           <div className="segmented">
+            {filteredLayoutEntries.length === 0 && <p className="previewHint">No visible widgets match. Clear the search or enable widgets on this surface.</p>}
             {filteredLayoutEntries.map(({ key, label }) => (
               <button key={key} aria-pressed={selectedLayout === key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
