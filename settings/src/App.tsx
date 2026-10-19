@@ -1073,6 +1073,7 @@ function App() {
               ))}
             </div>
             {(widgetSearch || widgetCategory !== "All") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); }}>Clear filters</button>}
+            {widgetCatalog.length === 0 && <button className="secondaryButton" onClick={() => void loadWidgetCatalog()}>Retry loading widgets</button>}
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
             {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
             {filteredWidgetCatalog.map((widget) => {
