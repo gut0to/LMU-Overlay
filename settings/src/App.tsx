@@ -1135,6 +1135,7 @@ function App() {
                   aria-label={`Preset ${index + 1} name`}
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
+                  onBlur={(event) => setConfig(renameCustomPreset(config, index, event.target.value.trim() || `Custom ${index + 1}`))}
                 />
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
