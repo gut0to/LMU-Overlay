@@ -1439,6 +1439,7 @@ function OverlayPreview(props: {
           return (
             <button
               key={key}
+              aria-pressed={props.selected === key}
               className={`previewWidget ${props.selected === key ? "selected" : ""} ${layout.locked ? "locked" : ""}`}
               style={{
                 left: layout.x * scale,
