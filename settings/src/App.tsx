@@ -738,6 +738,7 @@ function App() {
       <main className="shell loading" role="status" aria-live="polite">
         <Activity size={20} />
         <span>{status}</span>
+        <button className="secondaryButton" onClick={() => void loadConfig()}>Retry loading config</button>
       </main>
     );
   }
