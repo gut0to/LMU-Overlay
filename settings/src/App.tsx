@@ -18,7 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { captureHotkey } from "./hotkeys";
+import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
   CoachingConfig,
@@ -2205,10 +2205,6 @@ function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
     return false;
   }
   return Object.entries(hotkeys).some(([otherKey, otherValue]) => otherKey !== key && normalizeHotkey(otherValue) === value);
-}
-
-function normalizeHotkey(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "");
 }
 
 function TextInput(props: { label: string; value: string; onChange: (value: string) => void }) {
