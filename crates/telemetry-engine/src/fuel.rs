@@ -96,7 +96,7 @@ impl FuelEngine {
             self.refueled = false;
         }
 
-        self.lap_invalidated |= sample.metadata.lap_invalidated == Some(true);
+        self.lap_invalidated |= fuel.is_none() || sample.metadata.lap_invalidated == Some(true);
         self.entered_pits |= sample.metadata.in_pits;
         self.entered_garage |= sample.metadata.in_garage;
         if let (Some(previous), Some(current)) = (self.last_fuel, fuel) {
@@ -121,6 +121,16 @@ impl FuelEngine {
 mod tests {
     use super::*;
     use lmu_telemetry::{Gear, TelemetryMetadata, VehicleSystems};
+
+    #[test]
+    fn missing_fuel_mid_lap_excludes_incomplete_consumption() {
+        let mut engine = FuelEngine::default();
+        let mut value = sample(1, 30.0);
+        engine.update(&value);
+        value.vehicle.fuel_liters = None;
+        engine.update(&value);
+        assert_eq!(engine.update(&sample(2, 27.0)).last_lap_used, None);
+    }
 
     #[test]
     fn skipped_laps_do_not_become_single_lap_consumption() {
