@@ -1115,6 +1115,7 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Hotkeys") && <Section icon={<Activity />} title="Hotkeys">
+          <p className="previewHint">Use F1–F12 with Ctrl, Shift or Alt. Tab moves to the next field; Escape keeps the current shortcut.</p>
           <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} conflict={hasHotkeyConflict(config.hotkeys, "toggle_overlay")} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
           <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} conflict={hasHotkeyConflict(config.hotkeys, "edit_mode")} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
           <HotkeyField label="Toggle coaching" value={config.hotkeys.toggle_coaching} conflict={hasHotkeyConflict(config.hotkeys, "toggle_coaching")} onChange={(value) => setHotkey(config, setConfig, "toggle_coaching", value)} />
