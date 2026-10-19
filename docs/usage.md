@@ -24,6 +24,10 @@ has a valid player sample. It never manufactures values while LMU is closed.
 
 All shortcuts can be changed in **Settings > Hotkeys**. Conflicting shortcuts are highlighted before saving.
 
+The host supports F1–F12 with optional Ctrl, Shift and Alt modifiers. Other keys
+leave the current binding unchanged. Conflict detection treats modifier order
+and the Control/Ctrl spelling as equivalent.
+
 While capturing a shortcut, Tab moves to the next control and Escape leaves the
 shortcut unchanged. Modifier keys alone do not replace the shortcut.
 
@@ -32,6 +36,13 @@ shortcut unchanged. Modifier keys alone do not replace the shortcut.
 The widget search matches names, identifiers, descriptions and telemetry
 requirements. Combine it with a category filter; **Clear filters** resets both.
 The result count and empty-state message help explain a filtered catalog.
+
+Search also matches categories and availability status. Enter several words in
+any order to require all of them, such as `lap fuel`; accents are optional. The
+layout picker uses the same matching rules for widget names and identifiers.
+
+Custom preset names keep focus while editing and use a fallback name if left
+blank. Deleting a custom preset asks for confirmation.
 
 The editor restores valid workspace dimensions and monitor origins from local
 preferences. Corrupt preferences recover safe defaults, and unavailable browser

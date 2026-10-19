@@ -18,6 +18,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { matchesSearch } from "./search";
+import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
   CoachingConfig,
@@ -394,7 +396,9 @@ function App() {
         text: configText,
         expected_revision: revision,
       });
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      lastSavedConfig.current = JSON.stringify(normalized);
+      setConfig(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config imported");
@@ -409,7 +413,9 @@ function App() {
     }
     try {
       const response = await invoke<LoadResponse>("reset_config");
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      lastSavedConfig.current = JSON.stringify(normalized);
+      setConfig(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config reset");
@@ -692,14 +698,14 @@ function App() {
   }
 
   const widgetCategories = useMemo(
-    () => ["All", ...new Set(widgetCatalog.map((widget) => widget.category))],
+    () => ["All", ...[...new Set(widgetCatalog.map((widget) => widget.category))].sort((left, right) => left.localeCompare(right))],
     [widgetCatalog],
   );
   const filteredWidgetCatalog = useMemo(
     () => widgetCatalog.filter((widget) => {
       const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
       const query = widgetSearch.trim().toLocaleLowerCase();
-      return matchesCategory && (!query || `${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement}`.toLocaleLowerCase().includes(query));
+      return matchesCategory && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
     }),
     [widgetCatalog, widgetCategory, widgetSearch],
   );
@@ -714,7 +720,7 @@ function App() {
   const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
   const filteredLayoutEntries = useMemo(() => {
     const query = layoutSearch.trim().toLocaleLowerCase();
-    return availableLayoutEntries.filter((entry) => !query || entry.label.toLocaleLowerCase().includes(query));
+    return availableLayoutEntries.filter((entry) => matchesSearch(`${entry.key} ${entry.label}`, query));
   }, [availableLayoutEntries, layoutSearch]);
 
   useEffect(() => {
@@ -736,6 +742,7 @@ function App() {
       <main className="shell loading" role="status" aria-live="polite">
         <Activity size={20} />
         <span>{status}</span>
+        <button className="secondaryButton" onClick={() => void loadConfig()}>Retry loading config</button>
       </main>
     );
   }
@@ -922,6 +929,7 @@ function App() {
             <Section icon={<Magnet />} title="Selected Widget">
           <div className="layoutPickerHeader">
             <input
+              type="search"
               value={layoutSearch}
               onChange={(event) => setLayoutSearch(event.target.value)}
               placeholder="Find widget..."
@@ -930,6 +938,7 @@ function App() {
             <span>{filteredLayoutEntries.length}/{availableLayoutEntries.length}</span>
           </div>
           <div className="segmented">
+            {filteredLayoutEntries.length === 0 && <p className="previewHint">No visible widgets match. Clear the search or enable widgets on this surface.</p>}
             {filteredLayoutEntries.map(({ key, label }) => (
               <button key={key} aria-pressed={selectedLayout === key} className={selectedLayout === key ? "selected" : ""} onClick={() => setSelectedLayout(key)}>
                 {label}
@@ -1069,6 +1078,7 @@ function App() {
               ))}
             </div>
             {(widgetSearch || widgetCategory !== "All") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); }}>Clear filters</button>}
+            {widgetCatalog.length === 0 && <button className="secondaryButton" onClick={() => void loadWidgetCatalog()}>Retry loading widgets</button>}
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
             {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
             {filteredWidgetCatalog.map((widget) => {
@@ -1114,6 +1124,7 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Hotkeys") && <Section icon={<Activity />} title="Hotkeys">
+          <p className="previewHint">Use F1–F12 with Ctrl, Shift or Alt. Tab moves to the next field; Escape keeps the current shortcut.</p>
           <HotkeyField label="Show or hide overlay" value={config.hotkeys.toggle_overlay} conflict={hasHotkeyConflict(config.hotkeys, "toggle_overlay")} onChange={(value) => setHotkey(config, setConfig, "toggle_overlay", value)} />
           <HotkeyField label="Edit mode" value={config.hotkeys.edit_mode} conflict={hasHotkeyConflict(config.hotkeys, "edit_mode")} onChange={(value) => setHotkey(config, setConfig, "edit_mode", value)} />
           <HotkeyField label="Toggle coaching" value={config.hotkeys.toggle_coaching} conflict={hasHotkeyConflict(config.hotkeys, "toggle_coaching")} onChange={(value) => setHotkey(config, setConfig, "toggle_coaching", value)} />
@@ -1127,12 +1138,13 @@ function App() {
           </button>
           <div className="presetList">
             {config.presets.custom.map((preset, index) => (
-              <div className="presetItem" key={`${preset.name}-${index}`}>
+              <div className="presetItem" key={index}>
                 <input
                   disabled={saving}
                   aria-label={`Preset ${index + 1} name`}
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
+                  onBlur={(event) => setConfig(renameCustomPreset(config, index, event.target.value.trim() || `Custom ${index + 1}`))}
                 />
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
@@ -1140,7 +1152,7 @@ function App() {
                 <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
                   <Save size={16} />
                 </button>
-                <button aria-label={`Delete ${preset.name}`} title="Delete preset" onClick={() => void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted")} disabled={saving}>
+                <button aria-label={`Delete ${preset.name}`} title="Delete preset" onClick={() => { if (window.confirm(`Delete preset “${preset.name}”?`)) void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted"); }} disabled={saving}>
                   <Trash2 size={16} />
                 </button>
               </div>
@@ -1159,10 +1171,10 @@ function App() {
             <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
               Clear text
             </button>
-            <button className="primaryButton" onClick={resetLayout} disabled={!defaultConfigState}>
+            <button className="primaryButton" onClick={resetLayout} disabled={saving || !defaultConfigState}>
               Reset layout
             </button>
-            <button className="dangerButton" onClick={resetConfig}>
+            <button className="dangerButton" disabled={saving} onClick={resetConfig}>
               Reset all
             </button>
           </div>
@@ -1248,6 +1260,7 @@ function SurfaceMap(props: {
         {workspacePresets.map(([label, size]) => (
           <button
             key={label}
+            aria-pressed={size.width === virtualWidth && size.height === virtualHeight && size.originX === props.workspace.originX && size.originY === props.workspace.originY}
             className={size.width === virtualWidth && size.height === virtualHeight && size.originX === props.workspace.originX && size.originY === props.workspace.originY ? "selected" : ""}
             onClick={() => {
               setCustomWorkspace(size);
@@ -1291,6 +1304,7 @@ function SurfaceMap(props: {
             }}
             onClick={() => props.onSelect(overlay.id)}
             onPointerDown={(event) => {
+              if (event.button !== 0 || !event.isPrimary) return;
               props.onSelect(overlay.id);
               setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
               event.currentTarget.setPointerCapture(event.pointerId);
@@ -1425,6 +1439,7 @@ function OverlayPreview(props: {
           return (
             <button
               key={key}
+              aria-pressed={props.selected === key}
               className={`previewWidget ${props.selected === key ? "selected" : ""} ${layout.locked ? "locked" : ""}`}
               style={{
                 left: layout.x * scale,
@@ -1441,6 +1456,7 @@ function OverlayPreview(props: {
               }}
               onClick={() => props.onSelect(key)}
               onPointerDown={(event) => {
+                if (event.button !== 0 || !event.isPrimary) return;
                 props.onSelect(key);
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
@@ -1810,7 +1826,7 @@ function NumberField(props: { label: string; value: number; onChange: (value: nu
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input type="number" value={props.value} onChange={(event) => {
+      <input type="number" step="any" value={props.value} onChange={(event) => {
         const value = event.target.valueAsNumber;
         if (Number.isFinite(value)) props.onChange(value);
       }} />
@@ -2087,22 +2103,8 @@ function HotkeyField(props: { label: string; value: string; conflict: boolean; o
         onKeyDown={(event) => {
           if (event.key === "Tab") return;
           event.preventDefault();
-          if (event.key === "Escape" || event.repeat) return;
-          const parts = [];
-          if (event.ctrlKey) {
-            parts.push("Ctrl");
-          }
-          if (event.shiftKey) {
-            parts.push("Shift");
-          }
-          if (event.altKey) {
-            parts.push("Alt");
-          }
-          const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
-          if (!event.metaKey && !["Control", "Shift", "Alt", "Meta"].includes(key)) {
-            parts.push(key.toUpperCase());
-            props.onChange(parts.join("+"));
-          }
+          const binding = captureHotkey({ ...event, isComposing: event.nativeEvent.isComposing });
+          if (binding) props.onChange(binding);
         }}
       >
         {props.value || "Press a key"}
@@ -2218,10 +2220,6 @@ function hasHotkeyConflict(hotkeys: HotkeyConfig, key: keyof HotkeyConfig) {
     return false;
   }
   return Object.entries(hotkeys).some(([otherKey, otherValue]) => otherKey !== key && normalizeHotkey(otherValue) === value);
-}
-
-function normalizeHotkey(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, "");
 }
 
 function TextInput(props: { label: string; value: string; onChange: (value: string) => void }) {
