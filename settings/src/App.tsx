@@ -1825,7 +1825,7 @@ function NumberField(props: { label: string; value: number; onChange: (value: nu
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input type="number" value={props.value} onChange={(event) => {
+      <input type="number" step="any" value={props.value} onChange={(event) => {
         const value = event.target.valueAsNumber;
         if (Number.isFinite(value)) props.onChange(value);
       }} />
