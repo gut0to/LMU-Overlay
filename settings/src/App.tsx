@@ -924,6 +924,7 @@ function App() {
             <Section icon={<Magnet />} title="Selected Widget">
           <div className="layoutPickerHeader">
             <input
+              type="search"
               value={layoutSearch}
               onChange={(event) => setLayoutSearch(event.target.value)}
               placeholder="Find widget..."
