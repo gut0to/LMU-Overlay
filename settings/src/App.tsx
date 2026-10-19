@@ -1260,6 +1260,7 @@ function SurfaceMap(props: {
         {workspacePresets.map(([label, size]) => (
           <button
             key={label}
+            aria-pressed={size.width === virtualWidth && size.height === virtualHeight && size.originX === props.workspace.originX && size.originY === props.workspace.originY}
             className={size.width === virtualWidth && size.height === virtualHeight && size.originX === props.workspace.originX && size.originY === props.workspace.originY ? "selected" : ""}
             onClick={() => {
               setCustomWorkspace(size);
