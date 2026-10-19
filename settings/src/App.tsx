@@ -1167,7 +1167,7 @@ function App() {
             <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
               Clear text
             </button>
-            <button className="primaryButton" onClick={resetLayout} disabled={!defaultConfigState}>
+            <button className="primaryButton" onClick={resetLayout} disabled={saving || !defaultConfigState}>
               Reset layout
             </button>
             <button className="dangerButton" disabled={saving} onClick={resetConfig}>
