@@ -21,7 +21,8 @@ pub fn relative_neighbors(
     let track_length_m = track_length_m.filter(|value| value.is_finite() && *value > 0.0)?;
     let player = field
         .iter()
-        .position(|car| car.is_player || car.slot_id == player_slot_id)?;
+        .position(|car| car.is_player)
+        .or_else(|| field.iter().position(|car| car.slot_id == player_slot_id))?;
     let player_distance = field[player]
         .lap_distance_m
         .filter(|value| value.is_finite())?;
@@ -119,6 +120,12 @@ mod tests {
             is_player: player,
             world_position: None,
         }
+    }
+
+    #[test]
+    fn explicit_player_marker_wins_over_stale_slot_id() {
+        let field = vec![car(1, 1, 100.0, "GT", false), car(2, 1, 200.0, "GT", true)];
+        assert_eq!(relative_neighbors(&field, 1, false, Some(5000.0)).unwrap().player, 1);
     }
 
     #[test]
