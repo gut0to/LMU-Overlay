@@ -701,7 +701,7 @@ function App() {
     () => widgetCatalog.filter((widget) => {
       const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
       const query = widgetSearch.trim().toLocaleLowerCase();
-      return matchesCategory && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement}`, query);
+      return matchesCategory && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category}`, query);
     }),
     [widgetCatalog, widgetCategory, widgetSearch],
   );
