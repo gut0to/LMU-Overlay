@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { captureHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
   CoachingConfig,
@@ -2087,22 +2088,8 @@ function HotkeyField(props: { label: string; value: string; conflict: boolean; o
         onKeyDown={(event) => {
           if (event.key === "Tab") return;
           event.preventDefault();
-          if (event.key === "Escape" || event.repeat) return;
-          const parts = [];
-          if (event.ctrlKey) {
-            parts.push("Ctrl");
-          }
-          if (event.shiftKey) {
-            parts.push("Shift");
-          }
-          if (event.altKey) {
-            parts.push("Alt");
-          }
-          const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
-          if (!event.metaKey && !["Control", "Shift", "Alt", "Meta"].includes(key)) {
-            parts.push(key.toUpperCase());
-            props.onChange(parts.join("+"));
-          }
+          const binding = captureHotkey({ ...event, isComposing: event.nativeEvent.isComposing });
+          if (binding) props.onChange(binding);
         }}
       >
         {props.value || "Press a key"}
