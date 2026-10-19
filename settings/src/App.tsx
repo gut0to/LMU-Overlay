@@ -396,7 +396,9 @@ function App() {
         text: configText,
         expected_revision: revision,
       });
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      lastSavedConfig.current = JSON.stringify(normalized);
+      setConfig(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config imported");
