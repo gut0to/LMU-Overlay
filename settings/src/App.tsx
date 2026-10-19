@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { matchesSearch } from "./search";
 import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
@@ -700,7 +701,7 @@ function App() {
     () => widgetCatalog.filter((widget) => {
       const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
       const query = widgetSearch.trim().toLocaleLowerCase();
-      return matchesCategory && (!query || `${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement}`.toLocaleLowerCase().includes(query));
+      return matchesCategory && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement}`, query);
     }),
     [widgetCatalog, widgetCategory, widgetSearch],
   );
