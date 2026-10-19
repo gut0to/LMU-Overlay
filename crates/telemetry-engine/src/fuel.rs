@@ -103,7 +103,9 @@ impl FuelEngine {
             self.refueled |= current - previous > REFUEL_NOISE_TOLERANCE_LITERS;
         }
         self.last_fuel = fuel.or(self.last_fuel);
-        self.last_timestamp = Some(sample.timestamp_seconds);
+        if sample.timestamp_seconds.is_finite() {
+            self.last_timestamp = Some(sample.timestamp_seconds);
+        }
 
         let average = (self.history.len() >= MIN_VALID_SAMPLES)
             .then(|| self.history.iter().sum::<f64>() / self.history.len() as f64);
@@ -121,6 +123,20 @@ impl FuelEngine {
 mod tests {
     use super::*;
     use lmu_telemetry::{Gear, TelemetryMetadata, VehicleSystems};
+
+    #[test]
+    fn invalid_timestamp_does_not_hide_session_time_rewind() {
+        let mut engine = FuelEngine::default();
+        let mut value = sample(1, 30.0);
+        value.timestamp_seconds = 100.0;
+        engine.update(&value);
+        value.timestamp_seconds = f64::NAN;
+        engine.update(&value);
+        value.timestamp_seconds = 1.0;
+        value.lap_number = 2;
+        value.vehicle.fuel_liters = Some(27.0);
+        assert_eq!(engine.update(&value).last_lap_used, None);
+    }
 
     #[test]
     fn missing_fuel_mid_lap_excludes_incomplete_consumption() {
