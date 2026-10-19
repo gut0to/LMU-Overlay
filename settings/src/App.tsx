@@ -716,7 +716,7 @@ function App() {
   const availableLayoutEntries = useMemo(() => activeOverlayConfig ? layoutEntries(activeOverlayConfig) : [], [activeOverlayConfig]);
   const filteredLayoutEntries = useMemo(() => {
     const query = layoutSearch.trim().toLocaleLowerCase();
-    return availableLayoutEntries.filter((entry) => !query || entry.label.toLocaleLowerCase().includes(query));
+    return availableLayoutEntries.filter((entry) => matchesSearch(`${entry.key} ${entry.label}`, query));
   }, [availableLayoutEntries, layoutSearch]);
 
   useEffect(() => {
