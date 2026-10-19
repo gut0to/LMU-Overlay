@@ -1129,7 +1129,7 @@ function App() {
           </button>
           <div className="presetList">
             {config.presets.custom.map((preset, index) => (
-              <div className="presetItem" key={`${preset.name}-${index}`}>
+              <div className="presetItem" key={index}>
                 <input
                   disabled={saving}
                   aria-label={`Preset ${index + 1} name`}
