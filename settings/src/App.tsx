@@ -1170,7 +1170,7 @@ function App() {
             <button className="primaryButton" onClick={resetLayout} disabled={!defaultConfigState}>
               Reset layout
             </button>
-            <button className="dangerButton" onClick={resetConfig}>
+            <button className="dangerButton" disabled={saving} onClick={resetConfig}>
               Reset all
             </button>
           </div>
