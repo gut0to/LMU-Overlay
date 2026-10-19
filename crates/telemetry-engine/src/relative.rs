@@ -31,7 +31,7 @@ pub fn relative_neighbors(
     let mut ahead = Vec::new();
     let mut behind = Vec::new();
     for (index, car) in field.iter().enumerate() {
-        if index == player || (same_class_only && car.vehicle_class.as_deref() != player_class) {
+        if index == player || car.in_garage || (same_class_only && car.vehicle_class.as_deref() != player_class) {
             continue;
         }
         let Some(distance) = car.lap_distance_m.filter(|value| value.is_finite()) else {
@@ -120,6 +120,13 @@ mod tests {
             is_player: player,
             world_position: None,
         }
+    }
+
+    #[test]
+    fn garage_cars_do_not_appear_as_on_track_neighbors() {
+        let mut field = vec![car(1, 1, 100.0, "GT", true), car(2, 1, 110.0, "GT", false)];
+        field[1].in_garage = true;
+        assert_eq!(order_by_track_proximity(&field, 1, false, Some(5000.0)), Some(vec![0]));
     }
 
     #[test]
