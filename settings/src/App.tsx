@@ -266,6 +266,8 @@ function App() {
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
+  const currentConfig = useRef(config);
+  currentConfig.current = config;
 
   useEffect(() => {
     void loadConfig();
@@ -297,6 +299,17 @@ function App() {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
   }, [config, saving]);
+
+  useEffect(() => {
+    const saveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (!saving && !event.repeat) void saveConfig();
+      }
+    };
+    window.addEventListener("keydown", saveShortcut);
+    return () => window.removeEventListener("keydown", saveShortcut);
+  }, [saving]);
 
   useEffect(() => {
     try {
@@ -391,7 +404,7 @@ function App() {
   }
 
   async function saveConfig(): Promise<boolean> {
-    return config ? persistConfig(config) : false;
+    return currentConfig.current ? persistConfig(currentConfig.current) : false;
   }
 
   async function loadDefaultConfig() {
