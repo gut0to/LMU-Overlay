@@ -336,22 +336,22 @@ function App() {
 
   async function refreshOverlayStatus(): Promise<boolean> {
     return statusRequest.current.run(async () => {
-    try {
-      const running = await invoke<boolean>("overlay_status");
-      setOverlayRunning(running);
-      if (running) {
-        const editing = await invoke<boolean>("overlay_edit_status");
-        setOverlayEditMode(editing);
-        setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
-      } else {
-        setOverlayEditMode(false);
-        setOverlayVisible(false);
+      try {
+        const running = await invoke<boolean>("overlay_status");
+        setOverlayRunning(running);
+        if (running) {
+          const editing = await invoke<boolean>("overlay_edit_status");
+          setOverlayEditMode(editing);
+          setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
+        } else {
+          setOverlayEditMode(false);
+          setOverlayVisible(false);
+        }
+        return running;
+      } catch (error) {
+        setStatus(String(error));
+        return false;
       }
-      return running;
-    } catch (error) {
-      setStatus(String(error));
-      return false;
-    }
     });
   }
 
@@ -365,23 +365,23 @@ function App() {
       saveTimer.current = null;
     }
     await configTasks.current.run(async () => {
-    setSaving(true);
-    setReplacingConfig(true);
-    try {
-      const response = await invoke<LoadResponse>("load_config");
-      const normalized = normalizeUiConfig(response.config);
-      setConfig(normalized);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      hydratedConfig.current = true;
-      setPath(response.path);
-      revision.current = response.revision;
-      setStatus("Config loaded");
-    } catch (error) {
-      setStatus(String(error));
-    } finally {
-      setReplacingConfig(false);
-      setSaving(false);
-    }
+      setSaving(true);
+      setReplacingConfig(true);
+      try {
+        const response = await invoke<LoadResponse>("load_config");
+        const normalized = normalizeUiConfig(response.config);
+        setConfig(normalized);
+        lastSavedConfig.current = JSON.stringify(normalized);
+        hydratedConfig.current = true;
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus("Config loaded");
+      } catch (error) {
+        setStatus(String(error));
+      } finally {
+        setReplacingConfig(false);
+        setSaving(false);
+      }
     });
   }
 
@@ -391,28 +391,28 @@ function App() {
       saveTimer.current = null;
     }
     return configTasks.current.run(async () => {
-    if (successStatus === "Changes saved" && JSON.stringify(nextConfig) === lastSavedConfig.current) return true;
-    setSaving(true);
-    try {
-      const response = await invoke<LoadResponse>("save_config", {
-        config: nextConfig,
-        expected_revision: revision.current,
-      });
-      failedSave.current = null;
-      const normalized = normalizeUiConfig(response.config);
-      setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
-      lastSavedConfig.current = JSON.stringify(normalized);
-      setPath(response.path);
-      revision.current = response.revision;
-      setStatus(successStatus);
-      return true;
-    } catch (error) {
-      failedSave.current = JSON.stringify(nextConfig);
-      setStatus(String(error));
-      return false;
-    } finally {
-      setSaving(false);
-    }
+      if (successStatus === "Changes saved" && JSON.stringify(nextConfig) === lastSavedConfig.current) return true;
+      setSaving(true);
+      try {
+        const response = await invoke<LoadResponse>("save_config", {
+          config: nextConfig,
+          expected_revision: revision.current,
+        });
+        failedSave.current = null;
+        const normalized = normalizeUiConfig(response.config);
+        setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
+        lastSavedConfig.current = JSON.stringify(normalized);
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus(successStatus);
+        return true;
+      } catch (error) {
+        failedSave.current = JSON.stringify(nextConfig);
+        setStatus(String(error));
+        return false;
+      } finally {
+        setSaving(false);
+      }
     });
   }
 
@@ -452,25 +452,25 @@ function App() {
       saveTimer.current = null;
     }
     await configTasks.current.run(async () => {
-    setSaving(true);
-    setReplacingConfig(true);
-    try {
-      const response = await invoke<LoadResponse>("import_config", {
-        text: configText,
-        expected_revision: revision.current,
-      });
-      const normalized = normalizeUiConfig(response.config);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      setConfig(normalized);
-      setPath(response.path);
-      revision.current = response.revision;
-      setStatus("Config imported");
-    } catch (error) {
-      setStatus(String(error));
-    } finally {
-      setReplacingConfig(false);
-      setSaving(false);
-    }
+      setSaving(true);
+      setReplacingConfig(true);
+      try {
+        const response = await invoke<LoadResponse>("import_config", {
+          text: configText,
+          expected_revision: revision.current,
+        });
+        const normalized = normalizeUiConfig(response.config);
+        lastSavedConfig.current = JSON.stringify(normalized);
+        setConfig(normalized);
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus("Config imported");
+      } catch (error) {
+        setStatus(String(error));
+      } finally {
+        setReplacingConfig(false);
+        setSaving(false);
+      }
     });
   }
 
@@ -483,22 +483,22 @@ function App() {
       saveTimer.current = null;
     }
     await configTasks.current.run(async () => {
-    setSaving(true);
-    setReplacingConfig(true);
-    try {
-      const response = await invoke<LoadResponse>("reset_config");
-      const normalized = normalizeUiConfig(response.config);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      setConfig(normalized);
-      setPath(response.path);
-      revision.current = response.revision;
-      setStatus("Config reset");
-    } catch (error) {
-      setStatus(String(error));
-    } finally {
-      setReplacingConfig(false);
-      setSaving(false);
-    }
+      setSaving(true);
+      setReplacingConfig(true);
+      try {
+        const response = await invoke<LoadResponse>("reset_config");
+        const normalized = normalizeUiConfig(response.config);
+        lastSavedConfig.current = JSON.stringify(normalized);
+        setConfig(normalized);
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus("Config reset");
+      } catch (error) {
+        setStatus(String(error));
+      } finally {
+        setReplacingConfig(false);
+        setSaving(false);
+      }
     });
   }
 
@@ -515,7 +515,7 @@ function App() {
         setStatus("HashOverlay did not become ready. Close any older HashOverlay process and try Start overlay again.");
         return;
       }
-      setStatus(saved ? "Overlay started" : "Overlay started with the last saved config; current changes were not saved");
+      setStatus("Overlay started");
     } catch (error) {
       setStatus(String(error));
     }
@@ -835,7 +835,7 @@ function App() {
   const hasPendingChanges = JSON.stringify(config) !== lastSavedConfig.current;
 
   return (
-    <main className="shell">
+    <main className="shell" aria-busy={replacingConfig} ref={(element) => { if (element) element.inert = replacingConfig; }}>
       <header className="topbar">
         <div className="brandBlock">
           <div className="brandMark" aria-hidden="true"><span>HO</span><span>01</span></div>
