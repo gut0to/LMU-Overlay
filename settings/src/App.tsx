@@ -474,6 +474,10 @@ function App() {
   async function startOverlay() {
     try {
       const saved = await saveConfig();
+      if (!saved) {
+        setStatus("Could not save settings. Resolve the save error before starting the overlay.");
+        return;
+      }
       await invoke("start_overlay");
       const running = await refreshOverlayStatus();
       if (!running) {
