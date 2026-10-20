@@ -1078,6 +1078,7 @@ function App() {
             <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
           </div>
           <WidgetLayoutFields
+            key={selectedLayout}
             lockAll={config.layout.lock_all}
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
             defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
@@ -1290,6 +1291,8 @@ function SurfaceMap(props: {
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const copyTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current); }, []);
   const [customWorkspace, setCustomWorkspace] = useState(props.workspace);
   const mapRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
@@ -1431,7 +1434,8 @@ function SurfaceMap(props: {
           <button className="mapFitButton" onClick={async () => {
             const copied = await copyGeometryToClipboard(`${selectedOverlay.name}: x=${selectedOverlay.window.x}, y=${selectedOverlay.window.y}, width=${selectedOverlay.window.width}, height=${selectedOverlay.window.height}`);
             setCopyStatus(copied ? "copied" : "failed");
-            window.setTimeout(() => setCopyStatus("idle"), 1800);
+            if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+          copyTimer.current = window.setTimeout(() => setCopyStatus("idle"), 1800);
           }}>{copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy unavailable" : "Copy geometry"}</button>
           <small>Focus a surface and use arrow keys to move it; hold Shift for 10 px.</small>
         </div>
