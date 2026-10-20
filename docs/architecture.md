@@ -71,3 +71,23 @@ Pull requests run two Windows jobs:
 
 - Rust formatting, Clippy and workspace tests.
 - Settings dependency install, npm audit, frontend build and Tauri shell check.
+
+## Settings State and Geometry
+
+`config-tasks.ts` serializes configuration reads and writes. Expected revisions
+are read when each queued operation executes. A rejected operation leaves the
+queue usable; it does not grant permission to overwrite a revision conflict.
+`save-result.ts` accepts backend normalization only if the editor still matches
+the submitted configuration, preserving edits made during a slow write. Failed
+autosave snapshots are held until an explicit retry or a different edit.
+
+`status-request.ts` shares one active host status request among callers so
+startup checks observe the same result as polling. Configuration operations
+and host status reads use separate modules because they have different ordering
+requirements.
+
+`geometry.ts`, `window-values.ts` and `snapping.ts` own widget normalization,
+numeric window limits and nearest-target alignment. These pure modules are
+exercised by the Settings tests without starting Tauri or LMU. Type-only imports
+are erased by Node's TypeScript runner; runtime imports between tested modules
+use explicit `.ts` extensions with TypeScript's no-emit setting.
