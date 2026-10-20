@@ -8,3 +8,10 @@ test("snapping selects the closest target instead of cascading through neighbors
   assert.equal(snapToWidgetLayouts(widget, [first, second], 10).x, 104);
   assert.equal(snapToWidgetLayouts(widget, [second, first], 10).x, 104);
 });
+
+test("zero snap distance only permits exact alignments", async () => {
+  const target = { ...widget, x: 101, y: 101 };
+  assert.deepEqual(snapToWidgetLayouts(widget, [target], 0), widget);
+  assert.deepEqual(snapToWidgetLayouts(widget, [], 10), widget);
+  assert.deepEqual(snapToWidgetLayouts(widget, [target], -1), widget);
+});
