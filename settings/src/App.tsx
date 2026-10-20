@@ -746,6 +746,8 @@ function App() {
         ...overlay,
         window: {
           ...overlay.window,
+          width: Math.min(overlay.window.width, workspace.width),
+          height: Math.min(overlay.window.height, workspace.height),
           x: Math.max(workspace.originX, Math.min(overlay.window.x, workspace.originX + workspace.width - overlay.window.width)),
           y: Math.max(workspace.originY, Math.min(overlay.window.y, workspace.originY + workspace.height - overlay.window.height)),
         },
