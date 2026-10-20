@@ -410,6 +410,11 @@ function App() {
       && !window.confirm("Importing will replace your pending changes. Continue?")) {
       return;
     }
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    await configTasks.current.run(async () => {
     try {
       const response = await invoke<LoadResponse>("import_config", {
         text: configText,
@@ -424,6 +429,7 @@ function App() {
     } catch (error) {
       setStatus(String(error));
     }
+    });
   }
 
   async function resetConfig() {
