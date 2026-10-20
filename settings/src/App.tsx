@@ -1395,6 +1395,7 @@ function SurfaceMap(props: {
             }}
             aria-pressed={props.selected === overlay.id}
             onKeyDown={(event) => {
+              if (event.key === "Escape") { setDrag(null); return; }
               const step = event.shiftKey ? 10 : 1;
               let dx = 0;
               let dy = 0;
