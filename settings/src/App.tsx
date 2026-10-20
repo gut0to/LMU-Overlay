@@ -436,6 +436,11 @@ function App() {
     if (!window.confirm("Reset all settings to defaults? This cannot be undone.")) {
       return;
     }
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    await configTasks.current.run(async () => {
     try {
       const response = await invoke<LoadResponse>("reset_config");
       const normalized = normalizeUiConfig(response.config);
@@ -447,6 +452,7 @@ function App() {
     } catch (error) {
       setStatus(String(error));
     }
+    });
   }
 
   async function startOverlay() {
