@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { normalizeWindowField } from "./window-values";
 import { normalizeWidgetLayoutForWindow, scaledDimension } from "./geometry";
 import { acceptSavedConfig } from "./save-result";
 import { ConfigTasks } from "./config-tasks";
@@ -1955,25 +1956,6 @@ function setOverlayWindow<K extends keyof WindowConfig>(
       ? { ...overlay, window: { ...overlay.window, [key]: normalizedValue } }
       : overlay),
   });
-}
-
-function normalizeWindowField<K extends keyof WindowConfig>(key: K, value: WindowConfig[K]): WindowConfig[K] {
-  if (key === "x" || key === "y") {
-    return Math.round(Number(value)) as WindowConfig[K];
-  }
-  if (key === "width" || key === "height") {
-    return Math.max(48, Math.min(7680, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  if (key === "refresh_hz") {
-    return Math.max(15, Math.min(240, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  if (key === "sample_ms") {
-    return Math.max(5, Math.min(1000, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  if (key === "history_samples") {
-    return Math.max(16, Math.min(10000, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  return value;
 }
 
 function setOverlayPosition(
