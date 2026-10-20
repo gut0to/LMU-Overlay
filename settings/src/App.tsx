@@ -348,6 +348,7 @@ function App() {
       saveTimer.current = null;
     }
     return configTasks.current.run(async () => {
+    if (successStatus === "Changes saved" && JSON.stringify(nextConfig) === lastSavedConfig.current) return true;
     setSaving(true);
     try {
       const response = await invoke<LoadResponse>("save_config", {
