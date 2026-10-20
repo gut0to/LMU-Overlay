@@ -16,3 +16,18 @@ test("rejected operations do not block later saves", async () => {
   await assert.rejects(failure, /disk full/);
   assert.equal(await recovery, "saved");
 });
+
+test("waiting writes use the revision produced by the previous operation", async () => {
+  const tasks = new ConfigTasks();
+  let revision = 1;
+  const observed = [];
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const first = tasks.run(async () => { observed.push(revision); await gate; revision++; });
+  const second = tasks.run(async () => { observed.push(revision); revision++; });
+  await Promise.resolve();
+  assert.deepEqual(observed, [1]);
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(observed, [1, 2]);
+});
