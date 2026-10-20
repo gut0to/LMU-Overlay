@@ -1843,7 +1843,7 @@ function WidgetLayoutFields(props: {
           props.onReplace({ ...props.defaultLayout });
         }}>Reset widget</button>
         <button className="secondaryButton" onClick={() => {
-          props.onReplace({ ...props.layout, width: 320, height: 80 });
+          props.onReplace({ ...props.layout, width: props.defaultLayout.width, height: props.defaultLayout.height });
         }}>Reset size</button>
       </div>
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
