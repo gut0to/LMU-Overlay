@@ -15,3 +15,12 @@ test("zero snap distance only permits exact alignments", async () => {
   assert.deepEqual(snapToWidgetLayouts(widget, [], 10), widget);
   assert.deepEqual(snapToWidgetLayouts(widget, [target], -1), widget);
 });
+
+test("equidistant alignments are stable across neighbor ordering", async () => {
+  const neighbors = [96, 104, 200].map((x) => ({ ...widget, x, y: x }));
+  const expected = snapToWidgetLayouts(widget, neighbors, 10);
+  for (const order of [neighbors.toReversed(), [neighbors[1], neighbors[2], neighbors[0]], [neighbors[2], neighbors[0], neighbors[1]]]) {
+    assert.deepEqual(snapToWidgetLayouts(widget, order, 10), expected);
+  }
+  assert.equal(expected.x, 96);
+});
