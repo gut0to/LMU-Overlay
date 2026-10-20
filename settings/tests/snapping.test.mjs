@@ -1,0 +1,10 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { snapToWidgetLayouts } from "../src/snapping.ts";
+const widget = { x: 100, y: 100, width: 50, height: 20, scale: 1, opacity: 1, z_index: 0, locked: false };
+test("snapping selects the closest target instead of cascading through neighbors", () => {
+  const first = { ...widget, x: 104, y: 200 };
+  const second = { ...widget, x: 109, y: 300 };
+  assert.equal(snapToWidgetLayouts(widget, [first, second], 10).x, 104);
+  assert.equal(snapToWidgetLayouts(widget, [second, first], 10).x, 104);
+});

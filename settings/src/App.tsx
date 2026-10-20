@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { snapToWidgetLayouts } from "./snapping";
 import { normalizeWindowField } from "./window-values";
 import { normalizeWidgetLayoutForWindow, scaledDimension } from "./geometry";
 import { acceptSavedConfig } from "./save-result";
@@ -1794,43 +1795,8 @@ function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout 
 }
 
 function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
-  let next = { ...layout };
-  const distance = config.layout.snap_distance;
-  for (const { key, layout: other } of layoutEntries(config)) {
-    if (key === widget) {
-      continue;
-    }
-    const nextWidth = scaledDimension(next.width, next.scale);
-    const nextHeight = scaledDimension(next.height, next.scale);
-    const otherWidth = scaledDimension(other.width, other.scale);
-    const otherHeight = scaledDimension(other.height, other.scale);
-    const otherRight = other.x + otherWidth;
-    const otherBottom = other.y + otherHeight;
-    const xTargets = [
-      other.x,
-      otherRight,
-      other.x - nextWidth,
-      otherRight - nextWidth,
-    ];
-    const yTargets = [
-      other.y,
-      otherBottom,
-      other.y - nextHeight,
-      otherBottom - nextHeight,
-    ];
-    const nearest = (value: number, targets: number[]) => targets.reduce((best, target) =>
-      Math.abs(target - value) < Math.abs(best - value) ? target : best,
-    targets[0]);
-    const xTarget = nearest(next.x, xTargets);
-    const yTarget = nearest(next.y, yTargets);
-    if (Math.abs(xTarget - next.x) <= distance) {
-      next.x = xTarget;
-    }
-    if (Math.abs(yTarget - next.y) <= distance) {
-      next.y = yTarget;
-    }
-  }
-  return next;
+  const others = layoutEntries(config).filter((entry) => entry.key !== widget).map((entry) => entry.layout);
+  return snapToWidgetLayouts(layout, others, config.layout.snap_distance);
 }
 
 function Section({ icon, title, children }: SectionProps) {
