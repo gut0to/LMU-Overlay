@@ -1558,6 +1558,7 @@ function OverlayPreview(props: {
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onKeyDown={(event) => {
+                if (event.key === "Escape") { setDrag(null); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
                 const step = event.shiftKey ? 10 : 1;
                 let dx = 0;
