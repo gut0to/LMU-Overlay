@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { acceptSavedConfig } from "./save-result";
 import { ConfigTasks } from "./config-tasks";
 import { matchesSearch } from "./search";
 import { captureHotkey, normalizeHotkey } from "./hotkeys";
@@ -349,7 +350,7 @@ function App() {
         expected_revision: revision.current,
       });
       const normalized = normalizeUiConfig(response.config);
-      setConfig(normalized);
+      setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
       lastSavedConfig.current = JSON.stringify(normalized);
       setPath(response.path);
       revision.current = response.revision;
