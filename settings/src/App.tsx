@@ -263,6 +263,7 @@ function App() {
   const hydratedConfig = useRef(false);
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
+  const failedSave = useRef<string | null>(null);
 
   useEffect(() => {
     void loadConfig();
@@ -282,9 +283,9 @@ function App() {
   }, [config, activeOverlayId]);
 
   useEffect(() => {
-    if (!config || !hydratedConfig.current) return;
+    if (!config || !hydratedConfig.current || saving) return;
     const serialized = JSON.stringify(config);
-    if (serialized === lastSavedConfig.current) return;
+    if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       void persistConfig(config, "Changes saved");
@@ -293,7 +294,7 @@ function App() {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [config]);
+  }, [config, saving]);
 
   useEffect(() => {
     try {
@@ -353,6 +354,7 @@ function App() {
         config: nextConfig,
         expected_revision: revision.current,
       });
+      failedSave.current = null;
       const normalized = normalizeUiConfig(response.config);
       setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
       lastSavedConfig.current = JSON.stringify(normalized);
@@ -361,6 +363,7 @@ function App() {
       setStatus(successStatus);
       return true;
     } catch (error) {
+      failedSave.current = JSON.stringify(nextConfig);
       setStatus(String(error));
       return false;
     } finally {
