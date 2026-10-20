@@ -239,6 +239,7 @@ function App() {
   const configTasks = useRef(new ConfigTasks());
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
+  const [replacingConfig, setReplacingConfig] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
@@ -333,6 +334,8 @@ function App() {
       saveTimer.current = null;
     }
     await configTasks.current.run(async () => {
+    setSaving(true);
+    setReplacingConfig(true);
     try {
       const response = await invoke<LoadResponse>("load_config");
       const normalized = normalizeUiConfig(response.config);
@@ -344,6 +347,9 @@ function App() {
       setStatus("Config loaded");
     } catch (error) {
       setStatus(String(error));
+    } finally {
+      setReplacingConfig(false);
+      setSaving(false);
     }
     });
   }
@@ -415,6 +421,8 @@ function App() {
       saveTimer.current = null;
     }
     await configTasks.current.run(async () => {
+    setSaving(true);
+    setReplacingConfig(true);
     try {
       const response = await invoke<LoadResponse>("import_config", {
         text: configText,
@@ -428,6 +436,9 @@ function App() {
       setStatus("Config imported");
     } catch (error) {
       setStatus(String(error));
+    } finally {
+      setReplacingConfig(false);
+      setSaving(false);
     }
     });
   }
@@ -441,6 +452,8 @@ function App() {
       saveTimer.current = null;
     }
     await configTasks.current.run(async () => {
+    setSaving(true);
+    setReplacingConfig(true);
     try {
       const response = await invoke<LoadResponse>("reset_config");
       const normalized = normalizeUiConfig(response.config);
@@ -451,6 +464,9 @@ function App() {
       setStatus("Config reset");
     } catch (error) {
       setStatus(String(error));
+    } finally {
+      setReplacingConfig(false);
+      setSaving(false);
     }
     });
   }
@@ -915,7 +931,7 @@ function App() {
         ))}
       </nav>
 
-      <div className="grid">
+      <fieldset className="grid settingsFields" disabled={replacingConfig} aria-label="Overlay configuration">
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
@@ -1215,7 +1231,7 @@ function App() {
           </label>
           <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
         </Section>}
-      </div>
+      </fieldset>
 
       <footer className={`status ${statusNeedsAttention ? "statusError" : ""}`} role="status" aria-live="polite" aria-atomic="true">{status}</footer>
     </main>
