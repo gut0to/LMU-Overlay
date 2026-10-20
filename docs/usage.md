@@ -88,3 +88,32 @@ Personal-best reference laps are stored under `%APPDATA%\HashOverlay\laps` and k
 If Settings does not reach **Overlay live**, close any stale HashOverlay process and start the overlay again from Settings. If the overlay stays on **WAITING FOR LMU**, start LMU first, enter a driving session, and make sure the game and HashOverlay run as the same Windows user. On older LMU builds, update the game so the built-in `LMU_Data` interface is available.
 
 For source-level development and validation, see [development.md](development.md). For the exact data-source limits, see [telemetry-sources.md](telemetry-sources.md).
+
+## Saving and Recovery
+
+Settings queues saves, reloads, imports and defaults resets in order. Edits made
+while a save is running remain in the editor and are saved after that write
+finishes. Failed autosaves show a retry message instead of retrying continuously;
+use **Save** to retry or reload after resolving an external configuration change.
+
+Ctrl+S (or Cmd+S in a browser preview) saves the current settings. Starting the
+overlay requires a successful save. Reloading, importing or resetting settings
+temporarily pauses editor interactions while the replacement is loaded.
+
+Browser environments that support `beforeunload` warn about unsaved edits when
+leaving the page. Confirm the save indicator before closing the native app.
+
+## Precise Layout Editing
+
+Widget snapping selects the closest alignment across visible widgets; equal
+distances resolve consistently regardless of catalog order. A snap distance of
+zero permits exact alignments only. Tiny overlay windows also constrain widget
+scale so the widget remains inside the surface.
+
+Dragging and resizing work with scaled widgets. Escape stops an active drag at
+its current position; losing pointer capture also ends it. Locked widgets and
+the global layout lock disable geometry controls in the inspector. Unlock the
+widget, or turn off the global lock, before editing its dimensions.
+
+**Reset size** restores the selected widget's default dimensions. **Fit surfaces**
+shrinks windows larger than the workspace before moving them inside its bounds.

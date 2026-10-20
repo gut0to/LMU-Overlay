@@ -18,6 +18,12 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { StatusRequest } from "./status-request";
+import { snapToWidgetLayouts } from "./snapping";
+import { normalizeWindowField } from "./window-values";
+import { normalizeWidgetLayoutForWindow, scaledDimension } from "./geometry";
+import { acceptSavedConfig } from "./save-result";
+import { ConfigTasks } from "./config-tasks";
 import { matchesSearch } from "./search";
 import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
@@ -233,9 +239,11 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 function App() {
   const [config, setConfig] = useState<OverlayConfig | null>(null);
   const [path, setPath] = useState("");
-  const [revision, setRevision] = useState(0);
+  const revision = useRef(0);
+  const configTasks = useRef(new ConfigTasks());
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
+  const [replacingConfig, setReplacingConfig] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
@@ -258,8 +266,12 @@ function App() {
     return workspacePresets[0][1];
   });
   const hydratedConfig = useRef(false);
+  const statusRequest = useRef(new StatusRequest());
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
+  const failedSave = useRef<string | null>(null);
+  const currentConfig = useRef(config);
+  currentConfig.current = config;
 
   useEffect(() => {
     void loadConfig();
@@ -279,9 +291,9 @@ function App() {
   }, [config, activeOverlayId]);
 
   useEffect(() => {
-    if (!config || !hydratedConfig.current) return;
+    if (!config || !hydratedConfig.current || saving) return;
     const serialized = JSON.stringify(config);
-    if (serialized === lastSavedConfig.current) return;
+    if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       void persistConfig(config, "Changes saved");
@@ -290,7 +302,29 @@ function App() {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [config]);
+  }, [config, saving]);
+
+  useEffect(() => {
+    const saveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (!saving && !event.repeat) void saveConfig();
+      }
+    };
+    window.addEventListener("keydown", saveShortcut);
+    return () => window.removeEventListener("keydown", saveShortcut);
+  }, [saving]);
+
+  useEffect(() => {
+    const protectEdits = (event: BeforeUnloadEvent) => {
+      if (hydratedConfig.current && JSON.stringify(currentConfig.current) !== lastSavedConfig.current) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", protectEdits);
+    return () => window.removeEventListener("beforeunload", protectEdits);
+  }, []);
 
   useEffect(() => {
     try {
@@ -301,22 +335,24 @@ function App() {
   }, [workspace]);
 
   async function refreshOverlayStatus(): Promise<boolean> {
-    try {
-      const running = await invoke<boolean>("overlay_status");
-      setOverlayRunning(running);
-      if (running) {
-        const editing = await invoke<boolean>("overlay_edit_status");
-        setOverlayEditMode(editing);
-        setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
-      } else {
-        setOverlayEditMode(false);
-        setOverlayVisible(false);
+    return statusRequest.current.run(async () => {
+      try {
+        const running = await invoke<boolean>("overlay_status");
+        setOverlayRunning(running);
+        if (running) {
+          const editing = await invoke<boolean>("overlay_edit_status");
+          setOverlayEditMode(editing);
+          setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
+        } else {
+          setOverlayEditMode(false);
+          setOverlayVisible(false);
+        }
+        return running;
+      } catch (error) {
+        setStatus(String(error));
+        return false;
       }
-      return running;
-    } catch (error) {
-      setStatus(String(error));
-      return false;
-    }
+    });
   }
 
   async function loadConfig(force = false) {
@@ -324,44 +360,64 @@ function App() {
       && !window.confirm("You have unsaved changes. Reloading will discard them. Continue?")) {
       return;
     }
-    try {
-      const response = await invoke<LoadResponse>("load_config");
-      const normalized = normalizeUiConfig(response.config);
-      setConfig(normalized);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      hydratedConfig.current = true;
-      setPath(response.path);
-      setRevision(response.revision);
-      setStatus("Config loaded");
-    } catch (error) {
-      setStatus(String(error));
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
     }
+    await configTasks.current.run(async () => {
+      setSaving(true);
+      setReplacingConfig(true);
+      try {
+        const response = await invoke<LoadResponse>("load_config");
+        const normalized = normalizeUiConfig(response.config);
+        setConfig(normalized);
+        lastSavedConfig.current = JSON.stringify(normalized);
+        hydratedConfig.current = true;
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus("Config loaded");
+      } catch (error) {
+        setStatus(String(error));
+      } finally {
+        setReplacingConfig(false);
+        setSaving(false);
+      }
+    });
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
-    setSaving(true);
-    try {
-      const response = await invoke<LoadResponse>("save_config", {
-        config: nextConfig,
-        expected_revision: revision,
-      });
-      const normalized = normalizeUiConfig(response.config);
-      setConfig(normalized);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      setPath(response.path);
-      setRevision(response.revision);
-      setStatus(successStatus);
-      return true;
-    } catch (error) {
-      setStatus(String(error));
-      return false;
-    } finally {
-      setSaving(false);
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
     }
+    return configTasks.current.run(async () => {
+      if (successStatus === "Changes saved" && JSON.stringify(nextConfig) === lastSavedConfig.current) return true;
+      setSaving(true);
+      try {
+        const response = await invoke<LoadResponse>("save_config", {
+          config: nextConfig,
+          expected_revision: revision.current,
+        });
+        failedSave.current = null;
+        const normalized = normalizeUiConfig(response.config);
+        setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
+        lastSavedConfig.current = JSON.stringify(normalized);
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus(successStatus);
+        return true;
+      } catch (error) {
+        failedSave.current = JSON.stringify(nextConfig);
+        setStatus(String(error));
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    });
   }
 
   async function saveConfig(): Promise<boolean> {
-    return config ? persistConfig(config) : false;
+    return currentConfig.current ? persistConfig(currentConfig.current) : false;
   }
 
   async function loadDefaultConfig() {
@@ -391,49 +447,75 @@ function App() {
       && !window.confirm("Importing will replace your pending changes. Continue?")) {
       return;
     }
-    try {
-      const response = await invoke<LoadResponse>("import_config", {
-        text: configText,
-        expected_revision: revision,
-      });
-      const normalized = normalizeUiConfig(response.config);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      setConfig(normalized);
-      setPath(response.path);
-      setRevision(response.revision);
-      setStatus("Config imported");
-    } catch (error) {
-      setStatus(String(error));
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
     }
+    await configTasks.current.run(async () => {
+      setSaving(true);
+      setReplacingConfig(true);
+      try {
+        const response = await invoke<LoadResponse>("import_config", {
+          text: configText,
+          expected_revision: revision.current,
+        });
+        const normalized = normalizeUiConfig(response.config);
+        lastSavedConfig.current = JSON.stringify(normalized);
+        setConfig(normalized);
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus("Config imported");
+      } catch (error) {
+        setStatus(String(error));
+      } finally {
+        setReplacingConfig(false);
+        setSaving(false);
+      }
+    });
   }
 
   async function resetConfig() {
     if (!window.confirm("Reset all settings to defaults? This cannot be undone.")) {
       return;
     }
-    try {
-      const response = await invoke<LoadResponse>("reset_config");
-      const normalized = normalizeUiConfig(response.config);
-      lastSavedConfig.current = JSON.stringify(normalized);
-      setConfig(normalized);
-      setPath(response.path);
-      setRevision(response.revision);
-      setStatus("Config reset");
-    } catch (error) {
-      setStatus(String(error));
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
     }
+    await configTasks.current.run(async () => {
+      setSaving(true);
+      setReplacingConfig(true);
+      try {
+        const response = await invoke<LoadResponse>("reset_config");
+        const normalized = normalizeUiConfig(response.config);
+        lastSavedConfig.current = JSON.stringify(normalized);
+        setConfig(normalized);
+        setPath(response.path);
+        revision.current = response.revision;
+        setStatus("Config reset");
+      } catch (error) {
+        setStatus(String(error));
+      } finally {
+        setReplacingConfig(false);
+        setSaving(false);
+      }
+    });
   }
 
   async function startOverlay() {
     try {
       const saved = await saveConfig();
+      if (!saved) {
+        setStatus("Could not save settings. Resolve the save error before starting the overlay.");
+        return;
+      }
       await invoke("start_overlay");
       const running = await refreshOverlayStatus();
       if (!running) {
         setStatus("HashOverlay did not become ready. Close any older HashOverlay process and try Start overlay again.");
         return;
       }
-      setStatus(saved ? "Overlay started" : "Overlay started with the last saved config; current changes were not saved");
+      setStatus("Overlay started");
     } catch (error) {
       setStatus(String(error));
     }
@@ -663,6 +745,8 @@ function App() {
         ...overlay,
         window: {
           ...overlay.window,
+          width: Math.min(overlay.window.width, workspace.width),
+          height: Math.min(overlay.window.height, workspace.height),
           x: Math.max(workspace.originX, Math.min(overlay.window.x, workspace.originX + workspace.width - overlay.window.width)),
           y: Math.max(workspace.originY, Math.min(overlay.window.y, workspace.originY + workspace.height - overlay.window.height)),
         },
@@ -751,7 +835,7 @@ function App() {
   const hasPendingChanges = JSON.stringify(config) !== lastSavedConfig.current;
 
   return (
-    <main className="shell">
+    <main className="shell" aria-busy={replacingConfig} ref={(element) => { if (element) element.inert = replacingConfig; }}>
       <header className="topbar">
         <div className="brandBlock">
           <div className="brandMark" aria-hidden="true"><span>HO</span><span>01</span></div>
@@ -770,7 +854,7 @@ function App() {
           <button className="iconButton" aria-label="Open config folder" title="Open config folder" onClick={openConfigFolder}>
             <FolderOpen size={18} />
           </button>
-          <button className="iconButton" aria-label={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
+          <button className="iconButton" disabled={saving} aria-label={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} title={hasPendingChanges ? "Reload config and discard pending changes" : "Reload config"} onClick={() => void loadConfig()}>
             <RotateCcw size={18} />
           </button>
           <button className="primaryButton" onClick={startOverlay} disabled={saving}>
@@ -792,7 +876,7 @@ function App() {
             {saving ? "Saving" : "Save"}
           </button>
           <span className={`saveState ${saving ? "saving" : hasPendingChanges ? "pending" : "saved"}`} aria-live="polite">
-            {saving ? "Saving changes" : hasPendingChanges ? "Changes pending" : "Auto-saved"}
+            {saving ? "Saving changes" : hasPendingChanges && failedSave.current === JSON.stringify(config) ? "Save failed. Press Save to retry." : hasPendingChanges ? "Changes pending" : "Auto-saved"}
           </span>
           </div>
         </div>
@@ -884,7 +968,7 @@ function App() {
         ))}
       </nav>
 
-      <div className="grid">
+      <fieldset className="grid settingsFields" disabled={replacingConfig} aria-label="Overlay configuration">
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
@@ -993,6 +1077,8 @@ function App() {
             <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
           </div>
           <WidgetLayoutFields
+            key={selectedLayout}
+            lockAll={config.layout.lock_all}
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
             defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
             windowWidth={(activeOverlayConfig ?? config).window.width}
@@ -1184,7 +1270,7 @@ function App() {
           </label>
           <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
         </Section>}
-      </div>
+      </fieldset>
 
       <footer className={`status ${statusNeedsAttention ? "statusError" : ""}`} role="status" aria-live="polite" aria-atomic="true">{status}</footer>
     </main>
@@ -1204,6 +1290,8 @@ function SurfaceMap(props: {
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const copyTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current); }, []);
   const [customWorkspace, setCustomWorkspace] = useState(props.workspace);
   const mapRef = useRef<HTMLDivElement>(null);
   const [canvasWidth, setCanvasWidth] = useState(900);
@@ -1290,6 +1378,7 @@ function SurfaceMap(props: {
         onPointerMove={(event) => move(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
+        onLostPointerCapture={() => setDrag(null)}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
         {props.config.overlays.map((overlay) => (
@@ -1311,6 +1400,7 @@ function SurfaceMap(props: {
             }}
             aria-pressed={props.selected === overlay.id}
             onKeyDown={(event) => {
+              if (event.key === "Escape") { setDrag(null); return; }
               const step = event.shiftKey ? 10 : 1;
               let dx = 0;
               let dy = 0;
@@ -1343,7 +1433,8 @@ function SurfaceMap(props: {
           <button className="mapFitButton" onClick={async () => {
             const copied = await copyGeometryToClipboard(`${selectedOverlay.name}: x=${selectedOverlay.window.x}, y=${selectedOverlay.window.y}, width=${selectedOverlay.window.width}, height=${selectedOverlay.window.height}`);
             setCopyStatus(copied ? "copied" : "failed");
-            window.setTimeout(() => setCopyStatus("idle"), 1800);
+            if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+          copyTimer.current = window.setTimeout(() => setCopyStatus("idle"), 1800);
           }}>{copyStatus === "copied" ? "Copied" : copyStatus === "failed" ? "Copy unavailable" : "Copy geometry"}</button>
           <small>Focus a surface and use arrow keys to move it; hold Shift for 10 px.</small>
         </div>
@@ -1425,6 +1516,7 @@ function OverlayPreview(props: {
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
+        onLostPointerCapture={() => setDrag(null)}
         style={{
           width: previewWidth,
           height: previewHeight,
@@ -1461,9 +1553,8 @@ function OverlayPreview(props: {
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
                 }
-                const resize =
-                  event.nativeEvent.offsetX >= layout.width * scale - 14 &&
-                  event.nativeEvent.offsetY >= layout.height * scale - 14;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const resize = event.clientX >= bounds.right - 14 && event.clientY >= bounds.bottom - 14;
                 setDrag({
                   widget: key,
                   startX: event.clientX,
@@ -1474,6 +1565,7 @@ function OverlayPreview(props: {
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onKeyDown={(event) => {
+                if (event.key === "Escape") { setDrag(null); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
                 const step = event.shiftKey ? 10 : 1;
                 let dx = 0;
@@ -1683,22 +1775,7 @@ function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: Widg
 }
 
 function constrainLayoutToWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
-  const scale = clamp(layout.scale, 0.5, 2);
-  const width = clamp(layout.width, 48, Math.floor(window.width / scale));
-  const height = clamp(layout.height, 20, Math.floor(window.height / scale));
-  const visualWidth = scaledDimension(width, scale);
-  const visualHeight = scaledDimension(height, scale);
-  return {
-    ...layout,
-    width,
-    height,
-    x: clamp(layout.x, 0, Math.max(0, window.width - visualWidth)),
-    y: clamp(layout.y, 0, Math.max(0, window.height - visualHeight)),
-  };
-}
-
-function scaledDimension(value: number, scale: number) {
-  return Math.round(value * clamp(scale, 0.5, 2));
+  return normalizeWidgetLayoutForWindow(window, layout);
 }
 
 function snapNumber(value: number, gridSize: number) {
@@ -1727,43 +1804,8 @@ function snapToEdges(config: OverlayConfig, layout: WidgetLayout): WidgetLayout 
 }
 
 function snapToWidgets(config: OverlayConfig, widget: LayoutSelection, layout: WidgetLayout): WidgetLayout {
-  let next = { ...layout };
-  const distance = config.layout.snap_distance;
-  for (const { key, layout: other } of layoutEntries(config)) {
-    if (key === widget) {
-      continue;
-    }
-    const nextWidth = scaledDimension(next.width, next.scale);
-    const nextHeight = scaledDimension(next.height, next.scale);
-    const otherWidth = scaledDimension(other.width, other.scale);
-    const otherHeight = scaledDimension(other.height, other.scale);
-    const otherRight = other.x + otherWidth;
-    const otherBottom = other.y + otherHeight;
-    const xTargets = [
-      other.x,
-      otherRight,
-      other.x - nextWidth,
-      otherRight - nextWidth,
-    ];
-    const yTargets = [
-      other.y,
-      otherBottom,
-      other.y - nextHeight,
-      otherBottom - nextHeight,
-    ];
-    const nearest = (value: number, targets: number[]) => targets.reduce((best, target) =>
-      Math.abs(target - value) < Math.abs(best - value) ? target : best,
-    targets[0]);
-    const xTarget = nearest(next.x, xTargets);
-    const yTarget = nearest(next.y, yTargets);
-    if (Math.abs(xTarget - next.x) <= distance) {
-      next.x = xTarget;
-    }
-    if (Math.abs(yTarget - next.y) <= distance) {
-      next.y = yTarget;
-    }
-  }
-  return next;
+  const others = layoutEntries(config).filter((entry) => entry.key !== widget).map((entry) => entry.layout);
+  return snapToWidgetLayouts(layout, others, config.layout.snap_distance);
 }
 
 function Section({ icon, title, children }: SectionProps) {
@@ -1779,6 +1821,7 @@ function Section({ icon, title, children }: SectionProps) {
 }
 
 function WidgetLayoutFields(props: {
+  lockAll: boolean;
   layout: WidgetLayout;
   defaultLayout: WidgetLayout;
   windowWidth: number;
@@ -1789,6 +1832,7 @@ function WidgetLayoutFields(props: {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <>
+      <fieldset className="geometryFields" disabled={props.lockAll || props.layout.locked} aria-label="Widget geometry">
       <div className="buttonRow geometryActions">
         <button className="secondaryButton" onClick={async () => {
           const copied = await copyGeometryToClipboard(`x=${props.layout.x}, y=${props.layout.y}, width=${props.layout.width}, height=${props.layout.height}, scale=${props.layout.scale}`);
@@ -1805,7 +1849,7 @@ function WidgetLayoutFields(props: {
           props.onReplace({ ...props.defaultLayout });
         }}>Reset widget</button>
         <button className="secondaryButton" onClick={() => {
-          props.onReplace({ ...props.layout, width: 320, height: 80 });
+          props.onReplace({ ...props.layout, width: props.defaultLayout.width, height: props.defaultLayout.height });
         }}>Reset size</button>
       </div>
       <NumberField label="Widget width" value={props.layout.width} onChange={(value) => props.onChange("width", value)} />
@@ -1813,6 +1857,7 @@ function WidgetLayoutFields(props: {
       <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
       <RangeField label="Widget opacity" min={0.1} max={1} step={0.05} value={props.layout.opacity} onChange={(value) => props.onChange("opacity", value)} />
       <NumberField label="Layer order" value={props.layout.z_index} onChange={(value) => props.onChange("z_index", value)} />
+      </fieldset>
       <label className="toggle full">
         <input type="checkbox" checked={props.layout.locked} onChange={(event) => props.onChange("locked", event.target.checked)} />
         <Lock size={16} />
@@ -1889,25 +1934,6 @@ function setOverlayWindow<K extends keyof WindowConfig>(
       ? { ...overlay, window: { ...overlay.window, [key]: normalizedValue } }
       : overlay),
   });
-}
-
-function normalizeWindowField<K extends keyof WindowConfig>(key: K, value: WindowConfig[K]): WindowConfig[K] {
-  if (key === "x" || key === "y") {
-    return Math.round(Number(value)) as WindowConfig[K];
-  }
-  if (key === "width" || key === "height") {
-    return Math.max(48, Math.min(7680, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  if (key === "refresh_hz") {
-    return Math.max(15, Math.min(240, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  if (key === "sample_ms") {
-    return Math.max(5, Math.min(1000, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  if (key === "history_samples") {
-    return Math.max(16, Math.min(10000, Math.round(Number(value)))) as WindowConfig[K];
-  }
-  return value;
 }
 
 function setOverlayPosition(
@@ -2252,32 +2278,6 @@ function setOverlayLayoutSelection<K extends keyof WidgetLayout>(
   const layout = layoutForSelection(view, selection);
   const next = normalizeWidgetLayoutForWindow(view.window, { ...layout, [key]: value });
   setConfig(updateOverlayLayoutSelection(config, overlayId, selection, next));
-}
-
-function normalizeWidgetLayoutForWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
-  const scale = clamp(Number.isFinite(layout.scale) ? layout.scale : 1, 0.5, 2);
-  const width = clamp(
-    Number.isFinite(layout.width) ? Math.round(layout.width) : 48,
-    48,
-    Math.max(48, Math.floor(window.width / scale)),
-  );
-  const height = clamp(
-    Number.isFinite(layout.height) ? Math.round(layout.height) : 20,
-    20,
-    Math.max(20, Math.floor(window.height / scale)),
-  );
-  const visualWidth = scaledDimension(width, scale);
-  const visualHeight = scaledDimension(height, scale);
-  return {
-    ...layout,
-    x: clamp(Number.isFinite(layout.x) ? Math.round(layout.x) : 0, 0, Math.max(0, window.width - visualWidth)),
-    y: clamp(Number.isFinite(layout.y) ? Math.round(layout.y) : 0, 0, Math.max(0, window.height - visualHeight)),
-    width,
-    height,
-    scale,
-    opacity: clamp(Number.isFinite(layout.opacity) ? layout.opacity : 1, 0.1, 1),
-    z_index: Number.isFinite(layout.z_index) ? Math.round(layout.z_index) : 0,
-  };
 }
 
 function setExtraWidgetStyle<K extends keyof WidgetStyleConfig>(
