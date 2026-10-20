@@ -1078,6 +1078,7 @@ function App() {
             <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
           </div>
           <WidgetLayoutFields
+            lockAll={config.layout.lock_all}
             layout={layoutForSelection(activeOverlayConfig ?? config, selectedLayout)}
             defaultLayout={layoutForSelection(defaultConfigState ?? activeOverlayConfig ?? config, selectedLayout)}
             windowWidth={(activeOverlayConfig ?? config).window.width}
@@ -1817,6 +1818,7 @@ function Section({ icon, title, children }: SectionProps) {
 }
 
 function WidgetLayoutFields(props: {
+  lockAll: boolean;
   layout: WidgetLayout;
   defaultLayout: WidgetLayout;
   windowWidth: number;
@@ -1827,6 +1829,7 @@ function WidgetLayoutFields(props: {
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   return (
     <>
+      <fieldset className="geometryFields" disabled={props.lockAll || props.layout.locked} aria-label="Widget geometry">
       <div className="buttonRow geometryActions">
         <button className="secondaryButton" onClick={async () => {
           const copied = await copyGeometryToClipboard(`x=${props.layout.x}, y=${props.layout.y}, width=${props.layout.width}, height=${props.layout.height}, scale=${props.layout.scale}`);
@@ -1851,6 +1854,7 @@ function WidgetLayoutFields(props: {
       <RangeField label="Widget scale" min={0.5} max={2} step={0.05} value={props.layout.scale} onChange={(value) => props.onChange("scale", value)} />
       <RangeField label="Widget opacity" min={0.1} max={1} step={0.05} value={props.layout.opacity} onChange={(value) => props.onChange("opacity", value)} />
       <NumberField label="Layer order" value={props.layout.z_index} onChange={(value) => props.onChange("z_index", value)} />
+      </fieldset>
       <label className="toggle full">
         <input type="checkbox" checked={props.layout.locked} onChange={(event) => props.onChange("locked", event.target.checked)} />
         <Lock size={16} />
