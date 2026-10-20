@@ -328,6 +328,11 @@ function App() {
       && !window.confirm("You have unsaved changes. Reloading will discard them. Continue?")) {
       return;
     }
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    await configTasks.current.run(async () => {
     try {
       const response = await invoke<LoadResponse>("load_config");
       const normalized = normalizeUiConfig(response.config);
@@ -340,6 +345,7 @@ function App() {
     } catch (error) {
       setStatus(String(error));
     }
+    });
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
