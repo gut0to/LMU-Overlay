@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { StatusRequest } from "./status-request";
 import { snapToWidgetLayouts } from "./snapping";
 import { normalizeWindowField } from "./window-values";
 import { normalizeWidgetLayoutForWindow, scaledDimension } from "./geometry";
@@ -265,7 +266,7 @@ function App() {
     return workspacePresets[0][1];
   });
   const hydratedConfig = useRef(false);
-  const statusRequestPending = useRef(false);
+  const statusRequest = useRef(new StatusRequest());
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
@@ -334,8 +335,7 @@ function App() {
   }, [workspace]);
 
   async function refreshOverlayStatus(): Promise<boolean> {
-    if (statusRequestPending.current) return overlayRunning;
-    statusRequestPending.current = true;
+    return statusRequest.current.run(async () => {
     try {
       const running = await invoke<boolean>("overlay_status");
       setOverlayRunning(running);
@@ -351,9 +351,8 @@ function App() {
     } catch (error) {
       setStatus(String(error));
       return false;
-    } finally {
-      statusRequestPending.current = false;
     }
+    });
   }
 
   async function loadConfig(force = false) {
