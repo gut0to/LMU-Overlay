@@ -1373,6 +1373,7 @@ function SurfaceMap(props: {
         onPointerMove={(event) => move(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
+        onLostPointerCapture={() => setDrag(null)}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
         {props.config.overlays.map((overlay) => (
@@ -1508,6 +1509,7 @@ function OverlayPreview(props: {
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
         onPointerUp={() => setDrag(null)}
         onPointerCancel={() => setDrag(null)}
+        onLostPointerCapture={() => setDrag(null)}
         style={{
           width: previewWidth,
           height: previewHeight,
