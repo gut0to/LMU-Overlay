@@ -872,7 +872,7 @@ function App() {
             {saving ? "Saving" : "Save"}
           </button>
           <span className={`saveState ${saving ? "saving" : hasPendingChanges ? "pending" : "saved"}`} aria-live="polite">
-            {saving ? "Saving changes" : hasPendingChanges ? "Changes pending" : "Auto-saved"}
+            {saving ? "Saving changes" : hasPendingChanges && failedSave.current === JSON.stringify(config) ? "Save failed. Press Save to retry." : hasPendingChanges ? "Changes pending" : "Auto-saved"}
           </span>
           </div>
         </div>
