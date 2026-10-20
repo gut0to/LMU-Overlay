@@ -1764,18 +1764,7 @@ function snapLayout(config: OverlayConfig, widget: LayoutSelection, layout: Widg
 }
 
 function constrainLayoutToWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
-  const scale = clamp(layout.scale, 0.5, 2);
-  const width = clamp(layout.width, 48, Math.floor(window.width / scale));
-  const height = clamp(layout.height, 20, Math.floor(window.height / scale));
-  const visualWidth = scaledDimension(width, scale);
-  const visualHeight = scaledDimension(height, scale);
-  return {
-    ...layout,
-    width,
-    height,
-    x: clamp(layout.x, 0, Math.max(0, window.width - visualWidth)),
-    y: clamp(layout.y, 0, Math.max(0, window.height - visualHeight)),
-  };
+  return normalizeWidgetLayoutForWindow(window, layout);
 }
 
 function snapNumber(value: number, gridSize: number) {

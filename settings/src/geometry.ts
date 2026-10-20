@@ -3,7 +3,8 @@ import type { WidgetLayout, WindowConfig } from "./types";
 function clamp(value: number, min: number, max: number) { return Math.min(Math.max(value, min), max); }
 
 export function normalizeWidgetLayoutForWindow(window: WindowConfig, layout: WidgetLayout): WidgetLayout {
-  const scale = clamp(Number.isFinite(layout.scale) ? layout.scale : 1, 0.5, 2);
+  const maxScale = Math.max(0.5, Math.min(2, window.width / 48, window.height / 20));
+  const scale = clamp(Number.isFinite(layout.scale) ? layout.scale : 1, 0.5, maxScale);
   const width = clamp(
     Number.isFinite(layout.width) ? Math.round(layout.width) : 48,
     48,

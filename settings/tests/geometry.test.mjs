@@ -8,3 +8,9 @@ test("normalization preserves valid geometry without mutating it", () => {
   assert.equal(scaledDimension(100, 1.5), 150);
   assert.notEqual(normalizeWidgetLayoutForWindow(screen, widget), widget);
 });
+
+test("small windows constrain visual scale as well as size", async () => {
+  const result = normalizeWidgetLayoutForWindow({ width: 48, height: 48 }, { ...widget, scale: 2 });
+  assert.ok(scaledDimension(result.width, result.scale) <= 48);
+  assert.equal(result.x, 0);
+});
