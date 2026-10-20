@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ConfigTasks } from "./config-tasks";
 import { matchesSearch } from "./search";
 import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
@@ -233,7 +234,8 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 function App() {
   const [config, setConfig] = useState<OverlayConfig | null>(null);
   const [path, setPath] = useState("");
-  const [revision, setRevision] = useState(0);
+  const revision = useRef(0);
+  const configTasks = useRef(new ConfigTasks());
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [overlayRunning, setOverlayRunning] = useState(false);
@@ -331,7 +333,7 @@ function App() {
       lastSavedConfig.current = JSON.stringify(normalized);
       hydratedConfig.current = true;
       setPath(response.path);
-      setRevision(response.revision);
+      revision.current = response.revision;
       setStatus("Config loaded");
     } catch (error) {
       setStatus(String(error));
@@ -339,17 +341,18 @@ function App() {
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
+    return configTasks.current.run(async () => {
     setSaving(true);
     try {
       const response = await invoke<LoadResponse>("save_config", {
         config: nextConfig,
-        expected_revision: revision,
+        expected_revision: revision.current,
       });
       const normalized = normalizeUiConfig(response.config);
       setConfig(normalized);
       lastSavedConfig.current = JSON.stringify(normalized);
       setPath(response.path);
-      setRevision(response.revision);
+      revision.current = response.revision;
       setStatus(successStatus);
       return true;
     } catch (error) {
@@ -358,6 +361,7 @@ function App() {
     } finally {
       setSaving(false);
     }
+    });
   }
 
   async function saveConfig(): Promise<boolean> {
@@ -394,13 +398,13 @@ function App() {
     try {
       const response = await invoke<LoadResponse>("import_config", {
         text: configText,
-        expected_revision: revision,
+        expected_revision: revision.current,
       });
       const normalized = normalizeUiConfig(response.config);
       lastSavedConfig.current = JSON.stringify(normalized);
       setConfig(normalized);
       setPath(response.path);
-      setRevision(response.revision);
+      revision.current = response.revision;
       setStatus("Config imported");
     } catch (error) {
       setStatus(String(error));
@@ -417,7 +421,7 @@ function App() {
       lastSavedConfig.current = JSON.stringify(normalized);
       setConfig(normalized);
       setPath(response.path);
-      setRevision(response.revision);
+      revision.current = response.revision;
       setStatus("Config reset");
     } catch (error) {
       setStatus(String(error));
