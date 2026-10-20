@@ -62,7 +62,7 @@ jobs:
         run: npm run build
         working-directory: settings
 
-      - name: Test settings preference recovery
+      - name: Test settings state and geometry
         run: npm test
         working-directory: settings
 

@@ -32,4 +32,3 @@ export function normalizeWidgetLayoutForWindow(window: WindowConfig, layout: Wid
 export function scaledDimension(value: number, scale: number) {
   return Math.round(value * clamp(scale, 0.5, 2));
 }
-

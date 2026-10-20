@@ -23,8 +23,10 @@ npm run tauri build
 ```
 
 The Settings tests require Node.js 22.6 or newer and validate recovery of editor
-workspace preferences, including malformed JSON, invalid field types, bounded
-dimensions and negative monitor origins. They do not require the Tauri host.
+workspace preferences, shortcut capture, search, configuration queue recovery,
+save acknowledgements, shared host polling, numeric limits, widget normalization
+and snapping. Delayed-operation tests verify ordering and preservation of newer
+edits. They do not require the Tauri host.
 
 The frontend build checks TypeScript and produces the Vite bundle. The Tauri
 build packages that bundle with the matching `hashoverlay.exe` resource. Run
