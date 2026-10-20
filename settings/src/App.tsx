@@ -1544,9 +1544,8 @@ function OverlayPreview(props: {
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
                 }
-                const resize =
-                  event.nativeEvent.offsetX >= layout.width * scale - 14 &&
-                  event.nativeEvent.offsetY >= layout.height * scale - 14;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const resize = event.clientX >= bounds.right - 14 && event.clientY >= bounds.bottom - 14;
                 setDrag({
                   widget: key,
                   startX: event.clientX,
