@@ -262,6 +262,7 @@ function App() {
     return workspacePresets[0][1];
   });
   const hydratedConfig = useRef(false);
+  const statusRequestPending = useRef(false);
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
@@ -306,6 +307,8 @@ function App() {
   }, [workspace]);
 
   async function refreshOverlayStatus(): Promise<boolean> {
+    if (statusRequestPending.current) return overlayRunning;
+    statusRequestPending.current = true;
     try {
       const running = await invoke<boolean>("overlay_status");
       setOverlayRunning(running);
@@ -321,6 +324,8 @@ function App() {
     } catch (error) {
       setStatus(String(error));
       return false;
+    } finally {
+      statusRequestPending.current = false;
     }
   }
 
