@@ -342,6 +342,10 @@ function App() {
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     return configTasks.current.run(async () => {
     setSaving(true);
     try {
