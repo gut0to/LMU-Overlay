@@ -312,6 +312,17 @@ function App() {
   }, [saving]);
 
   useEffect(() => {
+    const protectEdits = (event: BeforeUnloadEvent) => {
+      if (hydratedConfig.current && JSON.stringify(currentConfig.current) !== lastSavedConfig.current) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", protectEdits);
+    return () => window.removeEventListener("beforeunload", protectEdits);
+  }, []);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspace));
     } catch {
