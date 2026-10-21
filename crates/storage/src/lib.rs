@@ -176,6 +176,9 @@ fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
         || !(0.0..=1.0).contains(&lap.brake_threshold) || !(0.0..=1.0).contains(&lap.throttle_threshold) {
         return Err(StorageError::InvalidFormat);
     }
+    if lap.points.iter().any(|point| !point.is_valid()) {
+        return Err(StorageError::InvalidFormat);
+    }
     Ok(())
 }
 
@@ -368,6 +371,20 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn nonfinite_point_values_cannot_overwrite_a_valid_reference() {
+        let fixture = TestStore::new("nonfinite-point");
+        let key = ReferenceLapKey::fallback();
+        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        for index in 0..6 {
+            let mut lap = TestStore::reference();
+            let point = &mut lap.points[1];
+            match index { 0 => point.progress = f64::NAN, 1 => point.time_seconds = f64::NAN, 2 => point.throttle = f64::NAN, 3 => point.brake = f64::NAN, 4 => point.speed_kph = f64::NAN, _ => point.steering = f64::NAN }
+            assert!(matches!(fixture.store.save_personal_best(&key, &lap), Err(StorageError::InvalidFormat)));
+        }
+        assert_eq!(fixture.store.load_personal_best(&key).unwrap().unwrap().total_time_seconds, 90.0);
     }
 
     #[test]
