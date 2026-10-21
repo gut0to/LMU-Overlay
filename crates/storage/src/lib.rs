@@ -179,6 +179,10 @@ fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
     if lap.points.iter().any(|point| !point.is_valid()) {
         return Err(StorageError::InvalidFormat);
     }
+    if lap.points.iter().any(|point| point.time_seconds > lap.total_time_seconds)
+        || lap.points.windows(2).any(|pair| pair[0].progress >= pair[1].progress || pair[0].time_seconds > pair[1].time_seconds) {
+        return Err(StorageError::InvalidFormat);
+    }
     Ok(())
 }
 
@@ -371,6 +375,20 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn inconsistent_reference_chronology_is_rejected() {
+        let fixture = TestStore::new("invalid-chronology");
+        let mut lap = TestStore::reference();
+        lap.points[100].time_seconds = 91.0;
+        assert!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap).is_err());
+        lap = TestStore::reference();
+        lap.points.swap(100, 101);
+        assert!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap).is_err());
+        lap = TestStore::reference();
+        lap.points[100].time_seconds = 0.0;
+        assert!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap).is_err());
     }
 
     #[test]
