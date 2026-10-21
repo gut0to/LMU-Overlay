@@ -103,7 +103,9 @@ mod tests {
         let mut buffer = RingBuffer::new(2);
         buffer.push(10);
         buffer.push(20);
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.resize_preserving_recent(0)));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            buffer.resize_preserving_recent(0)
+        }));
         assert!(outcome.is_err());
         assert_eq!(buffer.capacity(), 2);
         assert_eq!(buffer.iter().copied().collect::<Vec<_>>(), vec![10, 20]);

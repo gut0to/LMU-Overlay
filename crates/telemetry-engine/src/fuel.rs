@@ -110,14 +110,20 @@ impl FuelEngine {
             self.last_timestamp = Some(sample.timestamp_seconds);
         }
 
-        let average = (self.history.len() >= MIN_VALID_SAMPLES)
-            .then(|| self.history.iter().map(|value| value / self.history.len() as f64).sum::<f64>());
+        let average = (self.history.len() >= MIN_VALID_SAMPLES).then(|| {
+            self.history
+                .iter()
+                .map(|value| value / self.history.len() as f64)
+                .sum::<f64>()
+        });
         FuelAnalysis {
             current_liters: fuel,
             capacity_liters: capacity,
             last_lap_used: self.last_lap_used,
             average_lap_used: average,
-            estimated_laps_remaining: average.and_then(|used| fuel.map(|current| current / used)).filter(|laps| laps.is_finite()),
+            estimated_laps_remaining: average
+                .and_then(|used| fuel.map(|current| current / used))
+                .filter(|laps| laps.is_finite()),
         }
     }
 }
@@ -130,7 +136,11 @@ mod tests {
     #[test]
     fn fuel_averages_do_not_overflow_across_refueled_stints() {
         let mut engine = FuelEngine::default();
-        let make = |lap, fuel| { let mut value = sample(lap, fuel); value.vehicle.fuel_capacity_liters = None; value };
+        let make = |lap, fuel| {
+            let mut value = sample(lap, fuel);
+            value.vehicle.fuel_capacity_liters = None;
+            value
+        };
         engine.update(&make(1, 1.5e308));
         engine.update(&make(2, 5e307));
         engine.update(&make(2, 1.5e308));
@@ -160,7 +170,10 @@ mod tests {
         assert_eq!(engine.update(&value).current_liters, None);
         let mut unknown = sample(1, 150.0);
         unknown.vehicle.fuel_capacity_liters = None;
-        assert_eq!(FuelEngine::default().update(&unknown).current_liters, Some(150.0));
+        assert_eq!(
+            FuelEngine::default().update(&unknown).current_liters,
+            Some(150.0)
+        );
     }
 
     #[test]

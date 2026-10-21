@@ -102,8 +102,12 @@ impl ReferenceLapStore {
         key: &ReferenceLapKey,
     ) -> Result<Option<ReferenceLap>, StorageError> {
         let mut paths = vec![self.personal_best_path(key)];
-        if let Some(path) = self.legacy_personal_best_path(key) { paths.push(path); }
-        if let Some(stem) = key.legacy_layout_file_stem() { paths.push(self.root.join(format!("{stem}.pb-lap"))); }
+        if let Some(path) = self.legacy_personal_best_path(key) {
+            paths.push(path);
+        }
+        if let Some(stem) = key.legacy_layout_file_stem() {
+            paths.push(self.root.join(format!("{stem}.pb-lap")));
+        }
         for path in paths {
             match read_reference_lap(&path) {
                 Ok(lap) => return Ok(Some(lap)),
@@ -158,7 +162,10 @@ impl std::fmt::Display for StorageError {
 
 impl std::error::Error for StorageError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self { Self::Io(error) => Some(error), Self::InvalidFormat => None }
+        match self {
+            Self::Io(error) => Some(error),
+            Self::InvalidFormat => None,
+        }
     }
 }
 
@@ -169,15 +176,24 @@ fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
     if lap.points.is_empty() || lap.points.len() > MAX_STORED_POINTS {
         return Err(StorageError::InvalidFormat);
     }
-    if !lap.brake_threshold.is_finite() || !lap.throttle_threshold.is_finite()
-        || !(0.0..=1.0).contains(&lap.brake_threshold) || !(0.0..=1.0).contains(&lap.throttle_threshold) {
+    if !lap.brake_threshold.is_finite()
+        || !lap.throttle_threshold.is_finite()
+        || !(0.0..=1.0).contains(&lap.brake_threshold)
+        || !(0.0..=1.0).contains(&lap.throttle_threshold)
+    {
         return Err(StorageError::InvalidFormat);
     }
     if lap.points.iter().any(|point| !point.is_valid()) {
         return Err(StorageError::InvalidFormat);
     }
-    if lap.points.iter().any(|point| point.time_seconds > lap.total_time_seconds)
-        || lap.points.windows(2).any(|pair| pair[0].progress >= pair[1].progress || pair[0].time_seconds > pair[1].time_seconds) {
+    if lap
+        .points
+        .iter()
+        .any(|point| point.time_seconds > lap.total_time_seconds)
+        || lap.points.windows(2).any(|pair| {
+            pair[0].progress >= pair[1].progress || pair[0].time_seconds > pair[1].time_seconds
+        })
+    {
         return Err(StorageError::InvalidFormat);
     }
     Ok(())
@@ -207,7 +223,9 @@ fn write_reference_lap(path: &Path, lap: &ReferenceLap) -> Result<(), StorageErr
 
 fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
     let mut bytes = Vec::new();
-    File::open(path)?.take((MAX_REFERENCE_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+    File::open(path)?
+        .take((MAX_REFERENCE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
     if bytes.len() < 20 || bytes.len() > MAX_REFERENCE_BYTES {
         return Err(StorageError::InvalidFormat);
     }
@@ -250,22 +268,38 @@ fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
         offset += POINT_SIZE;
     }
 
-    let lap = ReferenceLap { total_time_seconds, points, events: Vec::new(), brake_threshold, throttle_threshold };
+    let lap = ReferenceLap {
+        total_time_seconds,
+        points,
+        events: Vec::new(),
+        brake_threshold,
+        throttle_threshold,
+    };
     validate_reference_lap(&lap)?;
-    ReferenceLap::from_points(lap.total_time_seconds, lap.points, lap.brake_threshold, lap.throttle_threshold)
+    ReferenceLap::from_points(
+        lap.total_time_seconds,
+        lap.points,
+        lap.brake_threshold,
+        lap.throttle_threshold,
+    )
     .ok_or(StorageError::InvalidFormat)
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let temp_path = temp_path(path);
-    let mut file = OpenOptions::new().write(true).create_new(true).open(&temp_path)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)?;
     let result = (|| {
         file.write_all(bytes)?;
         file.sync_all()?;
         drop(file);
         replace_file(&temp_path, path)
     })();
-    if result.is_err() { let _ = fs::remove_file(&temp_path); }
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
     result
 }
 
@@ -359,7 +393,10 @@ mod tests {
                 std::process::id(),
                 TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
             ));
-            Self { store: ReferenceLapStore::new(&root), root }
+            Self {
+                store: ReferenceLapStore::new(&root),
+                root,
+            }
         }
 
         fn reference() -> ReferenceLap {
@@ -368,31 +405,45 @@ mod tests {
     }
 
     impl Drop for TestStore {
-        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 
     #[test]
     fn reference_trailers_are_not_accepted_as_valid_payloads() {
         let fixture = TestStore::new("reference-trailer");
         let key = ReferenceLapKey::fallback();
-        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .unwrap();
         let path = fixture.store.personal_best_path(&key);
         let mut bytes = fs::read(&path).unwrap();
         bytes.push(0);
         fs::write(path, bytes).unwrap();
-        assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+        assert!(matches!(
+            fixture.store.load_personal_best(&key),
+            Err(StorageError::InvalidFormat)
+        ));
     }
 
     #[test]
     fn truncated_reference_headers_and_payloads_are_rejected() {
         let fixture = TestStore::new("truncated-reference");
         let key = ReferenceLapKey::fallback();
-        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .unwrap();
         let path = fixture.store.personal_best_path(&key);
         let bytes = fs::read(&path).unwrap();
         for length in [0, 7, 19, 20, 28, 35, 36, bytes.len() - 1] {
             fs::write(&path, &bytes[..length]).unwrap();
-            assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+            assert!(matches!(
+                fixture.store.load_personal_best(&key),
+                Err(StorageError::InvalidFormat)
+            ));
         }
     }
 
@@ -401,10 +452,20 @@ mod tests {
         let fixture = TestStore::new("corrupt-primary");
         let mut key = ReferenceLapKey::fallback();
         key.legacy_vehicle_class = Some("GT".into());
-        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
-        write_reference_lap(&fixture.store.legacy_personal_best_path(&key).unwrap(), &TestStore::reference()).unwrap();
+        fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .unwrap();
+        write_reference_lap(
+            &fixture.store.legacy_personal_best_path(&key).unwrap(),
+            &TestStore::reference(),
+        )
+        .unwrap();
         fs::write(fixture.store.personal_best_path(&key), b"corrupt").unwrap();
-        assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+        assert!(matches!(
+            fixture.store.load_personal_best(&key),
+            Err(StorageError::InvalidFormat)
+        ));
     }
 
     #[test]
@@ -415,15 +476,30 @@ mod tests {
         let canonical = TestStore::reference();
         fixture.store.save_personal_best(&key, &canonical).unwrap();
         let legacy = ReferenceLap::new(100.0, vec![point(0.0, 0.0), point(1.0, 100.0)]).unwrap();
-        write_reference_lap(&fixture.store.legacy_personal_best_path(&key).unwrap(), &legacy).unwrap();
-        assert_eq!(fixture.store.load_personal_best(&key).unwrap().unwrap().total_time_seconds, 90.0);
+        write_reference_lap(
+            &fixture.store.legacy_personal_best_path(&key).unwrap(),
+            &legacy,
+        )
+        .unwrap();
+        assert_eq!(
+            fixture
+                .store
+                .load_personal_best(&key)
+                .unwrap()
+                .unwrap()
+                .total_time_seconds,
+            90.0
+        );
     }
 
     #[test]
     fn legacy_v1_references_load_with_default_driving_thresholds() {
         let fixture = TestStore::new("legacy-v1");
         let key = ReferenceLapKey::fallback();
-        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .unwrap();
         let path = fixture.store.personal_best_path(&key);
         let v2 = fs::read(&path).unwrap();
         let mut v1 = MAGIC.to_vec();
@@ -440,13 +516,19 @@ mod tests {
         let fixture = TestStore::new("primary-io-error");
         let key = ReferenceLapKey::fallback();
         fs::create_dir_all(fixture.store.personal_best_path(&key)).unwrap();
-        assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::Io(_))));
+        assert!(matches!(
+            fixture.store.load_personal_best(&key),
+            Err(StorageError::Io(_))
+        ));
     }
 
     #[test]
     fn storage_errors_preserve_underlying_io_causes() {
         use std::error::Error;
-        let error = StorageError::Io(io::Error::new(io::ErrorKind::PermissionDenied, "read denied"));
+        let error = StorageError::Io(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "read denied",
+        ));
         assert_eq!(error.source().unwrap().to_string(), "read denied");
         assert!(StorageError::InvalidFormat.source().is_none());
     }
@@ -455,7 +537,10 @@ mod tests {
     fn corrupt_point_payloads_are_rejected_instead_of_silently_filtered() {
         let fixture = TestStore::new("corrupt-payload");
         let key = ReferenceLapKey::fallback();
-        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .unwrap();
         let path = fixture.store.personal_best_path(&key);
         let original = fs::read(&path).unwrap();
         for offset in [0, 8, 16, 24, 32, 44] {
@@ -463,7 +548,10 @@ mod tests {
             let start = V2_HEADER_SIZE + POINT_SIZE + offset;
             bytes[start..start + 8].copy_from_slice(&f64::NAN.to_le_bytes());
             fs::write(&path, bytes).unwrap();
-            assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+            assert!(matches!(
+                fixture.store.load_personal_best(&key),
+                Err(StorageError::InvalidFormat)
+            ));
         }
     }
 
@@ -472,13 +560,22 @@ mod tests {
         let fixture = TestStore::new("invalid-chronology");
         let mut lap = TestStore::reference();
         lap.points[100].time_seconds = 91.0;
-        assert!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap).is_err());
+        assert!(fixture
+            .store
+            .save_personal_best(&ReferenceLapKey::fallback(), &lap)
+            .is_err());
         lap = TestStore::reference();
         lap.points.swap(100, 101);
-        assert!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap).is_err());
+        assert!(fixture
+            .store
+            .save_personal_best(&ReferenceLapKey::fallback(), &lap)
+            .is_err());
         lap = TestStore::reference();
         lap.points[100].time_seconds = 0.0;
-        assert!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap).is_err());
+        assert!(fixture
+            .store
+            .save_personal_best(&ReferenceLapKey::fallback(), &lap)
+            .is_err());
     }
 
     #[test]
@@ -487,8 +584,20 @@ mod tests {
         for index in 0..6 {
             let mut lap = TestStore::reference();
             let point = &mut lap.points[1];
-            match index { 0 => point.progress = 1.1, 1 => point.time_seconds = -1.0, 2 => point.throttle = 1.1, 3 => point.brake = -0.1, 4 => point.speed_kph = -1.0, _ => point.steering = 2.0 }
-            assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+            match index {
+                0 => point.progress = 1.1,
+                1 => point.time_seconds = -1.0,
+                2 => point.throttle = 1.1,
+                3 => point.brake = -0.1,
+                4 => point.speed_kph = -1.0,
+                _ => point.steering = 2.0,
+            }
+            assert!(matches!(
+                fixture
+                    .store
+                    .save_personal_best(&ReferenceLapKey::fallback(), &lap),
+                Err(StorageError::InvalidFormat)
+            ));
         }
     }
 
@@ -496,14 +605,35 @@ mod tests {
     fn nonfinite_point_values_cannot_overwrite_a_valid_reference() {
         let fixture = TestStore::new("nonfinite-point");
         let key = ReferenceLapKey::fallback();
-        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .unwrap();
         for index in 0..6 {
             let mut lap = TestStore::reference();
             let point = &mut lap.points[1];
-            match index { 0 => point.progress = f64::NAN, 1 => point.time_seconds = f64::NAN, 2 => point.throttle = f64::NAN, 3 => point.brake = f64::NAN, 4 => point.speed_kph = f64::NAN, _ => point.steering = f64::NAN }
-            assert!(matches!(fixture.store.save_personal_best(&key, &lap), Err(StorageError::InvalidFormat)));
+            match index {
+                0 => point.progress = f64::NAN,
+                1 => point.time_seconds = f64::NAN,
+                2 => point.throttle = f64::NAN,
+                3 => point.brake = f64::NAN,
+                4 => point.speed_kph = f64::NAN,
+                _ => point.steering = f64::NAN,
+            }
+            assert!(matches!(
+                fixture.store.save_personal_best(&key, &lap),
+                Err(StorageError::InvalidFormat)
+            ));
         }
-        assert_eq!(fixture.store.load_personal_best(&key).unwrap().unwrap().total_time_seconds, 90.0);
+        assert_eq!(
+            fixture
+                .store
+                .load_personal_best(&key)
+                .unwrap()
+                .unwrap()
+                .total_time_seconds,
+            90.0
+        );
     }
 
     #[test]
@@ -512,10 +642,20 @@ mod tests {
         for value in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
             let mut lap = TestStore::reference();
             lap.brake_threshold = value;
-            assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+            assert!(matches!(
+                fixture
+                    .store
+                    .save_personal_best(&ReferenceLapKey::fallback(), &lap),
+                Err(StorageError::InvalidFormat)
+            ));
             lap.brake_threshold = 0.1;
             lap.throttle_threshold = value;
-            assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+            assert!(matches!(
+                fixture
+                    .store
+                    .save_personal_best(&ReferenceLapKey::fallback(), &lap),
+                Err(StorageError::InvalidFormat)
+            ));
         }
         assert!(!fixture.root.exists());
     }
@@ -525,9 +665,19 @@ mod tests {
         let fixture = TestStore::new("invalid-points");
         let mut lap = TestStore::reference();
         lap.points.clear();
-        assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+        assert!(matches!(
+            fixture
+                .store
+                .save_personal_best(&ReferenceLapKey::fallback(), &lap),
+            Err(StorageError::InvalidFormat)
+        ));
         lap.points = vec![point(0.0, 0.0); MAX_STORED_POINTS + 1];
-        assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+        assert!(matches!(
+            fixture
+                .store
+                .save_personal_best(&ReferenceLapKey::fallback(), &lap),
+            Err(StorageError::InvalidFormat)
+        ));
         assert!(!fixture.root.exists());
     }
 
@@ -536,7 +686,10 @@ mod tests {
         let fixture = TestStore::new("failed-replacement");
         let key = ReferenceLapKey::fallback();
         fs::create_dir_all(fixture.store.personal_best_path(&key)).unwrap();
-        assert!(fixture.store.save_personal_best(&key, &TestStore::reference()).is_err());
+        assert!(fixture
+            .store
+            .save_personal_best(&key, &TestStore::reference())
+            .is_err());
         assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 1);
     }
 
@@ -544,9 +697,16 @@ mod tests {
     fn oversized_reference_files_are_rejected() {
         let fixture = TestStore::new("oversized-reference");
         fs::create_dir_all(&fixture.root).unwrap();
-        let path = fixture.store.personal_best_path(&ReferenceLapKey::fallback());
+        let path = fixture
+            .store
+            .personal_best_path(&ReferenceLapKey::fallback());
         File::create(path).unwrap().set_len(2_000_000).unwrap();
-        assert!(matches!(fixture.store.load_personal_best(&ReferenceLapKey::fallback()), Err(StorageError::InvalidFormat)));
+        assert!(matches!(
+            fixture
+                .store
+                .load_personal_best(&ReferenceLapKey::fallback()),
+            Err(StorageError::InvalidFormat)
+        ));
     }
 
     #[test]
@@ -557,14 +717,29 @@ mod tests {
         fixture.store.save_personal_best(&key, &valid).unwrap();
         let mut invalid = valid.clone();
         invalid.total_time_seconds = f64::NAN;
-        assert!(matches!(fixture.store.save_personal_best(&key, &invalid), Err(StorageError::InvalidFormat)));
-        assert_eq!(fixture.store.load_personal_best(&key).unwrap().unwrap().total_time_seconds, 90.0);
+        assert!(matches!(
+            fixture.store.save_personal_best(&key, &invalid),
+            Err(StorageError::InvalidFormat)
+        ));
+        assert_eq!(
+            fixture
+                .store
+                .load_personal_best(&key)
+                .unwrap()
+                .unwrap()
+                .total_time_seconds,
+            90.0
+        );
     }
 
     #[test]
     fn missing_reference_does_not_create_a_storage_directory() {
         let fixture = TestStore::new("missing-reference");
-        assert!(fixture.store.load_personal_best(&ReferenceLapKey::fallback()).unwrap().is_none());
+        assert!(fixture
+            .store
+            .load_personal_best(&ReferenceLapKey::fallback())
+            .unwrap()
+            .is_none());
         assert!(!fixture.root.exists());
     }
 

@@ -48,3 +48,20 @@ be running; live telemetry validation remains covered by
 [live-smoke-test.md](live-smoke-test.md).
 
 Do not add LMU offsets without verifying the `SharedMemoryInterface` header distributed with the game. Keep the reader read-only and add coverage for every conversion or derived calculation.
+
+## Reference and Numeric Regression Tests
+
+These checks run without a live LMU session:
+
+```powershell
+cargo test -p storage
+cargo test -p lap-engine
+cargo test -p lmu-telemetry sample::tests::
+cargo test -p telemetry-engine
+```
+
+Storage regression fixtures use unique temporary directories and remove them on
+drop. Tests cover invalid writes preserving existing references, V1 compatibility,
+canonical/legacy priority, truncated and corrupt records, oversized files and
+temporary-file cleanup after replacement failure. Numeric tests exercise invalid
+steering, unavailable circuit geometry, reference queries and fuel overflows.

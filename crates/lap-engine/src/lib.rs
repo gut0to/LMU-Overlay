@@ -96,8 +96,16 @@ pub struct DrivingEvent {
 impl ReferencePoint {
     /// Whether this point contains finite telemetry within physical input ranges.
     pub fn is_valid(&self) -> bool {
-        [self.progress, self.time_seconds, self.throttle, self.brake, self.speed_kph, self.steering]
-            .iter().all(|value| value.is_finite())
+        [
+            self.progress,
+            self.time_seconds,
+            self.throttle,
+            self.brake,
+            self.speed_kph,
+            self.steering,
+        ]
+        .iter()
+        .all(|value| value.is_finite())
             && (0.0..=1.0).contains(&self.progress)
             && self.time_seconds >= 0.0
             && (0.0..=1.0).contains(&self.throttle)
@@ -154,8 +162,14 @@ impl ReferenceLap {
         points.sort_by(|a, b| a.progress.total_cmp(&b.progress));
         points.dedup_by(|a, b| (a.progress - b.progress).abs() < f64::EPSILON);
 
-        if points.is_empty() || points.iter().any(|point| point.time_seconds > total_time_seconds)
-            || points.windows(2).any(|pair| pair[0].time_seconds > pair[1].time_seconds) {
+        if points.is_empty()
+            || points
+                .iter()
+                .any(|point| point.time_seconds > total_time_seconds)
+            || points
+                .windows(2)
+                .any(|pair| pair[0].time_seconds > pair[1].time_seconds)
+        {
             return None;
         }
 
@@ -173,7 +187,9 @@ impl ReferenceLap {
     }
 
     pub fn sample_at(&self, progress: f64) -> Option<ReferencePoint> {
-        if !progress.is_finite() { return None; }
+        if !progress.is_finite() {
+            return None;
+        }
         let progress = progress.clamp(0.0, 1.0);
         let max_index = self.points.len().checked_sub(1)?;
         let scaled = progress * max_index as f64;
@@ -208,11 +224,14 @@ impl ReferenceLap {
         value: impl Fn(ReferencePoint) -> f64,
         threshold: f64,
     ) -> Option<f64> {
-        if !threshold.is_finite() { return None; }
+        if !threshold.is_finite() {
+            return None;
+        }
         self.points.windows(2).find_map(|pair| {
             let before = value(pair[0]);
             let after = value(pair[1]);
-            if !before.is_finite() || !after.is_finite() || before >= threshold || after < threshold {
+            if !before.is_finite() || !after.is_finite() || before >= threshold || after < threshold
+            {
                 return None;
             }
 
@@ -984,15 +1003,31 @@ mod tests {
 
     #[test]
     fn references_reject_backwards_times_and_samples_after_lap_completion() {
-        assert!(ReferenceLap::new(100.0, vec![point(0.0, 60.0, 0.0, 0.0), point(1.0, 50.0, 0.0, 0.0)]).is_none());
-        assert!(ReferenceLap::new(100.0, vec![point(0.0, 0.0, 0.0, 0.0), point(1.0, 101.0, 0.0, 0.0)]).is_none());
+        assert!(ReferenceLap::new(
+            100.0,
+            vec![point(0.0, 60.0, 0.0, 0.0), point(1.0, 50.0, 0.0, 0.0)]
+        )
+        .is_none());
+        assert!(ReferenceLap::new(
+            100.0,
+            vec![point(0.0, 0.0, 0.0, 0.0), point(1.0, 101.0, 0.0, 0.0)]
+        )
+        .is_none());
     }
 
     #[test]
     fn reference_construction_excludes_nonfinite_pedal_and_speed_samples() {
         let mut invalid = point(0.5, 50.0, 0.5, 0.0);
         invalid.speed_kph = f64::NAN;
-        let lap = ReferenceLap::new(100.0, vec![point(0.0, 0.0, 0.0, 0.0), invalid, point(1.0, 100.0, 1.0, 0.0)]).unwrap();
+        let lap = ReferenceLap::new(
+            100.0,
+            vec![
+                point(0.0, 0.0, 0.0, 0.0),
+                invalid,
+                point(1.0, 100.0, 1.0, 0.0),
+            ],
+        )
+        .unwrap();
         assert!(lap.points.iter().all(ReferencePoint::is_valid));
         assert!(ReferenceLap::new(100.0, vec![invalid]).is_none());
     }
@@ -1000,10 +1035,17 @@ mod tests {
     #[test]
     fn threshold_crossings_reject_invalid_thresholds_and_input_values() {
         let lap = reference_lap(100.0);
-        assert!(lap.threshold_crossing_progress(|point| point.throttle, f64::NAN).is_none());
+        assert!(lap
+            .threshold_crossing_progress(|point| point.throttle, f64::NAN)
+            .is_none());
         assert!(lap.threshold_crossing_progress(|_| f64::NAN, 0.5).is_none());
-        assert!(lap.threshold_crossing_progress(|point| point.throttle, f64::INFINITY).is_none());
-        assert_eq!(lap.threshold_crossing_progress(|point| point.throttle, 0.25), Some(0.25));
+        assert!(lap
+            .threshold_crossing_progress(|point| point.throttle, f64::INFINITY)
+            .is_none());
+        assert_eq!(
+            lap.threshold_crossing_progress(|point| point.throttle, 0.25),
+            Some(0.25)
+        );
     }
 
     #[test]
