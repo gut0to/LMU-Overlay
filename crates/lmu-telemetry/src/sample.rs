@@ -337,7 +337,7 @@ impl TelemetrySample {
     }
 
     pub fn speed_kph(&self) -> f64 {
-        self.speed_mps * 3.6
+        non_negative_finite(self.speed_mps * 3.6)
     }
 
     pub fn lap_time_seconds(&self) -> Option<f64> {
@@ -401,6 +401,17 @@ mod tests {
             vehicle: VehicleSystems::default(), wheels: Wheels::default(), session: SessionData::default(),
             metadata: TelemetryMetadata::default(), field: Arc::from(Vec::new()),
         }
+    }
+
+    #[test]
+    fn speed_conversion_does_not_emit_nonfinite_or_negative_values() {
+        let mut value = sample();
+        for speed in [f64::MAX, f64::NAN, f64::INFINITY, -1.0] {
+            value.speed_mps = speed;
+            assert_eq!(value.speed_kph(), 0.0);
+        }
+        value.speed_mps = 50.0;
+        assert_eq!(value.speed_kph(), 180.0);
     }
 
     #[test]
