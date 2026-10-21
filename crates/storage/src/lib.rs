@@ -372,6 +372,19 @@ mod tests {
     }
 
     #[test]
+    fn truncated_reference_headers_and_payloads_are_rejected() {
+        let fixture = TestStore::new("truncated-reference");
+        let key = ReferenceLapKey::fallback();
+        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        let path = fixture.store.personal_best_path(&key);
+        let bytes = fs::read(&path).unwrap();
+        for length in [0, 7, 19, 20, 28, 35, 36, bytes.len() - 1] {
+            fs::write(&path, &bytes[..length]).unwrap();
+            assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+        }
+    }
+
+    #[test]
     fn corrupt_primary_reference_does_not_silently_load_an_older_lap() {
         let fixture = TestStore::new("corrupt-primary");
         let mut key = ReferenceLapKey::fallback();
