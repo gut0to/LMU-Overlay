@@ -36,7 +36,7 @@ impl FuelEngine {
     }
 
     pub fn update(&mut self, sample: &TelemetrySample) -> FuelAnalysis {
-        let fuel = sample
+        let raw_fuel = sample
             .vehicle
             .fuel_liters
             .filter(|value| value.is_finite() && *value >= 0.0);
@@ -44,6 +44,7 @@ impl FuelEngine {
             .vehicle
             .fuel_capacity_liters
             .filter(|value| value.is_finite() && *value > 0.0);
+        let fuel = raw_fuel.filter(|value| capacity.is_none_or(|capacity| *value <= capacity));
         let session_key = (
             sample.metadata.track_name.clone().unwrap_or_default(),
             sample.metadata.vehicle_name.clone().unwrap_or_default(),
@@ -125,6 +126,16 @@ impl FuelEngine {
 mod tests {
     use super::*;
     use lmu_telemetry::{Gear, TelemetryMetadata, VehicleSystems};
+
+    #[test]
+    fn fuel_above_known_capacity_is_unavailable() {
+        let mut engine = FuelEngine::default();
+        let value = sample(1, 150.0);
+        assert_eq!(engine.update(&value).current_liters, None);
+        let mut unknown = sample(1, 150.0);
+        unknown.vehicle.fuel_capacity_liters = None;
+        assert_eq!(FuelEngine::default().update(&unknown).current_liters, Some(150.0));
+    }
 
     #[test]
     fn invalid_timestamp_does_not_hide_session_time_rewind() {
