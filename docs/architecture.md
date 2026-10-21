@@ -91,3 +91,26 @@ numeric window limits and nearest-target alignment. These pure modules are
 exercised by the Settings tests without starting Tauri or LMU. Type-only imports
 are erased by Node's TypeScript runner; runtime imports between tested modules
 use explicit `.ts` extensions with TypeScript's no-emit setting.
+
+## Reference Validation and Persistence
+
+`ReferencePoint::is_valid` defines finite numeric and physical input ranges for
+reference points. Reference construction discards unusable points, then rejects
+backwards timestamps or points beyond the declared lap duration. Reference
+sampling and threshold lookup return unavailable results for nonfinite queries.
+
+Persisted files have a stricter contract: every point must be valid, progress
+must increase, timestamps must not decrease, and times must fit the lap duration.
+Public reference fields can be modified after construction, so storage validates
+again before touching the destination. Existing valid files survive invalid
+write requests.
+
+The reader consumes at most one byte beyond the maximum supported payload
+(36 header bytes plus 2,001 records of 52 bytes) before rejecting an oversized
+file. Both HOLAP001 and HOLAP002 remain readable. Only a missing candidate permits
+legacy fallback; malformed data and IO errors are returned to the host, which logs
+the failure and continues without that reference.
+
+Writes use exclusively created temporary files beside the destination, sync
+their contents, and atomically replace the target. A failed write or replacement
+attempt tries to remove its temporary file without changing the reported IO cause.

@@ -94,7 +94,7 @@ pub struct DrivingEvent {
 }
 
 impl ReferencePoint {
-    /// Whether this point contains finite reference telemetry.
+    /// Whether this point contains finite telemetry within physical input ranges.
     pub fn is_valid(&self) -> bool {
         [self.progress, self.time_seconds, self.throttle, self.brake, self.speed_kph, self.steering]
             .iter().all(|value| value.is_finite())
