@@ -98,6 +98,12 @@ impl ReferencePoint {
     pub fn is_valid(&self) -> bool {
         [self.progress, self.time_seconds, self.throttle, self.brake, self.speed_kph, self.steering]
             .iter().all(|value| value.is_finite())
+            && (0.0..=1.0).contains(&self.progress)
+            && self.time_seconds >= 0.0
+            && (0.0..=1.0).contains(&self.throttle)
+            && (0.0..=1.0).contains(&self.brake)
+            && self.speed_kph >= 0.0
+            && (-1.0..=1.0).contains(&self.steering)
     }
 
     pub fn from_snapshot(snapshot: TelemetrySnapshot) -> Option<Self> {

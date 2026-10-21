@@ -374,6 +374,17 @@ mod tests {
     }
 
     #[test]
+    fn out_of_range_reference_inputs_are_rejected() {
+        let fixture = TestStore::new("out-of-range-point");
+        for index in 0..6 {
+            let mut lap = TestStore::reference();
+            let point = &mut lap.points[1];
+            match index { 0 => point.progress = 1.1, 1 => point.time_seconds = -1.0, 2 => point.throttle = 1.1, 3 => point.brake = -0.1, 4 => point.speed_kph = -1.0, _ => point.steering = 2.0 }
+            assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+        }
+    }
+
+    #[test]
     fn nonfinite_point_values_cannot_overwrite_a_valid_reference() {
         let fixture = TestStore::new("nonfinite-point");
         let key = ReferenceLapKey::fallback();
