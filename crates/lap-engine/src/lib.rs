@@ -973,6 +973,16 @@ mod tests {
     use lmu_telemetry::Gear;
 
     #[test]
+    fn reference_endpoints_and_outside_queries_remain_consistent() {
+        let lap = reference_lap(100.0);
+        assert_eq!(lap.sample_at(-0.25).unwrap().time_seconds, 0.0);
+        assert_eq!(lap.sample_at(1.25).unwrap().time_seconds, 100.0);
+        assert_eq!(lap.sample_at(0.0).unwrap().progress, 0.0);
+        assert_eq!(lap.sample_at(1.0).unwrap().progress, 1.0);
+        assert_eq!(lap.sample_at(0.5).unwrap().time_seconds, 50.0);
+    }
+
+    #[test]
     fn references_reject_backwards_times_and_samples_after_lap_completion() {
         assert!(ReferenceLap::new(100.0, vec![point(0.0, 60.0, 0.0, 0.0), point(1.0, 50.0, 0.0, 0.0)]).is_none());
         assert!(ReferenceLap::new(100.0, vec![point(0.0, 0.0, 0.0, 0.0), point(1.0, 101.0, 0.0, 0.0)]).is_none());
