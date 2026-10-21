@@ -253,12 +253,9 @@ fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
         offset += POINT_SIZE;
     }
 
-    ReferenceLap::from_points(
-        total_time_seconds,
-        points,
-        brake_threshold,
-        throttle_threshold,
-    )
+    let lap = ReferenceLap { total_time_seconds, points, events: Vec::new(), brake_threshold, throttle_threshold };
+    validate_reference_lap(&lap)?;
+    ReferenceLap::from_points(lap.total_time_seconds, lap.points, lap.brake_threshold, lap.throttle_threshold)
     .ok_or(StorageError::InvalidFormat)
 }
 
@@ -375,6 +372,22 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn corrupt_point_payloads_are_rejected_instead_of_silently_filtered() {
+        let fixture = TestStore::new("corrupt-payload");
+        let key = ReferenceLapKey::fallback();
+        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        let path = fixture.store.personal_best_path(&key);
+        let original = fs::read(&path).unwrap();
+        for offset in [0, 8, 16, 24, 32, 44] {
+            let mut bytes = original.clone();
+            let start = V2_HEADER_SIZE + POINT_SIZE + offset;
+            bytes[start..start + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+            fs::write(&path, bytes).unwrap();
+            assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+        }
     }
 
     #[test]
