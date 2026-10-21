@@ -372,6 +372,18 @@ mod tests {
     }
 
     #[test]
+    fn canonical_reference_takes_precedence_over_legacy_keys() {
+        let fixture = TestStore::new("canonical-precedence");
+        let mut key = ReferenceLapKey::fallback();
+        key.legacy_vehicle_class = Some("GT".into());
+        let canonical = TestStore::reference();
+        fixture.store.save_personal_best(&key, &canonical).unwrap();
+        let legacy = ReferenceLap::new(100.0, vec![point(0.0, 0.0), point(1.0, 100.0)]).unwrap();
+        write_reference_lap(&fixture.store.legacy_personal_best_path(&key).unwrap(), &legacy).unwrap();
+        assert_eq!(fixture.store.load_personal_best(&key).unwrap().unwrap().total_time_seconds, 90.0);
+    }
+
+    #[test]
     fn legacy_v1_references_load_with_default_driving_thresholds() {
         let fixture = TestStore::new("legacy-v1");
         let key = ReferenceLapKey::fallback();
