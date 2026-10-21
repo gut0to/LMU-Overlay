@@ -372,6 +372,18 @@ mod tests {
     }
 
     #[test]
+    fn reference_trailers_are_not_accepted_as_valid_payloads() {
+        let fixture = TestStore::new("reference-trailer");
+        let key = ReferenceLapKey::fallback();
+        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        let path = fixture.store.personal_best_path(&key);
+        let mut bytes = fs::read(&path).unwrap();
+        bytes.push(0);
+        fs::write(path, bytes).unwrap();
+        assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+    }
+
+    #[test]
     fn truncated_reference_headers_and_payloads_are_rejected() {
         let fixture = TestStore::new("truncated-reference");
         let key = ReferenceLapKey::fallback();
