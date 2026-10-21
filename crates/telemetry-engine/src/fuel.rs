@@ -111,7 +111,7 @@ impl FuelEngine {
         }
 
         let average = (self.history.len() >= MIN_VALID_SAMPLES)
-            .then(|| self.history.iter().sum::<f64>() / self.history.len() as f64);
+            .then(|| self.history.iter().map(|value| value / self.history.len() as f64).sum::<f64>());
         FuelAnalysis {
             current_liters: fuel,
             capacity_liters: capacity,
@@ -126,6 +126,21 @@ impl FuelEngine {
 mod tests {
     use super::*;
     use lmu_telemetry::{Gear, TelemetryMetadata, VehicleSystems};
+
+    #[test]
+    fn fuel_averages_do_not_overflow_across_refueled_stints() {
+        let mut engine = FuelEngine::default();
+        let make = |lap, fuel| { let mut value = sample(lap, fuel); value.vehicle.fuel_capacity_liters = None; value };
+        engine.update(&make(1, 1.5e308));
+        engine.update(&make(2, 5e307));
+        engine.update(&make(2, 1.5e308));
+        engine.update(&make(3, 1.5e308));
+        let analysis = engine.update(&make(4, 5e307));
+        let average = analysis.average_lap_used.unwrap();
+        assert!(average.is_finite());
+        assert!((average / 1e308 - 1.0).abs() < 1e-12);
+        assert!((analysis.estimated_laps_remaining.unwrap() - 0.5).abs() < 1e-12);
+    }
 
     #[test]
     fn fuel_estimates_do_not_expose_overflowed_lap_counts() {
