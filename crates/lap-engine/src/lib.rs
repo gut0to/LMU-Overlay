@@ -178,6 +178,7 @@ impl ReferenceLap {
     }
 
     pub fn sample_at(&self, progress: f64) -> Option<ReferencePoint> {
+        if !progress.is_finite() { return None; }
         let progress = progress.clamp(0.0, 1.0);
         let max_index = self.points.len().checked_sub(1)?;
         let scaled = progress * max_index as f64;
@@ -974,6 +975,14 @@ fn lerp(start: f64, end: f64, amount: f64) -> f64 {
 mod tests {
     use super::*;
     use lmu_telemetry::Gear;
+
+    #[test]
+    fn reference_sampling_rejects_nonfinite_progress() {
+        let lap = reference_lap(100.0);
+        for progress in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(lap.sample_at(progress).is_none());
+        }
+    }
 
     #[test]
     fn interpolates_reference_lap_by_progress() {
