@@ -1,7 +1,7 @@
 use std::{
     env,
     fs::{self, File},
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -21,6 +21,8 @@ const MAGIC_V2: &[u8; 8] = b"HOLAP002";
 const SUPPORTED_MAGIC: [&[u8; 8]; 2] = [MAGIC, MAGIC_V2];
 const POINT_SIZE: usize = 52;
 const MAX_STORED_POINTS: usize = 2_001;
+const V2_HEADER_SIZE: usize = 36;
+const MAX_REFERENCE_BYTES: usize = V2_HEADER_SIZE + MAX_STORED_POINTS * POINT_SIZE;
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,7 +173,7 @@ fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
 }
 
 fn write_reference_lap(path: &Path, lap: &ReferenceLap) -> Result<(), StorageError> {
-    let mut bytes = Vec::with_capacity(16 + lap.points.len() * POINT_SIZE);
+    let mut bytes = Vec::with_capacity(V2_HEADER_SIZE + lap.points.len() * POINT_SIZE);
     bytes.extend_from_slice(MAGIC_V2);
     bytes.extend_from_slice(&lap.total_time_seconds.to_le_bytes());
     bytes.extend_from_slice(&(lap.points.len() as u32).to_le_bytes());
@@ -193,8 +195,9 @@ fn write_reference_lap(path: &Path, lap: &ReferenceLap) -> Result<(), StorageErr
 }
 
 fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
-    let bytes = fs::read(path)?;
-    if bytes.len() < 20 {
+    let mut bytes = Vec::new();
+    File::open(path)?.take((MAX_REFERENCE_BYTES + 1) as u64).read_to_end(&mut bytes)?;
+    if bytes.len() < 20 || bytes.len() > MAX_REFERENCE_BYTES {
         return Err(StorageError::InvalidFormat);
     }
     let magic = bytes.get(..8).ok_or(StorageError::InvalidFormat)?;
@@ -354,6 +357,15 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn oversized_reference_files_are_rejected() {
+        let fixture = TestStore::new("oversized-reference");
+        fs::create_dir_all(&fixture.root).unwrap();
+        let path = fixture.store.personal_best_path(&ReferenceLapKey::fallback());
+        File::create(path).unwrap().set_len(2_000_000).unwrap();
+        assert!(matches!(fixture.store.load_personal_best(&ReferenceLapKey::fallback()), Err(StorageError::InvalidFormat)));
     }
 
     #[test]
