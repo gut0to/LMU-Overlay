@@ -372,6 +372,17 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_primary_reference_does_not_silently_load_an_older_lap() {
+        let fixture = TestStore::new("corrupt-primary");
+        let mut key = ReferenceLapKey::fallback();
+        key.legacy_vehicle_class = Some("GT".into());
+        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        write_reference_lap(&fixture.store.legacy_personal_best_path(&key).unwrap(), &TestStore::reference()).unwrap();
+        fs::write(fixture.store.personal_best_path(&key), b"corrupt").unwrap();
+        assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::InvalidFormat)));
+    }
+
+    #[test]
     fn canonical_reference_takes_precedence_over_legacy_keys() {
         let fixture = TestStore::new("canonical-precedence");
         let mut key = ReferenceLapKey::fallback();
