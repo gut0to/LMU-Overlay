@@ -330,7 +330,7 @@ impl TelemetrySample {
         self.throttle = normalized_input(self.throttle);
         self.brake = normalized_input(self.brake);
         self.clutch = normalized_input(self.clutch);
-        self.steering = self.steering.clamp(-1.0, 1.0);
+        self.steering = if self.steering.is_finite() { self.steering.clamp(-1.0, 1.0) } else { 0.0 };
         self.lap_distance_m = self.lap_distance_m.map(non_negative_finite);
         self.track_length_m = self.track_length_m.map(non_negative_finite);
         self
@@ -388,6 +388,25 @@ fn non_negative_finite(value: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sample() -> TelemetrySample {
+        TelemetrySample {
+            timestamp_seconds: 12.0, speed_mps: 10.0, rpm: 5000.0, gear: Gear::Forward(3),
+            throttle: 0.5, brake: 0.0, clutch: 0.0, steering: 0.0,
+            lap_distance_m: Some(2500.0), track_length_m: Some(5000.0), lap_number: 1,
+            lap_start_seconds: 0.0, sector: 1, sector_times: SectorTimes::default(),
+            vehicle: VehicleSystems::default(), wheels: Wheels::default(), session: SessionData::default(),
+            metadata: TelemetryMetadata::default(), field: Arc::from(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn nonfinite_steering_is_neutral_after_sanitization() {
+        for steering in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut value = sample(); value.steering = steering;
+            assert_eq!(value.sanitized().steering, 0.0);
+        }
+    }
 
     #[test]
     fn maps_gear_values() {
