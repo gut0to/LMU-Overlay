@@ -352,7 +352,10 @@ impl TelemetrySample {
         let distance = self.lap_distance_m?;
         let length = self.track_length_m?;
 
-        (length > 0.0).then_some((distance / length).clamp(0.0, 1.0))
+        if !distance.is_finite() || distance < 0.0 || !length.is_finite() || length <= 0.0 {
+            return None;
+        }
+        Some((distance / length).clamp(0.0, 1.0))
     }
 }
 
@@ -397,6 +400,20 @@ mod tests {
             lap_start_seconds: 0.0, sector: 1, sector_times: SectorTimes::default(),
             vehicle: VehicleSystems::default(), wheels: Wheels::default(), session: SessionData::default(),
             metadata: TelemetryMetadata::default(), field: Arc::from(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn direct_progress_queries_reject_nonfinite_geometry() {
+        let mut value = sample();
+        for length in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            value.track_length_m = Some(length);
+            assert_eq!(value.lap_progress(), None);
+        }
+        value.track_length_m = Some(5000.0);
+        for distance in [-1.0, f64::NAN, f64::INFINITY] {
+            value.lap_distance_m = Some(distance);
+            assert_eq!(value.lap_progress(), None);
         }
     }
 
