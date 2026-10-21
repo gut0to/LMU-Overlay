@@ -117,7 +117,7 @@ impl FuelEngine {
             capacity_liters: capacity,
             last_lap_used: self.last_lap_used,
             average_lap_used: average,
-            estimated_laps_remaining: average.and_then(|used| fuel.map(|current| current / used)),
+            estimated_laps_remaining: average.and_then(|used| fuel.map(|current| current / used)).filter(|laps| laps.is_finite()),
         }
     }
 }
@@ -126,6 +126,17 @@ impl FuelEngine {
 mod tests {
     use super::*;
     use lmu_telemetry::{Gear, TelemetryMetadata, VehicleSystems};
+
+    #[test]
+    fn fuel_estimates_do_not_expose_overflowed_lap_counts() {
+        let mut engine = FuelEngine::default();
+        engine.update(&sample(1, 3e-300));
+        engine.update(&sample(2, 2e-300));
+        engine.update(&sample(3, 1e-300));
+        let mut refueled = sample(3, 1e308);
+        refueled.vehicle.fuel_capacity_liters = None;
+        assert_eq!(engine.update(&refueled).estimated_laps_remaining, None);
+    }
 
     #[test]
     fn fuel_above_known_capacity_is_unavailable() {
