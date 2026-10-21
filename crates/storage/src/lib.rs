@@ -163,7 +163,11 @@ impl std::fmt::Display for StorageError {
     }
 }
 
-impl std::error::Error for StorageError {}
+impl std::error::Error for StorageError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self { Self::Io(error) => Some(error), Self::InvalidFormat => None }
+    }
+}
 
 fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
     if !lap.total_time_seconds.is_finite() || lap.total_time_seconds <= 0.0 {
@@ -372,6 +376,14 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn storage_errors_preserve_underlying_io_causes() {
+        use std::error::Error;
+        let error = StorageError::Io(io::Error::new(io::ErrorKind::PermissionDenied, "read denied"));
+        assert_eq!(error.source().unwrap().to_string(), "read denied");
+        assert!(StorageError::InvalidFormat.source().is_none());
     }
 
     #[test]
