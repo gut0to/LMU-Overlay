@@ -154,7 +154,8 @@ impl ReferenceLap {
         points.sort_by(|a, b| a.progress.total_cmp(&b.progress));
         points.dedup_by(|a, b| (a.progress - b.progress).abs() < f64::EPSILON);
 
-        if points.is_empty() {
+        if points.is_empty() || points.iter().any(|point| point.time_seconds > total_time_seconds)
+            || points.windows(2).any(|pair| pair[0].time_seconds > pair[1].time_seconds) {
             return None;
         }
 
@@ -970,6 +971,12 @@ fn lerp(start: f64, end: f64, amount: f64) -> f64 {
 mod tests {
     use super::*;
     use lmu_telemetry::Gear;
+
+    #[test]
+    fn references_reject_backwards_times_and_samples_after_lap_completion() {
+        assert!(ReferenceLap::new(100.0, vec![point(0.0, 60.0, 0.0, 0.0), point(1.0, 50.0, 0.0, 0.0)]).is_none());
+        assert!(ReferenceLap::new(100.0, vec![point(0.0, 0.0, 0.0, 0.0), point(1.0, 101.0, 0.0, 0.0)]).is_none());
+    }
 
     #[test]
     fn reference_construction_excludes_nonfinite_pedal_and_speed_samples() {
