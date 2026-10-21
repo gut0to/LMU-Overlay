@@ -150,13 +150,7 @@ impl ReferenceLap {
             return None;
         }
 
-        points.retain(|point| {
-            point.progress.is_finite()
-                && point.time_seconds.is_finite()
-                && point.progress >= 0.0
-                && point.progress <= 1.0
-                && point.time_seconds >= 0.0
-        });
+        points.retain(ReferencePoint::is_valid);
         points.sort_by(|a, b| a.progress.total_cmp(&b.progress));
         points.dedup_by(|a, b| (a.progress - b.progress).abs() < f64::EPSILON);
 
@@ -976,6 +970,15 @@ fn lerp(start: f64, end: f64, amount: f64) -> f64 {
 mod tests {
     use super::*;
     use lmu_telemetry::Gear;
+
+    #[test]
+    fn reference_construction_excludes_nonfinite_pedal_and_speed_samples() {
+        let mut invalid = point(0.5, 50.0, 0.5, 0.0);
+        invalid.speed_kph = f64::NAN;
+        let lap = ReferenceLap::new(100.0, vec![point(0.0, 0.0, 0.0, 0.0), invalid, point(1.0, 100.0, 1.0, 0.0)]).unwrap();
+        assert!(lap.points.iter().all(ReferencePoint::is_valid));
+        assert!(ReferenceLap::new(100.0, vec![invalid]).is_none());
+    }
 
     #[test]
     fn threshold_crossings_reject_invalid_thresholds_and_input_values() {
