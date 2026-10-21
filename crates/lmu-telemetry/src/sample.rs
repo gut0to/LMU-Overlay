@@ -331,7 +331,7 @@ impl TelemetrySample {
         self.brake = normalized_input(self.brake);
         self.clutch = normalized_input(self.clutch);
         self.steering = if self.steering.is_finite() { self.steering.clamp(-1.0, 1.0) } else { 0.0 };
-        self.lap_distance_m = self.lap_distance_m.map(non_negative_finite);
+        self.lap_distance_m = self.lap_distance_m.filter(|value| value.is_finite() && *value >= 0.0);
         self.track_length_m = self.track_length_m.map(non_negative_finite);
         self
     }
@@ -397,6 +397,16 @@ mod tests {
             lap_start_seconds: 0.0, sector: 1, sector_times: SectorTimes::default(),
             vehicle: VehicleSystems::default(), wheels: Wheels::default(), session: SessionData::default(),
             metadata: TelemetryMetadata::default(), field: Arc::from(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn invalid_lap_distances_remain_unavailable() {
+        for distance in [-1.0, f64::NAN, f64::INFINITY] {
+            let mut value = sample(); value.lap_distance_m = Some(distance);
+            let sanitized = value.sanitized();
+            assert_eq!(sanitized.lap_distance_m, None);
+            assert_eq!(sanitized.lap_progress(), None);
         }
     }
 
@@ -477,7 +487,7 @@ mod tests {
         assert_eq!(sample.brake, 0.0);
         assert_eq!(sample.clutch, 0.0);
         assert_eq!(sample.steering, 1.0);
-        assert_eq!(sample.lap_distance_m, Some(0.0));
+        assert_eq!(sample.lap_distance_m, None);
         assert_eq!(sample.track_length_m, Some(0.0));
         assert_eq!(sample.lap_time_seconds(), Some(2.0));
     }
