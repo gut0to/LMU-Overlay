@@ -372,6 +372,22 @@ mod tests {
     }
 
     #[test]
+    fn legacy_v1_references_load_with_default_driving_thresholds() {
+        let fixture = TestStore::new("legacy-v1");
+        let key = ReferenceLapKey::fallback();
+        fixture.store.save_personal_best(&key, &TestStore::reference()).unwrap();
+        let path = fixture.store.personal_best_path(&key);
+        let v2 = fs::read(&path).unwrap();
+        let mut v1 = MAGIC.to_vec();
+        v1.extend_from_slice(&v2[8..20]);
+        v1.extend_from_slice(&v2[V2_HEADER_SIZE..]);
+        fs::write(&path, v1).unwrap();
+        let lap = fixture.store.load_personal_best(&key).unwrap().unwrap();
+        assert_eq!(lap.total_time_seconds, 90.0);
+        assert_eq!((lap.brake_threshold, lap.throttle_threshold), (0.1, 0.1));
+    }
+
+    #[test]
     fn unreadable_primary_reference_does_not_fall_back_to_legacy() {
         let fixture = TestStore::new("primary-io-error");
         let key = ReferenceLapKey::fallback();
