@@ -213,10 +213,11 @@ impl ReferenceLap {
         value: impl Fn(ReferencePoint) -> f64,
         threshold: f64,
     ) -> Option<f64> {
+        if !threshold.is_finite() { return None; }
         self.points.windows(2).find_map(|pair| {
             let before = value(pair[0]);
             let after = value(pair[1]);
-            if before >= threshold || after < threshold {
+            if !before.is_finite() || !after.is_finite() || before >= threshold || after < threshold {
                 return None;
             }
 
@@ -975,6 +976,15 @@ fn lerp(start: f64, end: f64, amount: f64) -> f64 {
 mod tests {
     use super::*;
     use lmu_telemetry::Gear;
+
+    #[test]
+    fn threshold_crossings_reject_invalid_thresholds_and_input_values() {
+        let lap = reference_lap(100.0);
+        assert!(lap.threshold_crossing_progress(|point| point.throttle, f64::NAN).is_none());
+        assert!(lap.threshold_crossing_progress(|_| f64::NAN, 0.5).is_none());
+        assert!(lap.threshold_crossing_progress(|point| point.throttle, f64::INFINITY).is_none());
+        assert_eq!(lap.threshold_crossing_progress(|point| point.throttle, 0.25), Some(0.25));
+    }
 
     #[test]
     fn reference_sampling_rejects_nonfinite_progress() {
