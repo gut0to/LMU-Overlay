@@ -99,6 +99,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn failed_zero_capacity_resize_preserves_recent_samples() {
+        let mut buffer = RingBuffer::new(2);
+        buffer.push(10);
+        buffer.push(20);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| buffer.resize_preserving_recent(0)));
+        assert!(outcome.is_err());
+        assert_eq!(buffer.capacity(), 2);
+        assert_eq!(buffer.iter().copied().collect::<Vec<_>>(), vec![10, 20]);
+        assert_eq!(buffer.latest(), Some(&20));
+    }
+
+    #[test]
     fn preserves_insertion_order_before_wrap() {
         let mut buffer = RingBuffer::new(3);
         buffer.push(1);
