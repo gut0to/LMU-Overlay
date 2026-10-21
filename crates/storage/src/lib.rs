@@ -169,6 +169,9 @@ fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
     if !lap.total_time_seconds.is_finite() || lap.total_time_seconds <= 0.0 {
         return Err(StorageError::InvalidFormat);
     }
+    if lap.points.is_empty() || lap.points.len() > MAX_STORED_POINTS {
+        return Err(StorageError::InvalidFormat);
+    }
     Ok(())
 }
 
@@ -361,6 +364,17 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn invalid_point_counts_do_not_create_reference_directories() {
+        let fixture = TestStore::new("invalid-points");
+        let mut lap = TestStore::reference();
+        lap.points.clear();
+        assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+        lap.points = vec![point(0.0, 0.0); MAX_STORED_POINTS + 1];
+        assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+        assert!(!fixture.root.exists());
     }
 
     #[test]
