@@ -117,3 +117,14 @@ widget, or turn off the global lock, before editing its dimensions.
 
 **Reset size** restores the selected widget's default dimensions. **Fit surfaces**
 shrinks windows larger than the workspace before moving them inside its bounds.
+
+## Reference Lap Files
+
+Personal best references live in `%APPDATA%\HashOverlay\laps`. HashOverlay keeps
+reading the older reference format and legacy filenames. A current reference
+takes priority over a legacy file for the same track and car.
+
+An invalid reference produces a load warning and is ignored; the reader does not
+rewrite it or silently substitute an older lap. To recover, close the overlay,
+back up the affected `.pb-lap` file outside the laps folder, then record a new
+valid lap. Invalid telemetry cannot overwrite a valid reference already saved.
