@@ -125,6 +125,7 @@ impl ReferenceLapStore {
         key: &ReferenceLapKey,
         lap: &ReferenceLap,
     ) -> Result<(), StorageError> {
+        validate_reference_lap(lap)?;
         fs::create_dir_all(&self.root)?;
         write_reference_lap(&self.personal_best_path(key), lap)
     }
@@ -161,6 +162,13 @@ impl std::fmt::Display for StorageError {
 }
 
 impl std::error::Error for StorageError {}
+
+fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
+    if !lap.total_time_seconds.is_finite() || lap.total_time_seconds <= 0.0 {
+        return Err(StorageError::InvalidFormat);
+    }
+    Ok(())
+}
 
 fn write_reference_lap(path: &Path, lap: &ReferenceLap) -> Result<(), StorageError> {
     let mut bytes = Vec::with_capacity(16 + lap.points.len() * POINT_SIZE);
@@ -346,6 +354,18 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn invalid_duration_never_replaces_existing_reference() {
+        let fixture = TestStore::new("invalid-write");
+        let key = ReferenceLapKey::fallback();
+        let valid = TestStore::reference();
+        fixture.store.save_personal_best(&key, &valid).unwrap();
+        let mut invalid = valid.clone();
+        invalid.total_time_seconds = f64::NAN;
+        assert!(matches!(fixture.store.save_personal_best(&key, &invalid), Err(StorageError::InvalidFormat)));
+        assert_eq!(fixture.store.load_personal_best(&key).unwrap().unwrap().total_time_seconds, 90.0);
     }
 
     #[test]
