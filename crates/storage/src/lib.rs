@@ -1,6 +1,6 @@
 use std::{
     env,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
@@ -250,11 +250,15 @@ fn read_reference_lap(path: &Path) -> Result<ReferenceLap, StorageError> {
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let temp_path = temp_path(path);
-    let mut file = File::create(&temp_path)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    drop(file);
-    replace_file(&temp_path, path)
+    let mut file = OpenOptions::new().write(true).create_new(true).open(&temp_path)?;
+    let result = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        replace_file(&temp_path, path)
+    })();
+    if result.is_err() { let _ = fs::remove_file(&temp_path); }
+    result
 }
 
 fn temp_path(path: &Path) -> PathBuf {
@@ -357,6 +361,15 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn failed_reference_replacement_removes_its_temporary_file() {
+        let fixture = TestStore::new("failed-replacement");
+        let key = ReferenceLapKey::fallback();
+        fs::create_dir_all(fixture.store.personal_best_path(&key)).unwrap();
+        assert!(fixture.store.save_personal_best(&key, &TestStore::reference()).is_err());
+        assert_eq!(fs::read_dir(&fixture.root).unwrap().count(), 1);
     }
 
     #[test]
