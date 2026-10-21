@@ -324,6 +324,37 @@ fn sanitize_path_part(value: &str) -> String {
 mod tests {
     use super::*;
 
+    struct TestStore {
+        root: PathBuf,
+        store: ReferenceLapStore,
+    }
+
+    impl TestStore {
+        fn new(label: &str) -> Self {
+            let root = env::temp_dir().join(format!(
+                "hashoverlay-{label}-{}-{}",
+                std::process::id(),
+                TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ));
+            Self { store: ReferenceLapStore::new(&root), root }
+        }
+
+        fn reference() -> ReferenceLap {
+            ReferenceLap::new(90.0, vec![point(0.0, 0.0), point(1.0, 90.0)]).unwrap()
+        }
+    }
+
+    impl Drop for TestStore {
+        fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn missing_reference_does_not_create_a_storage_directory() {
+        let fixture = TestStore::new("missing-reference");
+        assert!(fixture.store.load_personal_best(&ReferenceLapKey::fallback()).unwrap().is_none());
+        assert!(!fixture.root.exists());
+    }
+
     #[test]
     fn saves_and_loads_reference_lap() {
         let root = env::temp_dir().join(format!("hashoverlay-storage-test-{}", std::process::id()));
