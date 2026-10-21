@@ -101,21 +101,14 @@ impl ReferenceLapStore {
         &self,
         key: &ReferenceLapKey,
     ) -> Result<Option<ReferenceLap>, StorageError> {
-        let path = self.personal_best_path(key);
-        if path.exists() {
-            return read_reference_lap(&path).map(Some);
-        }
-
-        if let Some(legacy_path) = self.legacy_personal_best_path(key) {
-            if legacy_path.exists() {
-                return read_reference_lap(&legacy_path).map(Some);
-            }
-        }
-
-        if let Some(file_stem) = key.legacy_layout_file_stem() {
-            let legacy_layout_path = self.root.join(format!("{file_stem}.pb-lap"));
-            if legacy_layout_path.exists() {
-                return read_reference_lap(&legacy_layout_path).map(Some);
+        let mut paths = vec![self.personal_best_path(key)];
+        if let Some(path) = self.legacy_personal_best_path(key) { paths.push(path); }
+        if let Some(stem) = key.legacy_layout_file_stem() { paths.push(self.root.join(format!("{stem}.pb-lap"))); }
+        for path in paths {
+            match read_reference_lap(&path) {
+                Ok(lap) => return Ok(Some(lap)),
+                Err(StorageError::Io(error)) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error),
             }
         }
 
@@ -376,6 +369,14 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn unreadable_primary_reference_does_not_fall_back_to_legacy() {
+        let fixture = TestStore::new("primary-io-error");
+        let key = ReferenceLapKey::fallback();
+        fs::create_dir_all(fixture.store.personal_best_path(&key)).unwrap();
+        assert!(matches!(fixture.store.load_personal_best(&key), Err(StorageError::Io(_))));
     }
 
     #[test]
