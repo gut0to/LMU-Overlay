@@ -172,6 +172,10 @@ fn validate_reference_lap(lap: &ReferenceLap) -> Result<(), StorageError> {
     if lap.points.is_empty() || lap.points.len() > MAX_STORED_POINTS {
         return Err(StorageError::InvalidFormat);
     }
+    if !lap.brake_threshold.is_finite() || !lap.throttle_threshold.is_finite()
+        || !(0.0..=1.0).contains(&lap.brake_threshold) || !(0.0..=1.0).contains(&lap.throttle_threshold) {
+        return Err(StorageError::InvalidFormat);
+    }
     Ok(())
 }
 
@@ -364,6 +368,20 @@ mod tests {
 
     impl Drop for TestStore {
         fn drop(&mut self) { let _ = fs::remove_dir_all(&self.root); }
+    }
+
+    #[test]
+    fn invalid_driving_thresholds_are_not_persisted() {
+        let fixture = TestStore::new("invalid-thresholds");
+        for value in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
+            let mut lap = TestStore::reference();
+            lap.brake_threshold = value;
+            assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+            lap.brake_threshold = 0.1;
+            lap.throttle_threshold = value;
+            assert!(matches!(fixture.store.save_personal_best(&ReferenceLapKey::fallback(), &lap), Err(StorageError::InvalidFormat)));
+        }
+        assert!(!fixture.root.exists());
     }
 
     #[test]
