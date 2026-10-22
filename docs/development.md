@@ -65,3 +65,19 @@ drop. Tests cover invalid writes preserving existing references, V1 compatibilit
 canonical/legacy priority, truncated and corrupt records, oversized files and
 temporary-file cleanup after replacement failure. Numeric tests exercise invalid
 steering, unavailable circuit geometry, reference queries and fuel overflows.
+
+## Host Protocol and Settings History
+
+```powershell
+cargo test -p host-protocol
+cargo test --manifest-path settings/src-tauri/Cargo.toml
+cd settings
+npm test
+```
+
+The protocol suite covers command round trips, malformed frames, reply states,
+UTF-8 error truncation and native key bindings. Settings history tests exercise
+undo/redo branches, grouped gestures, bounded retention, immutable reducers,
+file replacement, delayed acknowledgements and native text shortcut ownership.
+The shell tests verify that live-reload failure still returns the persisted
+configuration and revision.
