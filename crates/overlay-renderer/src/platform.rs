@@ -140,9 +140,7 @@ mod windows_overlay {
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::SetProcessDpiAwarenessContext,
-            Input::KeyboardAndMouse::{
-                RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
-            },
+            Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
                 GetWindowRect, PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes,
@@ -4229,39 +4227,8 @@ mod windows_overlay {
     }
 
     fn hotkey(value: &str) -> Option<(u32, u32)> {
-        let mut modifiers = 0;
-        let mut key = None;
-        for part in value
-            .split('+')
-            .map(|part| part.trim().to_ascii_uppercase())
-        {
-            match part.as_str() {
-                "CTRL" | "CONTROL" => modifiers |= MOD_CONTROL,
-                "SHIFT" => modifiers |= MOD_SHIFT,
-                "ALT" => modifiers |= MOD_ALT,
-                _ => key = virtual_key(&part),
-            }
-        }
-        key.map(|key| (modifiers, key))
-    }
-
-    fn virtual_key(value: &str) -> Option<u32> {
-        let key = value.trim().to_ascii_uppercase();
-        match key.as_str() {
-            "F1" => Some(0x70),
-            "F2" => Some(0x71),
-            "F3" => Some(0x72),
-            "F4" => Some(0x73),
-            "F5" => Some(0x74),
-            "F6" => Some(0x75),
-            "F7" => Some(0x76),
-            "F8" => Some(0x77),
-            "F9" => Some(0x78),
-            "F10" => Some(0x79),
-            "F11" => Some(0x7A),
-            "F12" => Some(0x7B),
-            _ => None,
-        }
+        let binding = host_protocol::HotkeyBinding::parse(value)?;
+        Some((binding.windows_modifiers(), binding.windows_key()))
     }
 
     #[cfg(test)]
@@ -4269,6 +4236,7 @@ mod windows_overlay {
         use super::*;
         use crate::config::OverlayLayerConfig;
         use telemetry_engine::{GamePhase, Gear, SessionKind};
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_SHIFT};
 
         #[test]
         fn scales_gdi_text_with_global_scale() {

@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+host-protocol = { path = "../host-protocol" }
 log.workspace = true
 serde.workspace = true
 telemetry-engine = { path = "../telemetry-engine" }

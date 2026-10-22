@@ -128,3 +128,20 @@ An invalid reference produces a load warning and is ignored; the reader does not
 rewrite it or silently substitute an older lap. To recover, close the overlay,
 back up the affected `.pb-lap` file outside the laps folder, then record a new
 valid lap. Invalid telemetry cannot overwrite a valid reference already saved.
+
+## Undo and Redo
+
+**Undo** and **Redo** beside Save restore recent configuration edits. Ctrl+Z
+undoes; Ctrl+Y or Ctrl+Shift+Z redoes. On macOS browser previews, Cmd+Z and
+Cmd+Shift+Z also work. Text fields keep their native undo behavior.
+
+Each widget drag, resize or surface drag is one action. Release the pointer or
+press Escape before using history. Restored edits autosave normally. The editor
+keeps the most recent 40 actions in memory; closing Settings, reloading,
+importing or resetting the configuration clears history. A new edit after Undo
+discards the abandoned redo branch.
+
+If saving succeeds but the running overlay cannot reload, Settings retains the
+saved revision and reports the reload warning. Resolve the host problem and
+press Save to retry applying it. Starting the overlay waits for a successful
+save and live reload result.

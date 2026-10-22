@@ -16,8 +16,13 @@ import {
   Square,
   Timer,
   Trash2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { historyShortcut } from "./history-shortcut";
+import { useConfigHistory } from "./useConfigHistory";
+import { saveFeedback } from "./save-feedback";
 import { StatusRequest } from "./status-request";
 import { snapToWidgetLayouts } from "./snapping";
 import { normalizeWindowField } from "./window-values";
@@ -237,7 +242,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 }
 
 function App() {
-  const [config, setConfig] = useState<OverlayConfig | null>(null);
+  const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
   const revision = useRef(0);
   const configTasks = useRef(new ConfigTasks());
@@ -270,6 +275,7 @@ function App() {
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
+  const reloadWarning = useRef<string | null>(null);
   const currentConfig = useRef(config);
   currentConfig.current = config;
 
@@ -314,6 +320,19 @@ function App() {
     window.addEventListener("keydown", saveShortcut);
     return () => window.removeEventListener("keydown", saveShortcut);
   }, [saving]);
+
+  useEffect(() => {
+    const handleHistory = (event: KeyboardEvent) => {
+      if (saving || replacingConfig || editingGesture) return;
+      const target = event.target;
+      const editingText = target instanceof HTMLElement && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [role='textbox']")));
+      const action = historyShortcut(event, editingText);
+      if (action === "undo" && canUndo) { event.preventDefault(); undo(); }
+      if (action === "redo" && canRedo) { event.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", handleHistory);
+    return () => window.removeEventListener("keydown", handleHistory);
+  }, [saving, replacingConfig, editingGesture, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const protectEdits = (event: BeforeUnloadEvent) => {
@@ -370,12 +389,13 @@ function App() {
       try {
         const response = await invoke<LoadResponse>("load_config");
         const normalized = normalizeUiConfig(response.config);
-        setConfig(normalized);
+        replaceConfig(normalized);
         lastSavedConfig.current = JSON.stringify(normalized);
         hydratedConfig.current = true;
         setPath(response.path);
         revision.current = response.revision;
-        setStatus("Config loaded");
+        reloadWarning.current = response.reload_warning ?? null;
+        setStatus(saveFeedback("Config loaded", response.reload_warning).message);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -400,13 +420,16 @@ function App() {
         });
         failedSave.current = null;
         const normalized = normalizeUiConfig(response.config);
-        setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
+        acknowledgeConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
         lastSavedConfig.current = JSON.stringify(normalized);
         setPath(response.path);
         revision.current = response.revision;
-        setStatus(successStatus);
-        return true;
+        reloadWarning.current = response.reload_warning ?? null;
+        const feedback = saveFeedback(successStatus, response.reload_warning);
+        setStatus(feedback.message);
+        return feedback.liveApplied;
       } catch (error) {
+        reloadWarning.current = null;
         failedSave.current = JSON.stringify(nextConfig);
         setStatus(String(error));
         return false;
@@ -461,10 +484,11 @@ function App() {
         });
         const normalized = normalizeUiConfig(response.config);
         lastSavedConfig.current = JSON.stringify(normalized);
-        setConfig(normalized);
+        replaceConfig(normalized);
         setPath(response.path);
         revision.current = response.revision;
-        setStatus("Config imported");
+        reloadWarning.current = response.reload_warning ?? null;
+        setStatus(saveFeedback("Config imported", response.reload_warning).message);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -489,10 +513,11 @@ function App() {
         const response = await invoke<LoadResponse>("reset_config");
         const normalized = normalizeUiConfig(response.config);
         lastSavedConfig.current = JSON.stringify(normalized);
-        setConfig(normalized);
+        replaceConfig(normalized);
         setPath(response.path);
         revision.current = response.revision;
-        setStatus("Config reset");
+        reloadWarning.current = response.reload_warning ?? null;
+        setStatus(saveFeedback("Config reset", response.reload_warning).message);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -506,7 +531,7 @@ function App() {
     try {
       const saved = await saveConfig();
       if (!saved) {
-        setStatus("Could not save settings. Resolve the save error before starting the overlay.");
+        setStatus(reloadWarning.current ?? "Could not save settings. Resolve the save error before starting the overlay.");
         return;
       }
       await invoke("start_overlay");
@@ -651,11 +676,13 @@ function App() {
   }
 
   function addOverlayLayer() {
+    if (!currentConfig.current) return;
+    const id = nextOverlayId(currentConfig.current.overlays);
+    setActiveOverlayId(id);
     setConfig((current) => {
       if (!current) {
         return current;
       }
-      const id = nextOverlayId(current.overlays);
       const ordinal = overlayOrdinal(id);
       const layer: OverlayLayerConfig = {
         id,
@@ -665,7 +692,6 @@ function App() {
         widgets: ["coaching"],
         layout_overrides: {},
       };
-      setActiveOverlayId(id);
       return { ...current, overlays: [...current.overlays, layer] };
     });
     setStatus("New overlay added");
@@ -693,11 +719,13 @@ function App() {
   }
 
   function duplicateOverlayLayer(id: string) {
+    if (!currentConfig.current?.overlays.some((overlay) => overlay.id === id)) return;
+    const nextId = nextOverlayId(currentConfig.current.overlays);
+    setActiveOverlayId(nextId);
     setConfig((current) => {
       if (!current) return current;
       const source = current.overlays.find((overlay) => overlay.id === id);
       if (!source) return current;
-      const nextId = nextOverlayId(current.overlays);
       const duplicate: OverlayLayerConfig = {
         ...source,
         id: nextId,
@@ -708,7 +736,6 @@ function App() {
           Object.entries(source.layout_overrides).map(([key, layout]) => [key, { ...layout }]),
         ),
       };
-      setActiveOverlayId(nextId);
       return { ...current, overlays: [...current.overlays, duplicate] };
     });
     setStatus("Overlay duplicated");
@@ -776,7 +803,6 @@ function App() {
         return current;
       }
       const overlays = current.overlays.filter((overlay) => overlay.id !== id);
-      setActiveOverlayId(overlays[0]?.id ?? "main");
       return { ...current, overlays };
     });
   }
@@ -871,6 +897,10 @@ function App() {
           <button className="secondaryButton" onClick={() => void toggleOverlayVisibility()} disabled={!overlayRunning}>
             {overlayVisible ? "Hide overlay" : "Show overlay"}
           </button>
+          <div className="historyActions" role="group" aria-label="Edit history">
+            <button className="secondaryButton" title="Undo the last edit (Ctrl+Z)" aria-keyshortcuts="Control+Z Meta+Z" onClick={undo} disabled={saving || replacingConfig || editingGesture || !canUndo}><Undo2 size={16} /> Undo</button>
+            <button className="secondaryButton" title="Redo the last undone edit (Ctrl+Y or Ctrl+Shift+Z)" aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z" onClick={redo} disabled={saving || replacingConfig || editingGesture || !canRedo}><Redo2 size={16} /> Redo</button>
+          </div>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
             {saving ? "Saving" : "Save"}
@@ -973,6 +1003,8 @@ function App() {
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
             <SurfaceMap
+              onEditStart={beginEdit}
+              onEditEnd={endEdit}
               config={config}
               selected={activeOverlayId}
               onSelect={setActiveOverlayId}
@@ -984,6 +1016,8 @@ function App() {
               onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
             />
             <OverlayPreview
+              onEditStart={beginEdit}
+              onEditEnd={endEdit}
               config={activeOverlayConfig ?? config}
               selected={selectedLayout}
               onSelect={setSelectedLayout}
@@ -1279,6 +1313,8 @@ function App() {
 
 function SurfaceMap(props: {
   config: OverlayConfig;
+  onEditStart: () => void;
+  onEditEnd: () => void;
   selected: string;
   workspace: WorkspaceSize;
   onWorkspaceChange: (size: WorkspaceSize) => void;
@@ -1289,6 +1325,8 @@ function SurfaceMap(props: {
   onMove: (id: string, x: number, y: number) => void;
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  function finishDrag() { setDrag(null); props.onEditEnd(); }
+  useEffect(() => () => props.onEditEnd(), [props.onEditEnd]);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const copyTimer = useRef<number | null>(null);
   useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current); }, []);
@@ -1376,9 +1414,9 @@ function SurfaceMap(props: {
         className="surfaceMap"
         ref={mapRef}
         onPointerMove={(event) => move(event.clientX, event.clientY)}
-        onPointerUp={() => setDrag(null)}
-        onPointerCancel={() => setDrag(null)}
-        onLostPointerCapture={() => setDrag(null)}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
         {props.config.overlays.map((overlay) => (
@@ -1395,12 +1433,13 @@ function SurfaceMap(props: {
             onPointerDown={(event) => {
               if (event.button !== 0 || !event.isPrimary) return;
               props.onSelect(overlay.id);
+              props.onEditStart();
               setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
               event.currentTarget.setPointerCapture(event.pointerId);
             }}
             aria-pressed={props.selected === overlay.id}
             onKeyDown={(event) => {
-              if (event.key === "Escape") { setDrag(null); return; }
+              if (event.key === "Escape") { finishDrag(); return; }
               const step = event.shiftKey ? 10 : 1;
               let dx = 0;
               let dy = 0;
@@ -1449,6 +1488,8 @@ function showPanel(active: Page, primary: Page, secondary: Page) {
 
 function OverlayPreview(props: {
   config: OverlayConfig;
+  onEditStart: () => void;
+  onEditEnd: () => void;
   selected: LayoutSelection;
   onSelect: (value: LayoutSelection) => void;
   onLayoutChange: (widget: LayoutSelection, layout: WidgetLayout) => void;
@@ -1461,6 +1502,8 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
+  function finishDrag() { setDrag(null); props.onEditEnd(); }
+  useEffect(() => () => props.onEditEnd(), [props.onEditEnd]);
   const maxPreviewWidth = 760;
   const maxPreviewHeight = 680;
   const scale = Math.min(
@@ -1514,9 +1557,9 @@ function OverlayPreview(props: {
         <div
         className="preview"
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
-        onPointerUp={() => setDrag(null)}
-        onPointerCancel={() => setDrag(null)}
-        onLostPointerCapture={() => setDrag(null)}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
         style={{
           width: previewWidth,
           height: previewHeight,
@@ -1553,6 +1596,7 @@ function OverlayPreview(props: {
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
                 }
+                props.onEditStart();
                 const bounds = event.currentTarget.getBoundingClientRect();
                 const resize = event.clientX >= bounds.right - 14 && event.clientY >= bounds.bottom - 14;
                 setDrag({
@@ -1565,7 +1609,7 @@ function OverlayPreview(props: {
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Escape") { setDrag(null); return; }
+                if (event.key === "Escape") { finishDrag(); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
                 const step = event.shiftKey ? 10 : 1;
                 let dx = 0;

@@ -1390,3 +1390,6 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .settingsFields { min-width: 0; margin: 0; padding: 0; border: 0; border-top: 1px solid var(--line-bright); }
 
 .geometryFields { display: contents; border: 0; padding: 0; margin: 0; min-width: 0; }
+
+.historyActions { display: inline-flex; flex-wrap: wrap; gap: var(--space-2); }
+@media (max-width: 800px) { .historyActions { flex: 1 1 100%; } }

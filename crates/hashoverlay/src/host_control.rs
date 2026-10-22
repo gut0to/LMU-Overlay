@@ -5,39 +5,8 @@ use std::sync::mpsc::SyncSender;
 #[cfg(not(windows))]
 use std::sync::Arc;
 
-pub const PIPE_NAME: &str = r"\\.\pipe\HashOverlay.Host";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ControlCommand {
-    Status,
-    Reload,
-    Show,
-    Hide,
-    ToggleEdit,
-    Stop,
-    EditStatus,
-    ToggleVisibility,
-    VisibilityStatus,
-    Shutdown,
-}
-
-impl ControlCommand {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "status" => Some(Self::Status),
-            "reload" => Some(Self::Reload),
-            "show" => Some(Self::Show),
-            "hide" => Some(Self::Hide),
-            "edit" => Some(Self::ToggleEdit),
-            "stop" => Some(Self::Stop),
-            "edit_status" => Some(Self::EditStatus),
-            "toggle_visibility" => Some(Self::ToggleVisibility),
-            "visibility_status" => Some(Self::VisibilityStatus),
-            "shutdown" => Some(Self::Shutdown),
-            _ => None,
-        }
-    }
-}
+use host_protocol::Command as ControlCommand;
+pub use host_protocol::PIPE_NAME;
 
 #[cfg(windows)]
 mod windows_control {
@@ -54,7 +23,9 @@ mod windows_control {
     };
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE},
+        Foundation::{
+            CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE,
+        },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
             ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_MESSAGE,
@@ -62,7 +33,7 @@ mod windows_control {
         },
     };
 
-    const BUFFER_SIZE: u32 = 128;
+    const BUFFER_SIZE: u32 = host_protocol::MAX_FRAME_BYTES as u32;
 
     pub struct HostControl {
         running: Arc<AtomicBool>,
@@ -133,7 +104,11 @@ mod windows_control {
                     ptr::null_mut(),
                 )
             };
-            if pipe.is_null() {
+            if pipe.is_null() || pipe == INVALID_HANDLE_VALUE {
+                log::warn!(
+                    "Could not create host control pipe: {}",
+                    std::io::Error::last_os_error()
+                );
                 break;
             }
 
@@ -163,8 +138,7 @@ mod windows_control {
                     "hidden".to_string()
                 }
                 Some(ControlCommand::ToggleEdit) => {
-                    let enabled = !edit_mode.load(Ordering::Relaxed);
-                    edit_mode.store(enabled, Ordering::Relaxed);
+                    let enabled = !edit_mode.fetch_xor(true, Ordering::Relaxed);
                     visible.store(true, Ordering::Relaxed);
                     if enabled {
                         "edit_on".to_string()
@@ -180,8 +154,7 @@ mod windows_control {
                     }
                 }
                 Some(ControlCommand::ToggleVisibility) => {
-                    let shown = !visible.load(Ordering::Relaxed);
-                    visible.store(shown, Ordering::Relaxed);
+                    let shown = !visible.fetch_xor(true, Ordering::Relaxed);
                     if shown {
                         "shown".to_string()
                     } else {
@@ -219,7 +192,7 @@ mod windows_control {
         }
         match response.recv_timeout(Duration::from_secs(2)) {
             Ok(Ok(())) => "reloaded".to_string(),
-            Ok(Err(error)) => format!("error:{error}"),
+            Ok(Err(error)) => host_protocol::error_response(&error),
             Err(_) => "error:reload timed out".to_string(),
         }
     }
@@ -236,11 +209,12 @@ mod windows_control {
                 ptr::null_mut(),
             )
         } != 0;
-        success.then(|| {
-            String::from_utf8_lossy(&buffer[..read as usize])
-                .trim()
-                .to_string()
-        })
+        if !success {
+            return None;
+        }
+        host_protocol::decode_frame(&buffer[..read as usize])
+            .ok()
+            .map(str::to_owned)
     }
 
     fn write_response(pipe: HANDLE, response: &str) -> bool {
@@ -259,6 +233,12 @@ mod windows_control {
     }
 
     pub fn send_command(command: &str) -> std::io::Result<String> {
+        if ControlCommand::parse(command).is_none() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "unsupported host command",
+            ));
+        }
         use std::io::{Error, ErrorKind};
         use windows_sys::Win32::{
             Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
@@ -297,6 +277,12 @@ mod windows_control {
             {
                 return Err(Error::last_os_error());
             }
+            if written != bytes.len() as u32 {
+                return Err(Error::new(
+                    ErrorKind::WriteZero,
+                    "partial host command write",
+                ));
+            }
             let mut buffer = [0_u8; BUFFER_SIZE as usize];
             let mut read = 0_u32;
             if unsafe {
@@ -311,9 +297,9 @@ mod windows_control {
             {
                 return Err(Error::last_os_error());
             }
-            Ok(String::from_utf8_lossy(&buffer[..read as usize])
-                .trim()
-                .to_string())
+            host_protocol::decode_frame(&buffer[..read as usize])
+                .map(str::to_owned)
+                .map_err(|error| Error::new(ErrorKind::InvalidData, error))
         })();
         unsafe { CloseHandle(pipe) };
         command_result
