@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { saveFeedback } from "./save-feedback";
 import { StatusRequest } from "./status-request";
 import { snapToWidgetLayouts } from "./snapping";
 import { normalizeWindowField } from "./window-values";
@@ -270,6 +271,7 @@ function App() {
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
+  const reloadWarning = useRef<string | null>(null);
   const currentConfig = useRef(config);
   currentConfig.current = config;
 
@@ -404,8 +406,10 @@ function App() {
         lastSavedConfig.current = JSON.stringify(normalized);
         setPath(response.path);
         revision.current = response.revision;
-        setStatus(successStatus);
-        return true;
+        reloadWarning.current = response.reload_warning ?? null;
+        const feedback = saveFeedback(successStatus, response.reload_warning);
+        setStatus(feedback.message);
+        return feedback.liveApplied;
       } catch (error) {
         failedSave.current = JSON.stringify(nextConfig);
         setStatus(String(error));

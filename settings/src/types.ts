@@ -235,4 +235,4 @@ export type OverlayLayerConfig = {
   layout_overrides: Record<string, WidgetLayout>;
 };
 
-export type LoadResponse = { path: string; config: OverlayConfig; revision: number };
+export type LoadResponse = { path: string; config: OverlayConfig; revision: number; reload_warning?: string | null };
