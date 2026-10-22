@@ -62,3 +62,12 @@ test("history reducers preserve immutable snapshots and ignore no-op edits", () 
   assert.equal(editHistory(edited, { x: 1 }), edited);
   assert.deepEqual(historyReducer(state, { kind: "edit", update: (current) => ({ ...current, x: current.x + 1 }) }), edited);
 });
+
+test("history retains only the most recent bounded edit window", () => {
+  let state = createHistory({ x: 0 });
+  for (let x = 1; x <= 100; x++) state = editHistory(state, { x });
+  assert.equal(state.past.length, 40);
+  for (let index = 0; index < 50; index++) state = undoHistory(state);
+  assert.deepEqual(state.present, { x: 60 });
+  assert.equal(state.future.length, 40);
+});
