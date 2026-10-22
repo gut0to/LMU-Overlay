@@ -20,6 +20,7 @@ import {
   Redo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { historyShortcut } from "./history-shortcut";
 import { useConfigHistory } from "./useConfigHistory";
 import { saveFeedback } from "./save-feedback";
 import { StatusRequest } from "./status-request";
@@ -319,6 +320,19 @@ function App() {
     window.addEventListener("keydown", saveShortcut);
     return () => window.removeEventListener("keydown", saveShortcut);
   }, [saving]);
+
+  useEffect(() => {
+    const handleHistory = (event: KeyboardEvent) => {
+      if (saving || replacingConfig) return;
+      const target = event.target;
+      const editingText = target instanceof HTMLElement && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [role='textbox']")));
+      const action = historyShortcut(event, editingText);
+      if (action === "undo" && canUndo) { event.preventDefault(); undo(); }
+      if (action === "redo" && canRedo) { event.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", handleHistory);
+    return () => window.removeEventListener("keydown", handleHistory);
+  }, [saving, replacingConfig, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const protectEdits = (event: BeforeUnloadEvent) => {
