@@ -897,8 +897,8 @@ function App() {
             {overlayVisible ? "Hide overlay" : "Show overlay"}
           </button>
           <div className="historyActions" role="group" aria-label="Edit history">
-            <button className="secondaryButton" onClick={undo} disabled={!canUndo}><Undo2 size={16} /> Undo</button>
-            <button className="secondaryButton" onClick={redo} disabled={!canRedo}><Redo2 size={16} /> Redo</button>
+            <button className="secondaryButton" onClick={undo} disabled={saving || replacingConfig || !canUndo}><Undo2 size={16} /> Undo</button>
+            <button className="secondaryButton" onClick={redo} disabled={saving || replacingConfig || !canRedo}><Redo2 size={16} /> Redo</button>
           </div>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
