@@ -41,9 +41,29 @@ impl Reply {
     pub fn edit_mode(&self) -> Option<bool> { match self { Self::EditOn => Some(true), Self::EditOff => Some(false), _ => None } }
 }
 
+/// Keep error replies within one pipe frame, including multibyte messages.
+pub fn error_response(detail: &str) -> String {
+    let clean: String = detail.chars().map(|ch| if ch.is_control() { ' ' } else { ch }).collect();
+    let clean = if clean.trim().is_empty() { "host error" } else { clean.trim() };
+    let limit = MAX_FRAME_BYTES - "error:".len();
+    if clean.len() <= limit { return format!("error:{clean}"); }
+    let mut end = limit - 3;
+    while !clean.is_char_boundary(end) { end -= 1; }
+    format!("error:{}...", &clean[..end])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn error_replies_fit_the_wire_limit_and_remain_valid_utf8() {
+        let reply = error_response(&"é".repeat(200));
+        assert!(reply.len() <= MAX_FRAME_BYTES);
+        assert!(decode_frame(reply.as_bytes()).is_ok());
+        assert!(reply.ends_with("..."));
+        assert_eq!(error_response("line\nbreak\0"), "error:line break");
+    }
+
     #[test]
     fn reply_states_are_explicit_not_truthy_strings() {
         assert_eq!(Reply::parse("shown").unwrap().visibility(), Some(true));

@@ -188,7 +188,7 @@ mod windows_control {
         }
         match response.recv_timeout(Duration::from_secs(2)) {
             Ok(Ok(())) => "reloaded".to_string(),
-            Ok(Err(error)) => format!("error:{error}"),
+            Ok(Err(error)) => host_protocol::error_response(&error),
             Err(_) => "error:reload timed out".to_string(),
         }
     }
