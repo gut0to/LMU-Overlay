@@ -335,6 +335,7 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
         {
             return Err(Error::last_os_error());
         }
+        if written != bytes.len() as u32 { return Err(Error::new(std::io::ErrorKind::WriteZero, "partial host command write")); }
         let mut response = [0_u8; host_protocol::MAX_FRAME_BYTES];
         let mut read = 0_u32;
         if unsafe {
