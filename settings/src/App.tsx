@@ -377,7 +377,8 @@ function App() {
         hydratedConfig.current = true;
         setPath(response.path);
         revision.current = response.revision;
-        setStatus("Config loaded");
+        reloadWarning.current = response.reload_warning ?? null;
+        setStatus(saveFeedback("Config loaded", response.reload_warning).message);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -468,7 +469,8 @@ function App() {
         setConfig(normalized);
         setPath(response.path);
         revision.current = response.revision;
-        setStatus("Config imported");
+        reloadWarning.current = response.reload_warning ?? null;
+        setStatus(saveFeedback("Config imported", response.reload_warning).message);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -496,7 +498,8 @@ function App() {
         setConfig(normalized);
         setPath(response.path);
         revision.current = response.revision;
-        setStatus("Config reset");
+        reloadWarning.current = response.reload_warning ?? null;
+        setStatus(saveFeedback("Config reset", response.reload_warning).message);
       } catch (error) {
         setStatus(String(error));
       } finally {
