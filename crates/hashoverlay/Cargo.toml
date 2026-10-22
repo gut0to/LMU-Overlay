@@ -6,6 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+host-protocol = { path = "../host-protocol" }
 anyhow.workspace = true
 env_logger.workspace = true
 lap-engine = { path = "../lap-engine" }

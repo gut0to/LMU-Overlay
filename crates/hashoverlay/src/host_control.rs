@@ -5,39 +5,8 @@ use std::sync::mpsc::SyncSender;
 #[cfg(not(windows))]
 use std::sync::Arc;
 
-pub const PIPE_NAME: &str = r"\\.\pipe\HashOverlay.Host";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ControlCommand {
-    Status,
-    Reload,
-    Show,
-    Hide,
-    ToggleEdit,
-    Stop,
-    EditStatus,
-    ToggleVisibility,
-    VisibilityStatus,
-    Shutdown,
-}
-
-impl ControlCommand {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "status" => Some(Self::Status),
-            "reload" => Some(Self::Reload),
-            "show" => Some(Self::Show),
-            "hide" => Some(Self::Hide),
-            "edit" => Some(Self::ToggleEdit),
-            "stop" => Some(Self::Stop),
-            "edit_status" => Some(Self::EditStatus),
-            "toggle_visibility" => Some(Self::ToggleVisibility),
-            "visibility_status" => Some(Self::VisibilityStatus),
-            "shutdown" => Some(Self::Shutdown),
-            _ => None,
-        }
-    }
-}
+pub use host_protocol::PIPE_NAME;
+use host_protocol::Command as ControlCommand;
 
 #[cfg(windows)]
 mod windows_control {
