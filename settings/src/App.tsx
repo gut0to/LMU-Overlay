@@ -16,6 +16,8 @@ import {
   Square,
   Timer,
   Trash2,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConfigHistory } from "./useConfigHistory";
@@ -880,6 +882,9 @@ function App() {
           <button className="secondaryButton" onClick={() => void toggleOverlayVisibility()} disabled={!overlayRunning}>
             {overlayVisible ? "Hide overlay" : "Show overlay"}
           </button>
+          <div className="historyActions" role="group" aria-label="Edit history">
+            <button className="secondaryButton" onClick={undo} disabled={!canUndo}><Undo2 size={16} /> Undo</button>
+          </div>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
             {saving ? "Saving" : "Save"}
