@@ -513,7 +513,7 @@ function App() {
     try {
       const saved = await saveConfig();
       if (!saved) {
-        setStatus("Could not save settings. Resolve the save error before starting the overlay.");
+        setStatus(reloadWarning.current ?? "Could not save settings. Resolve the save error before starting the overlay.");
         return;
       }
       await invoke("start_overlay");
