@@ -114,3 +114,21 @@ the failure and continues without that reference.
 Writes use exclusively created temporary files beside the destination, sync
 their contents, and atomically replace the target. A failed write or replacement
 attempt tries to remove its temporary file without changing the reported IO cause.
+
+## Local Protocol and Edit History
+
+`host-protocol` is a platform-independent module shared by the overlay host,
+renderer and Settings shell. It defines command vocabulary, typed replies,
+bounded UTF-8 frames and function-key bindings. Native pipe adapters keep Win32
+handles and IO; the shared module has no Windows or third-party dependencies.
+Configuration validation and hotkey registration use the same binding parser.
+
+`history.ts` is a pure snapshot reducer. `useConfigHistory.ts` supplies stable
+React actions. User edits add bounded history, gesture groups keep one baseline,
+backend acknowledgements update the present without adding an action, and file
+replacement clears obsolete undo/redo branches. Snapshot updates remain pure
+under React StrictMode. Autosave and revision tracking stay outside history.
+
+Config responses optionally carry `reload_warning`: a completed disk write must
+still return its configuration and revision when live reload fails. This avoids
+turning a recoverable host issue into a stale-revision conflict on the next save.
