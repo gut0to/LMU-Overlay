@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { acceptSavedConfig } from "../src/save-result.ts";
-import { createHistory, editHistory, undoHistory, redoHistory, beginHistory, endHistory, acknowledgeHistory } from "../src/history.ts";
+import { createHistory, editHistory, undoHistory, redoHistory, beginHistory, endHistory, acknowledgeHistory, historyReducer } from "../src/history.ts";
 test("undo restores the previous configuration snapshot", () => {
   let state = createHistory({ x: 0 });
   state = editHistory(state, { x: 20 });
@@ -42,4 +42,12 @@ test("a slow save acknowledgement preserves an undo performed during the write",
   state = acknowledgeHistory(state, acceptSavedConfig(state.present, request, { x: 48 }));
   assert.deepEqual(state.present, { x: 0 });
   assert.deepEqual(redoHistory(state).present, request);
+});
+
+test("replacing the configuration clears stale edits and redo branches", () => {
+  let state = undoHistory(editHistory(createHistory({ x: 0 }), { x: 20 }));
+  state = historyReducer(state, { kind: "replace", value: { x: 500 } });
+  assert.deepEqual(state.present, { x: 500 });
+  assert.equal(undoHistory(state), state);
+  assert.equal(redoHistory(state), state);
 });
