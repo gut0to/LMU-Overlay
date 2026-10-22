@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { acceptSavedConfig } from "../src/save-result.ts";
 import { createHistory, editHistory, undoHistory, redoHistory, beginHistory, endHistory, acknowledgeHistory } from "../src/history.ts";
 test("undo restores the previous configuration snapshot", () => {
   let state = createHistory({ x: 0 });
@@ -32,4 +33,13 @@ test("save acknowledgements do not add undo entries or erase redo", () => {
   state = acknowledgeHistory(state, { width: 320 });
   assert.equal(state.past.length, 0);
   assert.deepEqual(redoHistory(state).present, { width: 500 });
+});
+
+test("a slow save acknowledgement preserves an undo performed during the write", () => {
+  const request = { x: 50 };
+  let state = editHistory(createHistory({ x: 0 }), request);
+  state = undoHistory(state);
+  state = acknowledgeHistory(state, acceptSavedConfig(state.present, request, { x: 48 }));
+  assert.deepEqual(state.present, { x: 0 });
+  assert.deepEqual(redoHistory(state).present, request);
 });
