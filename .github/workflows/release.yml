@@ -34,6 +34,14 @@ jobs:
         run: npm ci
         working-directory: settings
 
+      - name: Audit settings dependencies
+        run: npm audit --audit-level=moderate
+        working-directory: settings
+
+      - name: Test settings frontend
+        run: npm test
+        working-directory: settings
+
       - name: Build settings frontend
         run: npm run build
         working-directory: settings
