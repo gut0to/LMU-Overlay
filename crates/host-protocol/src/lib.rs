@@ -52,9 +52,38 @@ pub fn error_response(detail: &str) -> String {
     format!("error:{}...", &clean[..end])
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HotkeyBinding { pub control: bool, pub shift: bool, pub alt: bool, pub function: u8 }
+impl HotkeyBinding {
+    pub fn parse(value: &str) -> Option<Self> {
+        let mut binding = Self { control: false, shift: false, alt: false, function: 0 };
+        for part in value.split('+').map(|part| part.trim().to_ascii_uppercase()) {
+            match part.as_str() {
+                "CTRL" | "CONTROL" if !binding.control => binding.control = true,
+                "SHIFT" if !binding.shift => binding.shift = true,
+                "ALT" if !binding.alt => binding.alt = true,
+                key if binding.function == 0 => { let number = key.strip_prefix('F')?.parse::<u8>().ok()?; if !(1..=12).contains(&number) { return None; } binding.function = number; }
+                _ => return None,
+            }
+        }
+        (binding.function != 0).then_some(binding)
+    }
+    pub fn windows_key(self) -> u32 { 0x6f + u32::from(self.function) }
+    pub fn windows_modifiers(self) -> u32 { u32::from(self.alt) | (u32::from(self.control) << 1) | (u32::from(self.shift) << 2) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hotkey_aliases_and_modifier_orders_share_one_binding() {
+        assert_eq!(HotkeyBinding::parse("Ctrl+Shift+F9"), HotkeyBinding::parse("f9 + shift + control"));
+        let binding = HotkeyBinding::parse("Ctrl+Alt+F12").unwrap();
+        assert_eq!(binding.windows_key(), 0x7b);
+        assert_eq!(binding.windows_modifiers(), 3);
+        for value in ["", "Ctrl", "F0", "F13", "F9+F10", "Ctrl+Control+F9", "Win+F9", "F9+"] { assert!(HotkeyBinding::parse(value).is_none(), "{value}"); }
+    }
+
     #[test]
     fn error_replies_fit_the_wire_limit_and_remain_valid_utf8() {
         let reply = error_response(&"é".repeat(200));
