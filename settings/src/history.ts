@@ -7,7 +7,7 @@ export function createHistory<T>(present: T | null): History<T> {
 export function editHistory<T>(state: History<T>, present: T | null): History<T> {
   if (JSON.stringify(state.present) === JSON.stringify(present)) return state;
   if (present === null) return createHistory<T>(null);
-  return { ...state, present, past: state.present === null ? state.past : [...state.past, state.present].slice(-HISTORY_LIMIT), future: [] };
+  return { ...state, present, past: state.present === null || (state.grouped && state.groupRecorded) ? state.past : [...state.past, state.present].slice(-HISTORY_LIMIT), future: [], groupRecorded: state.grouped };
 }
 export function undoHistory<T>(state: History<T>): History<T> {
   if (state.past.length === 0) return state;
@@ -18,3 +18,6 @@ export function redoHistory<T>(state: History<T>): History<T> {
   if (state.future.length === 0) return state;
   return { ...state, present: state.future[0], past: state.present === null ? state.past : [...state.past, state.present].slice(-HISTORY_LIMIT), future: state.future.slice(1), grouped: false, groupRecorded: false };
 }
+
+export function beginHistory<T>(state: History<T>): History<T> { return state.grouped ? state : { ...state, grouped: true, groupRecorded: false }; }
+export function endHistory<T>(state: History<T>): History<T> { return !state.grouped ? state : { ...state, grouped: false, groupRecorded: false }; }
