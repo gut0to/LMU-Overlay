@@ -424,8 +424,7 @@ fn run_overlay(config_path: Option<PathBuf>, overlay_layer: Option<String>) -> R
                     shared_visible.fetch_xor(true, Ordering::Relaxed);
                 }
                 host_hotkeys::HostAction::ToggleEditMode => {
-                    let enabled = !shared_edit_mode.load(Ordering::Relaxed);
-                    shared_edit_mode.store(enabled, Ordering::Relaxed);
+                    let enabled = !shared_edit_mode.fetch_xor(true, Ordering::Relaxed);
                     if enabled {
                         shared_visible.store(true, Ordering::Relaxed);
                     }

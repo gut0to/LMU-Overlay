@@ -133,8 +133,7 @@ mod windows_control {
                     "hidden".to_string()
                 }
                 Some(ControlCommand::ToggleEdit) => {
-                    let enabled = !edit_mode.load(Ordering::Relaxed);
-                    edit_mode.store(enabled, Ordering::Relaxed);
+                    let enabled = !edit_mode.fetch_xor(true, Ordering::Relaxed);
                     visible.store(true, Ordering::Relaxed);
                     if enabled {
                         "edit_on".to_string()
@@ -150,8 +149,7 @@ mod windows_control {
                     }
                 }
                 Some(ControlCommand::ToggleVisibility) => {
-                    let shown = !visible.load(Ordering::Relaxed);
-                    visible.store(shown, Ordering::Relaxed);
+                    let shown = !visible.fetch_xor(true, Ordering::Relaxed);
                     if shown {
                         "shown".to_string()
                     } else {
