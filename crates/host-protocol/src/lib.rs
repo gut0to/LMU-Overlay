@@ -30,9 +30,30 @@ pub fn decode_frame(bytes: &[u8]) -> Result<&str, FrameError> {
     Ok(text)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Reply { Running, Stopped, Stopping, Reloaded, Shown, Hidden, EditOn, EditOff, Invalid, Error(String) }
+impl Reply {
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value { "running" => Self::Running, "stopped" => Self::Stopped, "stopping" => Self::Stopping, "reloaded" => Self::Reloaded, "shown" => Self::Shown, "hidden" => Self::Hidden, "edit_on" => Self::EditOn, "edit_off" => Self::EditOff, "invalid" => Self::Invalid,
+            other => Self::Error(other.strip_prefix("error:").filter(|detail| !detail.trim().is_empty())?.to_string()) })
+    }
+    pub fn visibility(&self) -> Option<bool> { match self { Self::Shown => Some(true), Self::Hidden => Some(false), _ => None } }
+    pub fn edit_mode(&self) -> Option<bool> { match self { Self::EditOn => Some(true), Self::EditOff => Some(false), _ => None } }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reply_states_are_explicit_not_truthy_strings() {
+        assert_eq!(Reply::parse("shown").unwrap().visibility(), Some(true));
+        assert_eq!(Reply::parse("hidden").unwrap().visibility(), Some(false));
+        assert_eq!(Reply::parse("running").unwrap().edit_mode(), None);
+        assert_eq!(Reply::parse("error:disk full"), Some(Reply::Error("disk full".into())));
+        assert_eq!(Reply::parse("error:"), None);
+        assert_eq!(Reply::parse("running now"), None);
+    }
+
     #[test]
     fn frames_require_bounded_single_line_utf8() {
         assert_eq!(decode_frame(b" status\r\n"), Ok("status"));
