@@ -69,8 +69,11 @@ jobs:
       - name: Build overlay resource
         run: cargo build --release
 
-      - name: Check settings shell
-        run: cargo check --manifest-path settings/src-tauri/Cargo.toml
+      - name: Test settings shell
+        run: cargo test --manifest-path settings/src-tauri/Cargo.toml
+
+      - name: Lint settings shell
+        run: cargo clippy --manifest-path settings/src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Build Windows installer candidate
         run: npm run tauri build
