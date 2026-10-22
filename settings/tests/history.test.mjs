@@ -51,3 +51,14 @@ test("replacing the configuration clears stale edits and redo branches", () => {
   assert.equal(undoHistory(state), state);
   assert.equal(redoHistory(state), state);
 });
+
+test("history reducers preserve immutable snapshots and ignore no-op edits", () => {
+  const original = Object.freeze({ x: 0 });
+  const state = createHistory(original);
+  Object.freeze(state.past); Object.freeze(state.future); Object.freeze(state);
+  const edited = historyReducer(state, { kind: "edit", update: (current) => ({ ...current, x: current.x + 1 }) });
+  assert.deepEqual(edited.present, { x: 1 });
+  assert.deepEqual(state.present, { x: 0 });
+  assert.equal(editHistory(edited, { x: 1 }), edited);
+  assert.deepEqual(historyReducer(state, { kind: "edit", update: (current) => ({ ...current, x: current.x + 1 }) }), edited);
+});
