@@ -13,9 +13,36 @@ impl Command {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameError { Empty, TooLong, InvalidUtf8, ControlCharacter }
+impl std::fmt::Display for FrameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self { Self::Empty => "empty host frame", Self::TooLong => "host frame exceeds the wire limit", Self::InvalidUtf8 => "host frame is not UTF-8", Self::ControlCharacter => "host frame contains control characters" })
+    }
+}
+impl std::error::Error for FrameError {}
+
+pub fn decode_frame(bytes: &[u8]) -> Result<&str, FrameError> {
+    if bytes.len() > MAX_FRAME_BYTES { return Err(FrameError::TooLong); }
+    let text = std::str::from_utf8(bytes).map_err(|_| FrameError::InvalidUtf8)?.trim();
+    if text.is_empty() { return Err(FrameError::Empty); }
+    if text.chars().any(char::is_control) { return Err(FrameError::ControlCharacter); }
+    Ok(text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn frames_require_bounded_single_line_utf8() {
+        assert_eq!(decode_frame(b" status\r\n"), Ok("status"));
+        assert_eq!(decode_frame(b""), Err(FrameError::Empty));
+        assert_eq!(decode_frame(&[0xff]), Err(FrameError::InvalidUtf8));
+        assert_eq!(decode_frame(b"status\0"), Err(FrameError::ControlCharacter));
+        assert_eq!(decode_frame(b"status\nstop"), Err(FrameError::ControlCharacter));
+        assert_eq!(decode_frame(&[b'x'; 129]), Err(FrameError::TooLong));
+    }
+
     #[test]
     fn every_command_round_trips() {
         for command in Command::ALL { assert_eq!(Command::parse(command.as_str()), Some(command)); }
