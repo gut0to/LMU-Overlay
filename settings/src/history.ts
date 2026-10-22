@@ -25,3 +25,19 @@ export function endHistory<T>(state: History<T>): History<T> { return !state.gro
 export function acknowledgeHistory<T>(state: History<T>, present: T | null): History<T> {
   return state.present === present ? state : { ...state, present };
 }
+
+export type HistoryUpdate<T> = T | null | ((current: T | null) => T | null);
+export type HistoryAction<T> = { kind: "edit" | "acknowledge"; update: HistoryUpdate<T> } | { kind: "replace"; value: T | null } | { kind: "undo" | "redo" | "begin" | "end" };
+export function historyReducer<T>(state: History<T>, action: HistoryAction<T>): History<T> {
+  switch (action.kind) {
+    case "edit": case "acknowledge": {
+      const present = typeof action.update === "function" ? (action.update as (current: T | null) => T | null)(state.present) : action.update;
+      return action.kind === "edit" ? editHistory(state, present) : acknowledgeHistory(state, present);
+    }
+    case "replace": return createHistory(action.value);
+    case "undo": return undoHistory(state);
+    case "redo": return redoHistory(state);
+    case "begin": return beginHistory(state);
+    case "end": return endHistory(state);
+  }
+}
