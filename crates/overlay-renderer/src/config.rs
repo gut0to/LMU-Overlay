@@ -1144,37 +1144,8 @@ impl HotkeyConfig {
     }
 }
 
-fn normalize_hotkey(value: &str) -> Option<String> {
-    let mut modifiers = Vec::new();
-    let mut function_key = None;
-    for part in value
-        .split('+')
-        .map(|part| part.trim().to_ascii_uppercase())
-    {
-        match part.as_str() {
-            "CTRL" | "CONTROL" if !modifiers.contains(&"CTRL") => modifiers.push("CTRL"),
-            "SHIFT" if !modifiers.contains(&"SHIFT") => modifiers.push("SHIFT"),
-            "ALT" if !modifiers.contains(&"ALT") => modifiers.push("ALT"),
-            key if function_key.is_none() => {
-                let number = key
-                    .strip_prefix('F')
-                    .and_then(|number| number.parse::<u8>().ok())?;
-                if !(1..=12).contains(&number) {
-                    return None;
-                }
-                function_key = Some(format!("F{number}"));
-            }
-            _ => return None,
-        }
-    }
-    function_key.map(|key| {
-        modifiers.sort_unstable();
-        modifiers
-            .into_iter()
-            .chain(std::iter::once(key.as_str()))
-            .collect::<Vec<_>>()
-            .join("+")
-    })
+fn normalize_hotkey(value: &str) -> Option<host_protocol::HotkeyBinding> {
+    host_protocol::HotkeyBinding::parse(value)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
