@@ -6,3 +6,9 @@ test("saved settings retain reload warnings without claiming live success", () =
     message: "Configuration saved; overlay reload failed", liveApplied: false,
   });
 });
+
+test("responses without a reload warning remain backward compatible", () => {
+  for (const warning of [undefined, null, ""]) {
+    assert.deepEqual(saveFeedback("Custom preset applied", warning), { message: "Custom preset applied", liveApplied: true });
+  }
+});
