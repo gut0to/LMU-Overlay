@@ -26,7 +26,7 @@ mod windows_hotkeys {
         System::Threading::GetCurrentThreadId,
         UI::{
             Input::KeyboardAndMouse::{
-                RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
+                RegisterHotKey, UnregisterHotKey,
             },
             WindowsAndMessaging::{
                 GetMessageW, PeekMessageW, PostThreadMessageW, MSG, PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
@@ -147,30 +147,10 @@ mod windows_hotkeys {
     }
 
     fn parse_hotkey(value: &str) -> Option<(u32, u32)> {
-        let mut modifiers = 0;
-        let mut key = None;
-        for part in value
-            .split('+')
-            .map(|part| part.trim().to_ascii_uppercase())
-        {
-            match part.as_str() {
-                "CTRL" | "CONTROL" if modifiers & MOD_CONTROL == 0 => modifiers |= MOD_CONTROL,
-                "SHIFT" if modifiers & MOD_SHIFT == 0 => modifiers |= MOD_SHIFT,
-                "ALT" if modifiers & MOD_ALT == 0 => modifiers |= MOD_ALT,
-                value
-                    if value
-                        .strip_prefix('F')
-                        .and_then(|number| number.parse::<u32>().ok())
-                        .is_some_and(|number| (1..=12).contains(&number))
-                        && key.is_none() =>
-                {
-                    key = value[1..].parse::<u32>().ok().map(|number| 0x6f + number);
-                }
-                _ => return None,
-            }
-        }
-        key.map(|key| (modifiers, key))
+        let binding = host_protocol::HotkeyBinding::parse(value)?;
+        Some((binding.windows_modifiers(), binding.windows_key()))
     }
+
 }
 
 #[cfg(windows)]
