@@ -23,7 +23,7 @@ mod windows_control {
     };
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE},
+        Foundation::{CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE},
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
             ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_MESSAGE,
@@ -102,7 +102,8 @@ mod windows_control {
                     ptr::null_mut(),
                 )
             };
-            if pipe.is_null() {
+            if pipe.is_null() || pipe == INVALID_HANDLE_VALUE {
+                log::warn!("Could not create host control pipe: {}", std::io::Error::last_os_error());
                 break;
             }
 
