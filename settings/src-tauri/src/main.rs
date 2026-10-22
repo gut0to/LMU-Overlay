@@ -226,7 +226,7 @@ fn reload_overlay_config_after_save() -> Result<(), String> {
 }
 
 fn validate_reload_response(response: &str) -> Result<(), String> {
-    if response == "reloaded" {
+    if HostReply::parse(response) == Some(HostReply::Reloaded) {
         Ok(())
     } else {
         Err(format!("host returned '{response}'"))
@@ -234,7 +234,7 @@ fn validate_reload_response(response: &str) -> Result<(), String> {
 }
 
 fn host_ready_response(response: &str) -> bool {
-    response == "running"
+    HostReply::parse(response) == Some(HostReply::Running)
 }
 
 fn host_control_is_ready() -> bool {
