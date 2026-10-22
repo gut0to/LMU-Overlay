@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const HOST_PIPE_NAME: &str = r"\\.\pipe\HashOverlay.Host";
+use host_protocol::{Command as HostCommand, Reply as HostReply, PIPE_NAME as HOST_PIPE_NAME};
 
 use overlay_renderer::{
     config::{default_config_text, OverlayConfig},
@@ -291,6 +291,9 @@ mod startup_status_tests {
 
 #[cfg(windows)]
 fn send_host_command(command: &str) -> std::io::Result<String> {
+    if HostCommand::parse(command).is_none() {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"));
+    }
     use std::{io::Error, ptr};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
@@ -332,7 +335,7 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
         {
             return Err(Error::last_os_error());
         }
-        let mut response = [0_u8; 128];
+        let mut response = [0_u8; host_protocol::MAX_FRAME_BYTES];
         let mut read = 0_u32;
         if unsafe {
             ReadFile(
@@ -346,9 +349,7 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
         {
             return Err(Error::last_os_error());
         }
-        Ok(String::from_utf8_lossy(&response[..read as usize])
-            .trim()
-            .to_string())
+        host_protocol::decode_frame(&response[..read as usize]).map(str::to_owned).map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))
     })();
     unsafe { CloseHandle(pipe) };
     result
