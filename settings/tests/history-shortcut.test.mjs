@@ -8,3 +8,10 @@ test("standard history shortcuts preserve native text editing", () => {
   assert.equal(historyShortcut(event("y"), false), "redo");
   assert.equal(historyShortcut(event("z"), true), null);
 });
+
+test("history shortcuts ignore repeats, composition and unrelated chords", () => {
+  for (const flag of ["repeat", "isComposing", "altKey"]) assert.equal(historyShortcut(event("z", { [flag]: true }), false), null);
+  assert.equal(historyShortcut(event("z", { ctrlKey: false }), false), null);
+  assert.equal(historyShortcut(event("z", { ctrlKey: false, metaKey: true }), false), "undo");
+  assert.equal(historyShortcut(event("a"), false), null);
+});
