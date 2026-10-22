@@ -21,3 +21,7 @@ export function redoHistory<T>(state: History<T>): History<T> {
 
 export function beginHistory<T>(state: History<T>): History<T> { return state.grouped ? state : { ...state, grouped: true, groupRecorded: false }; }
 export function endHistory<T>(state: History<T>): History<T> { return !state.grouped ? state : { ...state, grouped: false, groupRecorded: false }; }
+
+export function acknowledgeHistory<T>(state: History<T>, present: T | null): History<T> {
+  return state.present === present ? state : { ...state, present };
+}

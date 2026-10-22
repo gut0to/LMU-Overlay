@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHistory, editHistory, undoHistory, redoHistory, beginHistory, endHistory } from "../src/history.ts";
+import { createHistory, editHistory, undoHistory, redoHistory, beginHistory, endHistory, acknowledgeHistory } from "../src/history.ts";
 test("undo restores the previous configuration snapshot", () => {
   let state = createHistory({ x: 0 });
   state = editHistory(state, { x: 20 });
@@ -25,4 +25,11 @@ test("a pointer gesture groups all intermediate positions into one undo", () => 
   assert.equal(state.past.length, 1);
   assert.deepEqual(undoHistory(state).present, { x: 0 });
   assert.deepEqual(redoHistory(undoHistory(state)).present, { x: 100 });
+});
+
+test("save acknowledgements do not add undo entries or erase redo", () => {
+  let state = undoHistory(editHistory(createHistory({ width: 300 }), { width: 500 }));
+  state = acknowledgeHistory(state, { width: 320 });
+  assert.equal(state.past.length, 0);
+  assert.deepEqual(redoHistory(state).present, { width: 500 });
 });
