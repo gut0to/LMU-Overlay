@@ -1013,6 +1013,8 @@ function App() {
               onMove={(id, x, y) => setOverlayPosition(config, setConfig, id, x, y)}
             />
             <OverlayPreview
+              onEditStart={beginEdit}
+              onEditEnd={endEdit}
               config={activeOverlayConfig ?? config}
               selected={selectedLayout}
               onSelect={setSelectedLayout}
@@ -1478,6 +1480,8 @@ function showPanel(active: Page, primary: Page, secondary: Page) {
 
 function OverlayPreview(props: {
   config: OverlayConfig;
+  onEditStart: () => void;
+  onEditEnd: () => void;
   selected: LayoutSelection;
   onSelect: (value: LayoutSelection) => void;
   onLayoutChange: (widget: LayoutSelection, layout: WidgetLayout) => void;
@@ -1490,6 +1494,8 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
+  function finishDrag() { setDrag(null); props.onEditEnd(); }
+  useEffect(() => () => props.onEditEnd(), [props.onEditEnd]);
   const maxPreviewWidth = 760;
   const maxPreviewHeight = 680;
   const scale = Math.min(
@@ -1543,9 +1549,9 @@ function OverlayPreview(props: {
         <div
         className="preview"
         onPointerMove={(event) => moveWidget(event.clientX, event.clientY)}
-        onPointerUp={() => setDrag(null)}
-        onPointerCancel={() => setDrag(null)}
-        onLostPointerCapture={() => setDrag(null)}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
         style={{
           width: previewWidth,
           height: previewHeight,
@@ -1582,6 +1588,7 @@ function OverlayPreview(props: {
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
                 }
+                props.onEditStart();
                 const bounds = event.currentTarget.getBoundingClientRect();
                 const resize = event.clientX >= bounds.right - 14 && event.clientY >= bounds.bottom - 14;
                 setDrag({
@@ -1594,7 +1601,7 @@ function OverlayPreview(props: {
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Escape") { setDrag(null); return; }
+                if (event.key === "Escape") { finishDrag(); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
                 const step = event.shiftKey ? 10 : 1;
                 let dx = 0;
