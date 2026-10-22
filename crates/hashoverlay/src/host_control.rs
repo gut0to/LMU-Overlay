@@ -225,6 +225,9 @@ mod windows_control {
     }
 
     pub fn send_command(command: &str) -> std::io::Result<String> {
+        if ControlCommand::parse(command).is_none() {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"));
+        }
         use std::io::{Error, ErrorKind};
         use windows_sys::Win32::{
             Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
@@ -263,6 +266,7 @@ mod windows_control {
             {
                 return Err(Error::last_os_error());
             }
+            if written != bytes.len() as u32 { return Err(Error::new(ErrorKind::WriteZero, "partial host command write")); }
             let mut buffer = [0_u8; BUFFER_SIZE as usize];
             let mut read = 0_u32;
             if unsafe {
@@ -277,9 +281,7 @@ mod windows_control {
             {
                 return Err(Error::last_os_error());
             }
-            Ok(String::from_utf8_lossy(&buffer[..read as usize])
-                .trim()
-                .to_string())
+            host_protocol::decode_frame(&buffer[..read as usize]).map(str::to_owned).map_err(|error| Error::new(ErrorKind::InvalidData, error))
         })();
         unsafe { CloseHandle(pipe) };
         command_result
