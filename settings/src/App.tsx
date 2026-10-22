@@ -18,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useConfigHistory } from "./useConfigHistory";
 import { saveFeedback } from "./save-feedback";
 import { StatusRequest } from "./status-request";
 import { snapToWidgetLayouts } from "./snapping";
@@ -238,7 +239,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 }
 
 function App() {
-  const [config, setConfig] = useState<OverlayConfig | null>(null);
+  const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
   const revision = useRef(0);
   const configTasks = useRef(new ConfigTasks());
@@ -372,7 +373,7 @@ function App() {
       try {
         const response = await invoke<LoadResponse>("load_config");
         const normalized = normalizeUiConfig(response.config);
-        setConfig(normalized);
+        replaceConfig(normalized);
         lastSavedConfig.current = JSON.stringify(normalized);
         hydratedConfig.current = true;
         setPath(response.path);
@@ -403,7 +404,7 @@ function App() {
         });
         failedSave.current = null;
         const normalized = normalizeUiConfig(response.config);
-        setConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
+        acknowledgeConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
         lastSavedConfig.current = JSON.stringify(normalized);
         setPath(response.path);
         revision.current = response.revision;
@@ -466,7 +467,7 @@ function App() {
         });
         const normalized = normalizeUiConfig(response.config);
         lastSavedConfig.current = JSON.stringify(normalized);
-        setConfig(normalized);
+        replaceConfig(normalized);
         setPath(response.path);
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
@@ -495,7 +496,7 @@ function App() {
         const response = await invoke<LoadResponse>("reset_config");
         const normalized = normalizeUiConfig(response.config);
         lastSavedConfig.current = JSON.stringify(normalized);
-        setConfig(normalized);
+        replaceConfig(normalized);
         setPath(response.path);
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
@@ -658,11 +659,13 @@ function App() {
   }
 
   function addOverlayLayer() {
+    if (!currentConfig.current) return;
+    const id = nextOverlayId(currentConfig.current.overlays);
+    setActiveOverlayId(id);
     setConfig((current) => {
       if (!current) {
         return current;
       }
-      const id = nextOverlayId(current.overlays);
       const ordinal = overlayOrdinal(id);
       const layer: OverlayLayerConfig = {
         id,
@@ -672,7 +675,6 @@ function App() {
         widgets: ["coaching"],
         layout_overrides: {},
       };
-      setActiveOverlayId(id);
       return { ...current, overlays: [...current.overlays, layer] };
     });
     setStatus("New overlay added");
@@ -700,11 +702,13 @@ function App() {
   }
 
   function duplicateOverlayLayer(id: string) {
+    if (!currentConfig.current?.overlays.some((overlay) => overlay.id === id)) return;
+    const nextId = nextOverlayId(currentConfig.current.overlays);
+    setActiveOverlayId(nextId);
     setConfig((current) => {
       if (!current) return current;
       const source = current.overlays.find((overlay) => overlay.id === id);
       if (!source) return current;
-      const nextId = nextOverlayId(current.overlays);
       const duplicate: OverlayLayerConfig = {
         ...source,
         id: nextId,
@@ -715,7 +719,6 @@ function App() {
           Object.entries(source.layout_overrides).map(([key, layout]) => [key, { ...layout }]),
         ),
       };
-      setActiveOverlayId(nextId);
       return { ...current, overlays: [...current.overlays, duplicate] };
     });
     setStatus("Overlay duplicated");
@@ -783,7 +786,6 @@ function App() {
         return current;
       }
       const overlays = current.overlays.filter((overlay) => overlay.id !== id);
-      setActiveOverlayId(overlays[0]?.id ?? "main");
       return { ...current, overlays };
     });
   }
