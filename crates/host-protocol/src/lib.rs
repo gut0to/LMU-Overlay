@@ -76,6 +76,16 @@ impl HotkeyBinding {
 mod tests {
     use super::*;
     #[test]
+    fn all_supported_function_keys_map_to_distinct_virtual_keys() {
+        let keys: std::collections::BTreeSet<_> = (1..=12).map(|number| HotkeyBinding::parse(&format!("F{number}")).unwrap().windows_key()).collect();
+        assert_eq!(keys.len(), 12);
+        assert!(keys.contains(&0x70) && keys.contains(&0x7b));
+        assert!(HotkeyBinding::parse("F9+Shift+Shift").is_none());
+        for command in Command::ALL { assert!(decode_frame(command.as_str().as_bytes()).is_ok()); }
+        assert!(decode_frame(error_response("\r\n").as_bytes()).is_ok());
+    }
+
+    #[test]
     fn hotkey_aliases_and_modifier_orders_share_one_binding() {
         assert_eq!(HotkeyBinding::parse("Ctrl+Shift+F9"), HotkeyBinding::parse("f9 + shift + control"));
         let binding = HotkeyBinding::parse("Ctrl+Alt+F12").unwrap();
