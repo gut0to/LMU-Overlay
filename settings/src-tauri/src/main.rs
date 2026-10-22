@@ -198,33 +198,21 @@ fn toggle_overlay_edit_mode() -> Result<String, String> {
 fn overlay_edit_status() -> Result<bool, String> {
     let response = send_host_command("edit_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
-    match response.as_str() {
-        "edit_on" => Ok(true),
-        "edit_off" => Ok(false),
-        other => Err(format!("host returned '{other}'")),
-    }
+    HostReply::parse(&response).and_then(|reply| reply.edit_mode()).ok_or_else(|| format!("host returned '{response}'"))
 }
 
 #[tauri::command]
 fn toggle_overlay_visibility() -> Result<bool, String> {
     let response = send_host_command("toggle_visibility")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
-    match response.as_str() {
-        "shown" => Ok(true),
-        "hidden" => Ok(false),
-        other => Err(format!("host returned '{other}'")),
-    }
+    HostReply::parse(&response).and_then(|reply| reply.visibility()).ok_or_else(|| format!("host returned '{response}'"))
 }
 
 #[tauri::command]
 fn overlay_visibility_status() -> Result<bool, String> {
     let response = send_host_command("visibility_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
-    match response.as_str() {
-        "shown" => Ok(true),
-        "hidden" => Ok(false),
-        other => Err(format!("host returned '{other}'")),
-    }
+    HostReply::parse(&response).and_then(|reply| reply.visibility()).ok_or_else(|| format!("host returned '{response}'"))
 }
 
 fn reload_overlay_config_after_save() -> Result<(), String> {
