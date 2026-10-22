@@ -1002,6 +1002,8 @@ function App() {
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
             <SurfaceMap
+              onEditStart={beginEdit}
+              onEditEnd={endEdit}
               config={config}
               selected={activeOverlayId}
               onSelect={setActiveOverlayId}
@@ -1310,6 +1312,8 @@ function App() {
 
 function SurfaceMap(props: {
   config: OverlayConfig;
+  onEditStart: () => void;
+  onEditEnd: () => void;
   selected: string;
   workspace: WorkspaceSize;
   onWorkspaceChange: (size: WorkspaceSize) => void;
@@ -1320,6 +1324,8 @@ function SurfaceMap(props: {
   onMove: (id: string, x: number, y: number) => void;
 }) {
   const [drag, setDrag] = useState<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  function finishDrag() { setDrag(null); props.onEditEnd(); }
+  useEffect(() => () => props.onEditEnd(), [props.onEditEnd]);
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
   const copyTimer = useRef<number | null>(null);
   useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current); }, []);
@@ -1407,9 +1413,9 @@ function SurfaceMap(props: {
         className="surfaceMap"
         ref={mapRef}
         onPointerMove={(event) => move(event.clientX, event.clientY)}
-        onPointerUp={() => setDrag(null)}
-        onPointerCancel={() => setDrag(null)}
-        onLostPointerCapture={() => setDrag(null)}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onLostPointerCapture={finishDrag}
         style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
       >
         {props.config.overlays.map((overlay) => (
@@ -1426,12 +1432,13 @@ function SurfaceMap(props: {
             onPointerDown={(event) => {
               if (event.button !== 0 || !event.isPrimary) return;
               props.onSelect(overlay.id);
+              props.onEditStart();
               setDrag({ id: overlay.id, startX: event.clientX, startY: event.clientY, x: overlay.window.x, y: overlay.window.y });
               event.currentTarget.setPointerCapture(event.pointerId);
             }}
             aria-pressed={props.selected === overlay.id}
             onKeyDown={(event) => {
-              if (event.key === "Escape") { setDrag(null); return; }
+              if (event.key === "Escape") { finishDrag(); return; }
               const step = event.shiftKey ? 10 : 1;
               let dx = 0;
               let dy = 0;
