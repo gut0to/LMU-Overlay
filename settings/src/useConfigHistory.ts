@@ -10,5 +10,5 @@ export function useConfigHistory<T>() {
   const redo = useCallback(() => dispatch({ kind: "redo" }), []);
   const beginEdit = useCallback(() => dispatch({ kind: "begin" }), []);
   const endEdit = useCallback(() => dispatch({ kind: "end" }), []);
-  return { config: history.present, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
+  return { config: history.present, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, editingGesture: history.grouped, canUndo: history.past.length > 0, canRedo: history.future.length > 0 };
 }

@@ -242,7 +242,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 }
 
 function App() {
-  const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo } = useConfigHistory<OverlayConfig>();
+  const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
   const revision = useRef(0);
   const configTasks = useRef(new ConfigTasks());
@@ -323,7 +323,7 @@ function App() {
 
   useEffect(() => {
     const handleHistory = (event: KeyboardEvent) => {
-      if (saving || replacingConfig) return;
+      if (saving || replacingConfig || editingGesture) return;
       const target = event.target;
       const editingText = target instanceof HTMLElement && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [role='textbox']")));
       const action = historyShortcut(event, editingText);
@@ -332,7 +332,7 @@ function App() {
     };
     window.addEventListener("keydown", handleHistory);
     return () => window.removeEventListener("keydown", handleHistory);
-  }, [saving, replacingConfig, canUndo, canRedo, undo, redo]);
+  }, [saving, replacingConfig, editingGesture, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const protectEdits = (event: BeforeUnloadEvent) => {
@@ -897,8 +897,8 @@ function App() {
             {overlayVisible ? "Hide overlay" : "Show overlay"}
           </button>
           <div className="historyActions" role="group" aria-label="Edit history">
-            <button className="secondaryButton" title="Undo the last edit (Ctrl+Z)" aria-keyshortcuts="Control+Z Meta+Z" onClick={undo} disabled={saving || replacingConfig || !canUndo}><Undo2 size={16} /> Undo</button>
-            <button className="secondaryButton" title="Redo the last undone edit (Ctrl+Y or Ctrl+Shift+Z)" aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z" onClick={redo} disabled={saving || replacingConfig || !canRedo}><Redo2 size={16} /> Redo</button>
+            <button className="secondaryButton" title="Undo the last edit (Ctrl+Z)" aria-keyshortcuts="Control+Z Meta+Z" onClick={undo} disabled={saving || replacingConfig || editingGesture || !canUndo}><Undo2 size={16} /> Undo</button>
+            <button className="secondaryButton" title="Redo the last undone edit (Ctrl+Y or Ctrl+Shift+Z)" aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z" onClick={redo} disabled={saving || replacingConfig || editingGesture || !canRedo}><Redo2 size={16} /> Redo</button>
           </div>
           <button className="primaryButton" onClick={saveConfig} disabled={saving}>
             <Save size={18} />
