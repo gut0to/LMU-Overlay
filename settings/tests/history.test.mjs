@@ -71,3 +71,13 @@ test("history retains only the most recent bounded edit window", () => {
   assert.deepEqual(state.present, { x: 60 });
   assert.equal(state.future.length, 40);
 });
+
+test("separate drag groups undo independently and empty gestures add nothing", () => {
+  let state = createHistory({ x: 0 });
+  state = endHistory(beginHistory(state));
+  assert.equal(state.past.length, 0);
+  state = endHistory(editHistory(beginHistory(state), { x: 10 }));
+  state = endHistory(editHistory(editHistory(beginHistory(state), { x: 20 }), { x: 30 }));
+  assert.deepEqual(undoHistory(state).present, { x: 10 });
+  assert.deepEqual(undoHistory(undoHistory(state)).present, { x: 0 });
+});
