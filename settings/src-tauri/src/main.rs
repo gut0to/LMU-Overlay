@@ -29,6 +29,8 @@ struct ConfigResponse {
     path: String,
     config: OverlayConfig,
     revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reload_warning: Option<String>,
 }
 
 #[tauri::command]
@@ -48,9 +50,7 @@ fn save_config(
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
-    reload_overlay_config_after_save()?;
-    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
-    Ok(ConfigResponse::new(path, config))
+    finish_saved_config(path, reload_overlay_config_after_save())
 }
 
 #[tauri::command]
@@ -74,9 +74,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
     config
         .save_if_revision(&path, expected_revision)
         .map_err(|error| error.to_string())?;
-    reload_overlay_config_after_save()?;
-    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
-    Ok(ConfigResponse::new(path, config))
+    finish_saved_config(path, reload_overlay_config_after_save())
 }
 
 #[tauri::command]
@@ -400,12 +398,39 @@ fn open_config_folder() -> Result<(), String> {
         .map_err(|error| format!("Could not open config folder: {error}"))
 }
 
+fn finish_saved_config(path: PathBuf, reload_result: Result<(), String>) -> Result<ConfigResponse, String> {
+    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
+    let mut response = ConfigResponse::new(path, config);
+    response.reload_warning = reload_result.err();
+    Ok(response)
+}
+
+#[cfg(test)]
+mod save_feedback_tests {
+    use super::*;
+
+    #[test]
+    fn a_reload_failure_still_returns_the_saved_config_and_revision() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-reload-warning-{}.toml", std::process::id()));
+        let mut config = OverlayConfig::default();
+        config.window.x = 42;
+        config.save(&path).unwrap();
+        let response = finish_saved_config(path.clone(), Err("host reload failed".into())).unwrap();
+        assert_eq!(response.config.window.x, 42);
+        assert_eq!(response.revision, OverlayConfig::revision(&path).unwrap());
+        assert_eq!(response.reload_warning.as_deref(), Some("host reload failed"));
+        assert!(finish_saved_config(path.clone(), Ok(())).unwrap().reload_warning.is_none());
+        fs::remove_file(path).unwrap();
+    }
+}
+
 impl ConfigResponse {
     fn new(path: PathBuf, config: OverlayConfig) -> Self {
         Self {
             path: path.display().to_string(),
             config,
             revision: OverlayConfig::revision(&path).unwrap_or_default(),
+            reload_warning: None,
         }
     }
 }
