@@ -140,9 +140,7 @@ mod windows_overlay {
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::SetProcessDpiAwarenessContext,
-            Input::KeyboardAndMouse::{
-                RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_SHIFT,
-            },
+            Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect,
                 GetWindowRect, PostQuitMessage, RegisterClassW, SetLayeredWindowAttributes,
@@ -4238,6 +4236,7 @@ mod windows_overlay {
         use super::*;
         use crate::config::OverlayLayerConfig;
         use telemetry_engine::{GamePhase, Gear, SessionKind};
+        use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOD_ALT, MOD_CONTROL, MOD_SHIFT};
 
         #[test]
         fn scales_gdi_text_with_global_scale() {

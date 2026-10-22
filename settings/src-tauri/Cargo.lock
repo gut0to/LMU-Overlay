@@ -1223,6 +1223,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 name = "hashoverlay-settings"
 version = "1.0.5"
 dependencies = [
+ "host-protocol",
  "overlay-renderer",
  "serde",
  "tauri",
@@ -1248,6 +1249,10 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "host-protocol"
+version = "1.0.5"
 
 [[package]]
 name = "html5ever"
@@ -2141,6 +2146,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 name = "overlay-renderer"
 version = "1.0.5"
 dependencies = [
+ "host-protocol",
  "lmu-telemetry",
  "log",
  "serde",

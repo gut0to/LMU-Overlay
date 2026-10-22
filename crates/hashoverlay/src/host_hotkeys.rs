@@ -25,9 +25,7 @@ mod windows_hotkeys {
     use windows_sys::Win32::{
         System::Threading::GetCurrentThreadId,
         UI::{
-            Input::KeyboardAndMouse::{
-                RegisterHotKey, UnregisterHotKey,
-            },
+            Input::KeyboardAndMouse::{RegisterHotKey, UnregisterHotKey},
             WindowsAndMessaging::{
                 GetMessageW, PeekMessageW, PostThreadMessageW, MSG, PM_NOREMOVE, WM_HOTKEY, WM_QUIT,
             },
@@ -150,7 +148,6 @@ mod windows_hotkeys {
         let binding = host_protocol::HotkeyBinding::parse(value)?;
         Some((binding.windows_modifiers(), binding.windows_key()))
     }
-
 }
 
 #[cfg(windows)]

@@ -429,6 +429,7 @@ function App() {
         setStatus(feedback.message);
         return feedback.liveApplied;
       } catch (error) {
+        reloadWarning.current = null;
         failedSave.current = JSON.stringify(nextConfig);
         setStatus(String(error));
         return false;

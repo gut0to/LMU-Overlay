@@ -5,8 +5,8 @@ use std::sync::mpsc::SyncSender;
 #[cfg(not(windows))]
 use std::sync::Arc;
 
-pub use host_protocol::PIPE_NAME;
 use host_protocol::Command as ControlCommand;
+pub use host_protocol::PIPE_NAME;
 
 #[cfg(windows)]
 mod windows_control {
@@ -23,7 +23,9 @@ mod windows_control {
     };
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE},
+        Foundation::{
+            CloseHandle, GetLastError, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE,
+        },
         Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
         System::Pipes::{
             ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_MESSAGE,
@@ -103,7 +105,10 @@ mod windows_control {
                 )
             };
             if pipe.is_null() || pipe == INVALID_HANDLE_VALUE {
-                log::warn!("Could not create host control pipe: {}", std::io::Error::last_os_error());
+                log::warn!(
+                    "Could not create host control pipe: {}",
+                    std::io::Error::last_os_error()
+                );
                 break;
             }
 
@@ -204,8 +209,12 @@ mod windows_control {
                 ptr::null_mut(),
             )
         } != 0;
-        if !success { return None; }
-        host_protocol::decode_frame(&buffer[..read as usize]).ok().map(str::to_owned)
+        if !success {
+            return None;
+        }
+        host_protocol::decode_frame(&buffer[..read as usize])
+            .ok()
+            .map(str::to_owned)
     }
 
     fn write_response(pipe: HANDLE, response: &str) -> bool {
@@ -225,7 +234,10 @@ mod windows_control {
 
     pub fn send_command(command: &str) -> std::io::Result<String> {
         if ControlCommand::parse(command).is_none() {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "unsupported host command",
+            ));
         }
         use std::io::{Error, ErrorKind};
         use windows_sys::Win32::{
@@ -265,7 +277,12 @@ mod windows_control {
             {
                 return Err(Error::last_os_error());
             }
-            if written != bytes.len() as u32 { return Err(Error::new(ErrorKind::WriteZero, "partial host command write")); }
+            if written != bytes.len() as u32 {
+                return Err(Error::new(
+                    ErrorKind::WriteZero,
+                    "partial host command write",
+                ));
+            }
             let mut buffer = [0_u8; BUFFER_SIZE as usize];
             let mut read = 0_u32;
             if unsafe {
@@ -280,7 +297,9 @@ mod windows_control {
             {
                 return Err(Error::last_os_error());
             }
-            host_protocol::decode_frame(&buffer[..read as usize]).map(str::to_owned).map_err(|error| Error::new(ErrorKind::InvalidData, error))
+            host_protocol::decode_frame(&buffer[..read as usize])
+                .map(str::to_owned)
+                .map_err(|error| Error::new(ErrorKind::InvalidData, error))
         })();
         unsafe { CloseHandle(pipe) };
         command_result

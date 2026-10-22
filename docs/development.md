@@ -81,3 +81,8 @@ undo/redo branches, grouped gestures, bounded retention, immutable reducers,
 file replacement, delayed acknowledgements and native text shortcut ownership.
 The shell tests verify that live-reload failure still returns the persisted
 configuration and revision.
+
+History hook integration tests render the real hook with the React 18 test
+renderer, covering batched functional updates and stable action identities.
+This renderer is a development-only dependency; it does not replace visual or
+native-window smoke testing.

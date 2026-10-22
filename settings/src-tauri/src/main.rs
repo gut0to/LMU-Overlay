@@ -143,7 +143,8 @@ fn start_overlay(
 
 #[tauri::command]
 fn stop_overlay(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
-    let graceful = send_host_command("stop").is_ok();
+    let graceful = send_host_command("stop")
+        .is_ok_and(|response| HostReply::parse(&response) == Some(HostReply::Stopping));
     if graceful {
         let deadline = Instant::now() + Duration::from_secs(2);
         while host_is_running() && Instant::now() < deadline {
@@ -196,25 +197,34 @@ fn toggle_overlay_edit_mode() -> Result<String, String> {
 fn overlay_edit_status() -> Result<bool, String> {
     let response = send_host_command("edit_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
-    HostReply::parse(&response).and_then(|reply| reply.edit_mode()).ok_or_else(|| format!("host returned '{response}'"))
+    HostReply::parse(&response)
+        .and_then(|reply| reply.edit_mode())
+        .ok_or_else(|| format!("host returned '{response}'"))
 }
 
 #[tauri::command]
 fn toggle_overlay_visibility() -> Result<bool, String> {
     let response = send_host_command("toggle_visibility")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
-    HostReply::parse(&response).and_then(|reply| reply.visibility()).ok_or_else(|| format!("host returned '{response}'"))
+    HostReply::parse(&response)
+        .and_then(|reply| reply.visibility())
+        .ok_or_else(|| format!("host returned '{response}'"))
 }
 
 #[tauri::command]
 fn overlay_visibility_status() -> Result<bool, String> {
     let response = send_host_command("visibility_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
-    HostReply::parse(&response).and_then(|reply| reply.visibility()).ok_or_else(|| format!("host returned '{response}'"))
+    HostReply::parse(&response)
+        .and_then(|reply| reply.visibility())
+        .ok_or_else(|| format!("host returned '{response}'"))
 }
 
 fn reload_overlay_config_after_save() -> Result<(), String> {
     if !host_control_is_ready() {
+        if host_is_running() {
+            return Err("Configuration was saved, but the overlay host is not responding. Restart the host and press Save to retry.".to_string());
+        }
         return Ok(());
     }
     let response = send_host_command("reload")
@@ -278,7 +288,10 @@ mod startup_status_tests {
 #[cfg(windows)]
 fn send_host_command(command: &str) -> std::io::Result<String> {
     if HostCommand::parse(command).is_none() {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "unsupported host command",
+        ));
     }
     use std::{io::Error, ptr};
     use windows_sys::Win32::{
@@ -321,7 +334,12 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
         {
             return Err(Error::last_os_error());
         }
-        if written != bytes.len() as u32 { return Err(Error::new(std::io::ErrorKind::WriteZero, "partial host command write")); }
+        if written != bytes.len() as u32 {
+            return Err(Error::new(
+                std::io::ErrorKind::WriteZero,
+                "partial host command write",
+            ));
+        }
         let mut response = [0_u8; host_protocol::MAX_FRAME_BYTES];
         let mut read = 0_u32;
         if unsafe {
@@ -336,7 +354,9 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
         {
             return Err(Error::last_os_error());
         }
-        host_protocol::decode_frame(&response[..read as usize]).map(str::to_owned).map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))
+        host_protocol::decode_frame(&response[..read as usize])
+            .map(str::to_owned)
+            .map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))
     })();
     unsafe { CloseHandle(pipe) };
     result
@@ -398,7 +418,10 @@ fn open_config_folder() -> Result<(), String> {
         .map_err(|error| format!("Could not open config folder: {error}"))
 }
 
-fn finish_saved_config(path: PathBuf, reload_result: Result<(), String>) -> Result<ConfigResponse, String> {
+fn finish_saved_config(
+    path: PathBuf,
+    reload_result: Result<(), String>,
+) -> Result<ConfigResponse, String> {
     let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
     let mut response = ConfigResponse::new(path, config);
     response.reload_warning = reload_result.err();
@@ -411,15 +434,24 @@ mod save_feedback_tests {
 
     #[test]
     fn a_reload_failure_still_returns_the_saved_config_and_revision() {
-        let path = std::env::temp_dir().join(format!("hashoverlay-reload-warning-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-reload-warning-{}.toml",
+            std::process::id()
+        ));
         let mut config = OverlayConfig::default();
         config.window.x = 42;
         config.save(&path).unwrap();
         let response = finish_saved_config(path.clone(), Err("host reload failed".into())).unwrap();
         assert_eq!(response.config.window.x, 42);
         assert_eq!(response.revision, OverlayConfig::revision(&path).unwrap());
-        assert_eq!(response.reload_warning.as_deref(), Some("host reload failed"));
-        assert!(finish_saved_config(path.clone(), Ok(())).unwrap().reload_warning.is_none());
+        assert_eq!(
+            response.reload_warning.as_deref(),
+            Some("host reload failed")
+        );
+        assert!(finish_saved_config(path.clone(), Ok(()))
+            .unwrap()
+            .reload_warning
+            .is_none());
         fs::remove_file(path).unwrap();
     }
 }
