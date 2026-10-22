@@ -31,7 +31,7 @@ mod windows_control {
         },
     };
 
-    const BUFFER_SIZE: u32 = 128;
+    const BUFFER_SIZE: u32 = host_protocol::MAX_FRAME_BYTES as u32;
 
     pub struct HostControl {
         running: Arc<AtomicBool>,
@@ -205,11 +205,8 @@ mod windows_control {
                 ptr::null_mut(),
             )
         } != 0;
-        success.then(|| {
-            String::from_utf8_lossy(&buffer[..read as usize])
-                .trim()
-                .to_string()
-        })
+        if !success { return None; }
+        host_protocol::decode_frame(&buffer[..read as usize]).ok().map(str::to_owned)
     }
 
     fn write_response(pipe: HANDLE, response: &str) -> bool {
