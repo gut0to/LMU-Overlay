@@ -82,8 +82,9 @@ function updateCustomPreset(
 export function uniquePresetName(presets: Pick<CustomPresetConfig, "name">[], base: string): string {
   const names = new Set(presets.map((preset) => preset.name.trim().toLocaleLowerCase()));
   let suffix = 1;
-  while (names.has(`${base} ${suffix}`.toLocaleLowerCase())) suffix++;
-  return `${base} ${suffix}`;
+  const candidate = () => `${Array.from(base).slice(0, 80 - String(suffix).length - 1).join("")} ${suffix}`;
+  while (names.has(candidate().toLocaleLowerCase())) suffix++;
+  return candidate();
 }
 
 export function duplicateCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
@@ -101,4 +102,8 @@ export function moveCustomPreset(config: OverlayConfig, index: number, direction
   if (!custom[index] || target < 0 || target >= custom.length) return config;
   [custom[index], custom[target]] = [custom[target], custom[index]];
   return { ...config, presets: { ...config.presets, custom } };
+}
+
+export function normalizePresetName(value: string, fallback: string): string {
+  return Array.from(value.replace(/[\u0000-\u001f\u007f]/g, "").trim()).slice(0, 80).join("") || fallback;
 }

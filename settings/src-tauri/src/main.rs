@@ -64,7 +64,9 @@ fn default_config() -> Result<OverlayConfig, String> {
 /// Validate a recovery candidate without writing the file or contacting the host.
 #[tauri::command]
 fn validate_config(mut config: OverlayConfig) -> Result<OverlayConfig, String> {
-    config.validate_for_save().map_err(|error| error.to_string())?;
+    config
+        .validate_for_save()
+        .map_err(|error| error.to_string())?;
     config.normalize();
     Ok(config)
 }
@@ -95,7 +97,9 @@ fn reset_config(expected_revision: u64) -> Result<ConfigResponse, String> {
 fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(), String> {
     let mut config: OverlayConfig =
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
-    config.save_if_revision(path, expected_revision).map_err(|error| error.to_string())
+    config
+        .save_if_revision(path, expected_revision)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -447,7 +451,10 @@ mod save_feedback_tests {
 
     #[test]
     fn reset_preserves_external_edits_and_accepts_the_latest_revision() {
-        let path = std::env::temp_dir().join(format!("hashoverlay-reset-conflict-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-reset-conflict-{}.toml",
+            std::process::id()
+        ));
         let mut config = OverlayConfig::default();
         config.save(&path).unwrap();
         let stale = OverlayConfig::revision(&path).unwrap();
@@ -458,7 +465,10 @@ mod save_feedback_tests {
         assert_eq!(fs::read(&path).unwrap(), external);
         let latest = OverlayConfig::revision(&path).unwrap();
         reset_config_at(&path, latest).unwrap();
-        assert_eq!(OverlayConfig::load(&path).unwrap().window.x, OverlayConfig::default().window.x);
+        assert_eq!(
+            OverlayConfig::load(&path).unwrap().window.x,
+            OverlayConfig::default().window.x
+        );
         fs::remove_file(path).unwrap();
     }
 

@@ -1,7 +1,7 @@
 import { legacyWidgetById, legacySurfaceByWidgetKey, catalogWidgetEnabled, setCatalogWidgets, activeLegacyWidgetEnabled, overlayIdUsedByOtherLayer } from "./widget-membership";
 import { createDraft, findRecovery, type RecoveryDraft } from "./drafts";
 import { DraftStore } from "./draft-storage";
-import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, moveCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
+import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, moveCustomPreset, normalizePresetName, CUSTOM_PRESET_LIMIT } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -1302,10 +1302,11 @@ function App() {
               <div className="presetItem" key={index} data-active={activeCustomPreset === index}>
                 <input
                   disabled={saving}
+                  maxLength={160}
                   aria-label={`Preset ${index + 1} name`}
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
-                  onBlur={(event) => setConfig(renameCustomPreset(config, index, event.target.value.trim() || `Custom ${index + 1}`))}
+                  onBlur={(event) => setConfig(renameCustomPreset(config, index, normalizePresetName(event.target.value, `Custom ${index + 1}`)))}
                 />
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply

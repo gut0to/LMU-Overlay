@@ -1187,7 +1187,9 @@ impl PresetConfig {
         self.endurance.normalize();
         self.minimal.normalize();
         self.custom.truncate(32);
-        for preset in &mut self.custom {
+        for (index, preset) in self.custom.iter_mut().enumerate() {
+            preset.name = preset.name.chars().filter(|ch| !ch.is_control()).collect::<String>().trim().chars().take(80).collect();
+            if preset.name.is_empty() { preset.name = format!("Custom {}", index + 1); }
             preset.profile.normalize();
         }
     }
