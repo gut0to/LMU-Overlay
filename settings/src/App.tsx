@@ -252,6 +252,7 @@ function App() {
   const draftStore = useRef(new DraftStore(() => window.localStorage));
   const recoveryChecked = useRef(false);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
+  const [pauseAutosave, setPauseAutosave] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const configTasks = useRef(new ConfigTasks());
   const [status, setStatus] = useState("Loading config");
@@ -306,7 +307,7 @@ function App() {
   }, [config, activeOverlayId]);
 
   useEffect(() => {
-    if (!config || !hydratedConfig.current || saving) return;
+    if (!config || !hydratedConfig.current || saving || recovery || pauseAutosave) return;
     const serialized = JSON.stringify(config);
     if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
@@ -317,7 +318,7 @@ function App() {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [config, saving]);
+  }, [config, saving, recovery, pauseAutosave]);
 
   useEffect(() => {
     const saveShortcut = (event: KeyboardEvent) => {
@@ -432,6 +433,20 @@ function App() {
     });
   }
 
+  async function restoreRecovery() {
+    if (!recovery) return;
+    setReplacingConfig(true);
+    try {
+      const validated = await invoke<OverlayConfig>("validate_config", { config: recovery.draft.config });
+      setPauseAutosave(true);
+      setConfig(normalizeUiConfig(validated));
+      setRecovery(null);
+      setStatus("Draft recovered. Review the setup, then choose Save to apply it.");
+    } catch (error) {
+      setRecoveryError(`Could not restore the draft: ${String(error)}`);
+    } finally { setReplacingConfig(false); }
+  }
+
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
     if (saveTimer.current !== null) {
       window.clearTimeout(saveTimer.current);
@@ -446,6 +461,7 @@ function App() {
           expected_revision: revision.current,
         });
         failedSave.current = null;
+        setPauseAutosave(false);
         const normalized = normalizeUiConfig(response.config);
         acknowledgeConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
         lastSavedConfig.current = JSON.stringify(normalized);
@@ -948,7 +964,9 @@ function App() {
       {recovery && <section className="recoveryBanner" aria-label="Recover unsaved settings">
         <strong>Unsaved settings from {new Date(recovery.draft.savedAt).toLocaleString()}</strong>
         <p>{recovery.conflict ? "The configuration file has changed since this draft was created. Restoring will replace the current editor settings." : "A previous editing session left a local draft. Review it before continuing."}</p>
+        <button className="primaryButton" disabled={replacingConfig} onClick={() => void restoreRecovery()}>Restore draft for review</button>
       </section>}
+      {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
       {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
 
       <section className="sceneBar">
