@@ -243,6 +243,7 @@ function App() {
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
+  const [availableWidgetsOnly, setAvailableWidgetsOnly] = useState(false);
   const [widgetVisibility, setWidgetVisibility] = useState("all");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
@@ -826,9 +827,10 @@ function App() {
       const query = widgetSearch.trim().toLocaleLowerCase();
       const enabled = config ? catalogWidgetEnabled(config, activeOverlayId, widget.id) : false;
       const matchesVisibility = widgetVisibility === "all" || (widgetVisibility === "enabled" ? enabled : !enabled);
-      return matchesCategory && matchesVisibility && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
+      const matchesAvailability = !availableWidgetsOnly || widget.status !== "Unavailable in current LMU interface";
+      return matchesCategory && matchesVisibility && matchesAvailability && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
     }),
-    [widgetCatalog, widgetCategory, widgetSearch, widgetVisibility, config, activeOverlayId],
+    [widgetCatalog, widgetCategory, widgetSearch, widgetVisibility, availableWidgetsOnly, config, activeOverlayId],
   );
   const activeOverlayConfig = useMemo(
     () => config ? overlayPreviewConfig(config, activeOverlayId) : null,
@@ -1232,9 +1234,10 @@ function App() {
             <div className="segmented" role="group" aria-label="Widget visibility on selected surface">
               {[["all", "All widgets"], ["enabled", "Enabled here"], ["disabled", "Disabled here"]].map(([value, label]) => <button key={value} aria-pressed={widgetVisibility === value} className={widgetVisibility === value ? "selected" : ""} onClick={() => setWidgetVisibility(value)}>{label}</button>)}
             </div>
-            {(widgetSearch || widgetCategory !== "All" || widgetVisibility !== "all") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); setWidgetVisibility("all"); }}>Clear filters</button>}
+            <label className="toggle"><input type="checkbox" checked={availableWidgetsOnly} onChange={(event) => setAvailableWidgetsOnly(event.target.checked)} /><span>Hide widgets unavailable in LMU</span></label>
+            {(widgetSearch || widgetCategory !== "All" || widgetVisibility !== "all" || availableWidgetsOnly) && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); setWidgetVisibility("all"); setAvailableWidgetsOnly(false); }}>Clear filters</button>}
             {widgetCatalog.length === 0 && <button className="secondaryButton" onClick={() => void loadWidgetCatalog()}>Retry loading widgets</button>}
-            <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
+            <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets; {config ? widgetCatalog.filter((widget) => catalogWidgetEnabled(config, activeOverlayId, widget.id)).length : 0} enabled on this surface</p>
             <div className="buttonRow">
               <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(true)}>Enable matching</button>
               <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(false)}>Disable matching</button>
