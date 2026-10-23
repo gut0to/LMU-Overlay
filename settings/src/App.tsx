@@ -243,6 +243,7 @@ function App() {
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
+  const [widgetVisibility, setWidgetVisibility] = useState("all");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
   const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
@@ -823,9 +824,11 @@ function App() {
     () => widgetCatalog.filter((widget) => {
       const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
       const query = widgetSearch.trim().toLocaleLowerCase();
-      return matchesCategory && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
+      const enabled = config ? catalogWidgetEnabled(config, activeOverlayId, widget.id) : false;
+      const matchesVisibility = widgetVisibility === "all" || (widgetVisibility === "enabled" ? enabled : !enabled);
+      return matchesCategory && matchesVisibility && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
     }),
-    [widgetCatalog, widgetCategory, widgetSearch],
+    [widgetCatalog, widgetCategory, widgetSearch, widgetVisibility, config, activeOverlayId],
   );
   const activeOverlayConfig = useMemo(
     () => config ? overlayPreviewConfig(config, activeOverlayId) : null,
@@ -1226,14 +1229,17 @@ function App() {
                 <button key={category} aria-pressed={widgetCategory === category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
               ))}
             </div>
-            {(widgetSearch || widgetCategory !== "All") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); }}>Clear filters</button>}
+            <div className="segmented" role="group" aria-label="Widget visibility on selected surface">
+              {[["all", "All widgets"], ["enabled", "Enabled here"], ["disabled", "Disabled here"]].map(([value, label]) => <button key={value} aria-pressed={widgetVisibility === value} className={widgetVisibility === value ? "selected" : ""} onClick={() => setWidgetVisibility(value)}>{label}</button>)}
+            </div>
+            {(widgetSearch || widgetCategory !== "All" || widgetVisibility !== "all") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); setWidgetVisibility("all"); }}>Clear filters</button>}
             {widgetCatalog.length === 0 && <button className="secondaryButton" onClick={() => void loadWidgetCatalog()}>Retry loading widgets</button>}
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
             <div className="buttonRow">
               <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(true)}>Enable matching</button>
               <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(false)}>Disable matching</button>
             </div>
-            {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
+            {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Clear filters or change the search, category or visibility.</p>}
             {filteredWidgetCatalog.map((widget) => {
               const enabled = catalogWidgetEnabled(config, activeOverlayId, widget.id);
               return (
