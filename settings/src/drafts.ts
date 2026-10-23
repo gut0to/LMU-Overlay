@@ -29,3 +29,15 @@ export function parseDraft(raw: string | null, now = Date.now()): ConfigDraft | 
     return draft;
   } catch { return null; }
 }
+
+export type RecoveryDraft = { draft: ConfigDraft; conflict: boolean };
+
+/** Never restore a different file's edits or an already persisted snapshot. */
+export function findRecovery(raw: string | null, path: string, saved: object, now = Date.now()): RecoveryDraft | null {
+  const draft = parseDraft(raw, now);
+  const fileIdentity = (value: string) => value.replaceAll("\\", "/").toLocaleLowerCase();
+  if (!draft || fileIdentity(draft.path) !== fileIdentity(path)) return null;
+  const baseline = JSON.stringify(saved);
+  if (JSON.stringify(draft.config) === baseline) return null;
+  return { draft, conflict: draft.base !== baseline };
+}
