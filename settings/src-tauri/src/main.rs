@@ -441,6 +441,24 @@ mod save_feedback_tests {
     use super::*;
 
     #[test]
+    fn recovery_validation_normalizes_geometry_without_accepting_future_schemas() {
+        let mut candidate = OverlayConfig::default();
+        candidate.window.width = 0;
+        let recovered = validate_config(candidate.clone()).unwrap();
+        assert!(recovered.window.width > 0);
+        assert_eq!(candidate.window.width, 0);
+        candidate.config_version = u32::MAX;
+        assert!(validate_config(candidate).unwrap_err().contains("version"));
+    }
+
+    #[test]
+    fn recovery_validation_rejects_conflicting_hotkeys() {
+        let mut candidate = OverlayConfig::default();
+        candidate.hotkeys.edit_mode = candidate.hotkeys.toggle_overlay.clone();
+        assert!(validate_config(candidate).is_err());
+    }
+
+    #[test]
     fn a_reload_failure_still_returns_the_saved_config_and_revision() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-reload-warning-{}.toml",
