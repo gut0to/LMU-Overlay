@@ -1,7 +1,9 @@
-import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
+import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, moveCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
+  ArrowUp,
+  ArrowDown,
   Copy,
   FolderOpen,
   Gauge,
@@ -1273,6 +1275,8 @@ function App() {
                 <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
                   <Save size={16} />
                 </button>
+                <button aria-label={`Move ${preset.name} up`} title="Move preset up" disabled={saving || index === 0} onClick={() => void saveCustomPreset(moveCustomPreset(config, index, -1), "Preset moved up")}><ArrowUp size={16} /></button>
+                <button aria-label={`Move ${preset.name} down`} title="Move preset down" disabled={saving || index === config.presets.custom.length - 1} onClick={() => void saveCustomPreset(moveCustomPreset(config, index, 1), "Preset moved down")}><ArrowDown size={16} /></button>
                 <button aria-label={`Duplicate ${preset.name}`} title="Duplicate preset" disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT} onClick={() => void saveCustomPreset(duplicateCustomPreset(config, index), "Preset duplicated")}>
                   <Copy size={16} />
                 </button>
