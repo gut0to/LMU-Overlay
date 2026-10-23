@@ -41,7 +41,7 @@ fn load_config() -> Result<ConfigResponse, String> {
     Ok(ConfigResponse::new(path, config))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn save_config(
     mut config: OverlayConfig,
     expected_revision: u64,
@@ -61,13 +61,23 @@ fn default_config() -> Result<OverlayConfig, String> {
     Ok(config)
 }
 
+/// Validate a recovery candidate without writing the file or contacting the host.
+#[tauri::command]
+fn validate_config(mut config: OverlayConfig) -> Result<OverlayConfig, String> {
+    config
+        .validate_for_save()
+        .map_err(|error| error.to_string())?;
+    config.normalize();
+    Ok(config)
+}
+
 #[tauri::command]
 fn export_config(mut config: OverlayConfig) -> Result<String, String> {
     config.normalize();
     toml::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse, String> {
     let mut config: OverlayConfig = toml::from_str(&text).map_err(|error| error.to_string())?;
     let path = overlay_config_path();
@@ -77,12 +87,20 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
-#[tauri::command]
-fn reset_config() -> Result<ConfigResponse, String> {
-    let config: OverlayConfig =
+#[tauri::command(rename_all = "snake_case")]
+fn reset_config(expected_revision: u64) -> Result<ConfigResponse, String> {
+    let path = overlay_config_path();
+    reset_config_at(&path, expected_revision)?;
+    finish_saved_config(path, reload_overlay_config_after_save())
+}
+
+fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(), String> {
+    let mut config: OverlayConfig =
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
-    let revision = OverlayConfig::revision(overlay_config_path()).unwrap_or_default();
-    save_config(config, revision)
+    config
+        .save_if_revision(path, expected_revision)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -433,6 +451,47 @@ mod save_feedback_tests {
     use super::*;
 
     #[test]
+    fn reset_preserves_external_edits_and_accepts_the_latest_revision() {
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-reset-conflict-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.save(&path).unwrap();
+        let stale = OverlayConfig::revision(&path).unwrap();
+        config.window.x = 123;
+        config.save(&path).unwrap();
+        let external = fs::read(&path).unwrap();
+        assert!(reset_config_at(&path, stale).is_err());
+        assert_eq!(fs::read(&path).unwrap(), external);
+        let latest = OverlayConfig::revision(&path).unwrap();
+        reset_config_at(&path, latest).unwrap();
+        assert_eq!(
+            OverlayConfig::load(&path).unwrap().window.x,
+            OverlayConfig::default().window.x
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn recovery_validation_normalizes_geometry_without_accepting_future_schemas() {
+        let mut candidate = OverlayConfig::default();
+        candidate.window.width = 0;
+        let recovered = validate_config(candidate.clone()).unwrap();
+        assert!(recovered.window.width > 0);
+        assert_eq!(candidate.window.width, 0);
+        candidate.config_version = u32::MAX;
+        assert!(validate_config(candidate).unwrap_err().contains("version"));
+    }
+
+    #[test]
+    fn recovery_validation_rejects_conflicting_hotkeys() {
+        let mut candidate = OverlayConfig::default();
+        candidate.hotkeys.edit_mode = candidate.hotkeys.toggle_overlay.clone();
+        assert!(validate_config(candidate).is_err());
+    }
+
+    #[test]
     fn a_reload_failure_still_returns_the_saved_config_and_revision() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-reload-warning-{}.toml",
@@ -482,6 +541,7 @@ fn main() {
             load_config,
             save_config,
             default_config,
+            validate_config,
             export_config,
             import_config,
             reset_config,
@@ -505,4 +565,56 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run HashOverlay settings");
+}
+
+#[cfg(test)]
+mod ipc_tests {
+    use super::*;
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+
+    #[test]
+    fn frontend_revision_arguments_reach_save_and_import_validation() {
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![
+                save_config,
+                import_config,
+                validate_config
+            ])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let future = OverlayConfig {
+            config_version: u32::MAX,
+            ..OverlayConfig::default()
+        };
+        for (cmd, body) in [
+            (
+                "save_config",
+                serde_json::json!({ "config": future, "expected_revision": 0 }),
+            ),
+            (
+                "import_config",
+                serde_json::json!({ "text": "not valid TOML", "expected_revision": 0 }),
+            ),
+        ] {
+            let error = get_ipc_response(
+                &webview,
+                tauri::webview::InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "http://tauri.localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.into(),
+                },
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(!error.contains("invalid args"), "{cmd}: {error}");
+            assert!(!error.contains("missing required key"), "{cmd}: {error}");
+        }
+    }
 }

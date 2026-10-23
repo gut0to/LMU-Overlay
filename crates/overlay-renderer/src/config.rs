@@ -1187,7 +1187,19 @@ impl PresetConfig {
         self.endurance.normalize();
         self.minimal.normalize();
         self.custom.truncate(32);
-        for preset in &mut self.custom {
+        for (index, preset) in self.custom.iter_mut().enumerate() {
+            preset.name = preset
+                .name
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect::<String>()
+                .trim()
+                .chars()
+                .take(80)
+                .collect();
+            if preset.name.is_empty() {
+                preset.name = format!("Custom {}", index + 1);
+            }
             preset.profile.normalize();
         }
     }
@@ -2065,6 +2077,24 @@ mod tests {
     fn parses_web_hex_color_to_gdi_colorref() {
         assert_eq!(parse_color("#112233", 0), 0x00332211);
         assert_eq!(parse_color("bad", 0x00ffffff), 0x00ffffff);
+    }
+
+    #[test]
+    fn normalizes_custom_preset_names_without_cutting_unicode() {
+        let mut config = OverlayConfig::default();
+        config.presets.custom = vec![
+            CustomPresetConfig {
+                name: " \n\t ".into(),
+                ..CustomPresetConfig::default()
+            },
+            CustomPresetConfig {
+                name: "é".repeat(100),
+                ..CustomPresetConfig::default()
+            },
+        ];
+        config.normalize();
+        assert_eq!(config.presets.custom[0].name, "Custom 1");
+        assert_eq!(config.presets.custom[1].name.chars().count(), 80);
     }
 
     #[test]

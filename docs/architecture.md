@@ -132,3 +132,27 @@ under React StrictMode. Autosave and revision tracking stay outside history.
 Config responses optionally carry `reload_warning`: a completed disk write must
 still return its configuration and revision when live reload fails. This avoids
 turning a recoverable host issue into a stale-revision conflict on the next save.
+
+## Settings Recovery and Profile Editing
+
+`presets.ts` owns immutable profile snapshots, content equality independent of
+object insertion order, capacity and name allocation, duplication and ordering.
+`widget-membership.ts` owns catalog-to-surface identity and bulk membership edits.
+Callers apply one configuration update so history records each bulk action once.
+
+`drafts.ts` serializes bounded, versioned editor snapshots with their configuration
+path, timestamp and saved baseline. `draft-storage.ts` isolates exceptions from
+webview storage. Discovery compares the loaded file with the draft baseline to
+flag external edits; it does not silently merge or overwrite either version.
+
+The native `validate_config` command normalizes a recovery candidate and runs the
+same schema and hotkey checks as saving, without disk writes or host commands.
+Recovery adds an undoable edit to the loaded state and pauses autosave until an
+explicit persistence action. Successful file replacement clears that pause and
+failed-save suppression. Reset uses the editor's expected revision, matching
+save/import concurrency checks.
+
+Recovery is best effort: abrupt termination before the latest snapshot reaches
+storage may lose the final edit. A single local draft is retained, for at most
+30 days; a second Settings window shares this storage. Exported TOML remains the
+portable backup. Native close behavior and live LMU behavior need manual checks.

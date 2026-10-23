@@ -145,3 +145,35 @@ If saving succeeds but the running overlay cannot reload, Settings retains the
 saved revision and reports the reload warning. Resolve the host problem and
 press Save to retry applying it. Starting the overlay waits for a successful
 save and live reload result.
+
+## Saved Setups and Widget Selections
+
+In **Presets**, use **New from current** to capture the selected surface's widget
+positions and visibility together with the shared appearance, units, timing and
+coaching settings. Custom presets preserve saved positions when applied;
+standard presets arrange the widgets automatically. Window placement and hotkeys
+are not part of a custom preset. Shared settings can affect all surfaces.
+
+Search presets by name, duplicate a setup before experimenting, or move entries
+up and down to choose their order in the setup selector. The list supports 32
+custom presets. Replacing a saved setup or deleting one asks for confirmation.
+The highlighted custom preset matches the current selected surface's profile.
+
+In **Widgets**, combine search, category, visibility and availability filters.
+**Enable matching** and **Disable matching** change the available results on the
+selected surface in a single undoable action. Widgets assigned to other surfaces
+remain enabled there. Unavailable LMU widgets remain excluded from bulk actions.
+
+## Recovering an Interrupted Editing Session
+
+Pending changes have a local recovery draft in the Settings webview. On reopening,
+choose **Restore draft for review** or **Discard draft** before editing. A warning
+identifies drafts created before an external change to the configuration file.
+Restoring validates the candidate and keeps automatic saving paused; review it
+and choose **Save** to apply it. Undo can return to the loaded configuration.
+Reload, import or reset replaces the recovered editor state.
+
+Drafts belong to one configuration path, expire after 30 days and have a 4 MiB
+character limit. They are local convenience copies, not exported backups. Storage
+errors do not block editing or saving, but Settings warns when recovery cannot be
+kept. Export important setups before closing if saving or local storage fails.

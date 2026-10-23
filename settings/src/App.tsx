@@ -1,6 +1,32 @@
+import { useDraftPersistence } from "./useDraftPersistence";
+import {
+  legacySurfaceByWidgetKey,
+  catalogWidgetEnabled,
+  setCatalogWidgets,
+  preserveOtherSurfaceWidgets,
+  synchronizeWidgetMembership as syncExtraWidgetsWithOverlayMembership,
+  activeLegacyWidgetEnabled,
+  overlayIdUsedByOtherLayer,
+} from "./widget-membership";
+import { createDraft, findRecovery, type RecoveryDraft } from "./drafts";
+import { DraftStore } from "./draft-storage";
+import {
+  currentProfile,
+  profilesMatch,
+  addCustomPreset,
+  renameCustomPreset,
+  saveCurrentIntoCustomPreset,
+  deleteCustomPreset,
+  duplicateCustomPreset,
+  moveCustomPreset,
+  normalizePresetName,
+  CUSTOM_PRESET_LIMIT,
+} from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
+  ArrowUp,
+  ArrowDown,
   Copy,
   FolderOpen,
   Gauge,
@@ -34,7 +60,6 @@ import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
   CoachingConfig,
-  CustomPresetConfig,
   HotkeyConfig,
   LayoutConfig,
   LayoutSelection,
@@ -158,19 +183,6 @@ const widgetLabels: Array<[keyof WidgetConfig, string]> = [
   ["performance_monitor", "Performance monitor"],
 ];
 
-const legacyWidgetById: Partial<Record<string, keyof WidgetConfig>> = {
-  telemetry: "speed_gear_rpm",
-  inputs: "pedals",
-  steering: "steering",
-  lap_timing: "lap_timing",
-  timing: "delta_timing",
-  sectors: "sectors",
-  mini_sectors: "mini_sector_widget",
-  input_history: "input_history",
-  coaching: "coaching",
-  performance: "performance_monitor",
-};
-
 const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["telemetry", "Telemetry"],
   ["inputs", "Inputs"],
@@ -181,22 +193,6 @@ const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["coaching", "Coaching"],
   ["performance", "Performance"],
 ];
-
-const legacySurfaceByWidgetKey: Record<keyof WidgetConfig, LayoutWidgetKey | null> = {
-  title: "telemetry",
-  speed_gear_rpm: "telemetry",
-  pedals: "inputs",
-  steering: "inputs",
-  lap_info: "lap_timing",
-  lap_timing: "lap_timing",
-  sectors: "sectors",
-  mini_sector_widget: "mini_sectors",
-  input_history: "inputs",
-  delta_timing: "timing",
-  ghost_inputs: "inputs",
-  coaching: "coaching",
-  performance_monitor: "performance",
-};
 
 const colorLabels: Array<[keyof StyleConfig, string]> = [
   ["background", "Background"],
@@ -245,6 +241,11 @@ function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
   const revision = useRef(0);
+  const draftStore = useRef(new DraftStore(() => window.localStorage));
+  const recoveryChecked = useRef(false);
+  const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
+  const [pauseAutosave, setPauseAutosave] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const configTasks = useRef(new ConfigTasks());
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
@@ -259,7 +260,10 @@ function App() {
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
+  const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
+  const [availableWidgetsOnly, setAvailableWidgetsOnly] = useState(false);
+  const [widgetVisibility, setWidgetVisibility] = useState("all");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
   const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
@@ -276,6 +280,8 @@ function App() {
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
   const reloadWarning = useRef<string | null>(null);
+  const configPath = useRef(path);
+  configPath.current = path;
   const currentConfig = useRef(config);
   currentConfig.current = config;
 
@@ -297,7 +303,7 @@ function App() {
   }, [config, activeOverlayId]);
 
   useEffect(() => {
-    if (!config || !hydratedConfig.current || saving) return;
+    if (!config || !hydratedConfig.current || saving || recovery || pauseAutosave) return;
     const serialized = JSON.stringify(config);
     if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
@@ -308,22 +314,22 @@ function App() {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [config, saving]);
+  }, [config, saving, recovery, pauseAutosave]);
 
   useEffect(() => {
     const saveShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (!saving && !event.repeat) void saveConfig();
+        if (!saving && !recovery && !event.repeat) void saveConfig();
       }
     };
     window.addEventListener("keydown", saveShortcut);
     return () => window.removeEventListener("keydown", saveShortcut);
-  }, [saving]);
+  }, [saving, recovery]);
 
   useEffect(() => {
     const handleHistory = (event: KeyboardEvent) => {
-      if (saving || replacingConfig || editingGesture) return;
+      if (saving || replacingConfig || editingGesture || recovery) return;
       const target = event.target;
       const editingText = target instanceof HTMLElement && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [role='textbox']")));
       const action = historyShortcut(event, editingText);
@@ -332,11 +338,13 @@ function App() {
     };
     window.addEventListener("keydown", handleHistory);
     return () => window.removeEventListener("keydown", handleHistory);
-  }, [saving, replacingConfig, editingGesture, canUndo, canRedo, undo, redo]);
+  }, [saving, replacingConfig, editingGesture, recovery, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const protectEdits = (event: BeforeUnloadEvent) => {
-      if (hydratedConfig.current && JSON.stringify(currentConfig.current) !== lastSavedConfig.current) {
+      if (hydratedConfig.current && currentConfig.current && JSON.stringify(currentConfig.current) !== lastSavedConfig.current) {
+        try { draftStore.current.write(createDraft(configPath.current, lastSavedConfig.current, currentConfig.current)); }
+        catch { /* Keep the browser's unsaved-change protection if local recovery fails. */ }
         event.preventDefault();
         event.returnValue = "";
       }
@@ -352,6 +360,10 @@ function App() {
       // The editor remains usable when storage is full or unavailable.
     }
   }, [workspace]);
+
+  useDraftPersistence(config, path, lastSavedConfig.current,
+    hydratedConfig.current && !replacingConfig && !recovery,
+    draftStore.current, setRecoveryError);
 
   async function refreshOverlayStatus(): Promise<boolean> {
     return statusRequest.current.run(async () => {
@@ -396,6 +408,14 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config loaded", response.reload_warning).message);
+        failedSave.current = null;
+        setPauseAutosave(false);
+        if (!recoveryChecked.current) {
+          const stored = draftStore.current.read();
+          setRecoveryError(stored.error);
+          setRecovery(findRecovery(stored.raw, response.path, normalized));
+          recoveryChecked.current = true;
+        }
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -403,6 +423,20 @@ function App() {
         setSaving(false);
       }
     });
+  }
+
+  async function restoreRecovery() {
+    if (!recovery) return;
+    setReplacingConfig(true);
+    try {
+      const validated = await invoke<OverlayConfig>("validate_config", { config: recovery.draft.config });
+      setPauseAutosave(true);
+      setConfig(normalizeUiConfig(validated));
+      setRecovery(null);
+      setStatus("Draft recovered. Review the setup, then choose Save to apply it.");
+    } catch (error) {
+      setRecoveryError(`Could not restore the draft: ${String(error)}`);
+    } finally { setReplacingConfig(false); }
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
@@ -419,6 +453,7 @@ function App() {
           expected_revision: revision.current,
         });
         failedSave.current = null;
+        setPauseAutosave(false);
         const normalized = normalizeUiConfig(response.config);
         acknowledgeConfig((current) => acceptSavedConfig(current, nextConfig, normalized));
         lastSavedConfig.current = JSON.stringify(normalized);
@@ -489,6 +524,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config imported", response.reload_warning).message);
+        failedSave.current = null;
+        setPauseAutosave(false);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -510,7 +547,7 @@ function App() {
       setSaving(true);
       setReplacingConfig(true);
       try {
-        const response = await invoke<LoadResponse>("reset_config");
+        const response = await invoke<LoadResponse>("reset_config", { expected_revision: revision.current });
         const normalized = normalizeUiConfig(response.config);
         lastSavedConfig.current = JSON.stringify(normalized);
         replaceConfig(normalized);
@@ -518,6 +555,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config reset", response.reload_warning).message);
+        failedSave.current = null;
+        setPauseAutosave(false);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -651,28 +690,14 @@ function App() {
     await persistConfig(next, successStatus);
   }
 
+  function setFilteredWidgets(enabled: boolean) {
+    const ids = filteredWidgetCatalog.filter((widget) => widget.status !== "Unavailable in current LMU interface").map((widget) => widget.id);
+    setConfig((current) => current ? setCatalogWidgets(current, activeOverlayId, ids, enabled) : current);
+    setStatus(`${enabled ? "Enabled" : "Disabled"} matching available widgets on the selected surface`);
+  }
+
   function setCatalogWidget(id: string, enabled: boolean) {
-    const legacy = legacyWidgetById[id];
-    const surface = catalogSurfaceId(id);
-    setConfig((current) => {
-      if (!current) {
-        return current;
-      }
-      const overlays = current.overlays.map((overlay) => overlay.id === activeOverlayId
-        ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, surface])] : overlay.widgets.filter((widget) => widget !== surface) }
-        : overlay);
-      const usedElsewhere = overlayIdUsedByOtherLayer(overlays, activeOverlayId, surface);
-      let next = legacy
-        ? { ...current, widgets: { ...current.widgets, [legacy]: enabled || usedElsewhere } }
-        : current.extra_widgets[id]
-          ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...current.extra_widgets[id], enabled: enabled || usedElsewhere } } }
-          : current;
-      next = {
-        ...next,
-        overlays,
-      };
-      return next;
-    });
+    setConfig((current) => current ? setCatalogWidgets(current, activeOverlayId, [id], enabled) : current);
   }
 
   function addOverlayLayer() {
@@ -815,9 +840,12 @@ function App() {
     () => widgetCatalog.filter((widget) => {
       const matchesCategory = widgetCategory === "All" || widget.category === widgetCategory;
       const query = widgetSearch.trim().toLocaleLowerCase();
-      return matchesCategory && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
+      const enabled = config ? catalogWidgetEnabled(config, activeOverlayId, widget.id) : false;
+      const matchesVisibility = widgetVisibility === "all" || (widgetVisibility === "enabled" ? enabled : !enabled);
+      const matchesAvailability = !availableWidgetsOnly || widget.status !== "Unavailable in current LMU interface";
+      return matchesCategory && matchesVisibility && matchesAvailability && matchesSearch(`${widget.id} ${widget.name} ${widget.description} ${widget.data_requirement} ${widget.category} ${widget.status}`, query);
     }),
-    [widgetCatalog, widgetCategory, widgetSearch],
+    [widgetCatalog, widgetCategory, widgetSearch, widgetVisibility, availableWidgetsOnly, config, activeOverlayId],
   );
   const activeOverlayConfig = useMemo(
     () => config ? overlayPreviewConfig(config, activeOverlayId) : null,
@@ -839,6 +867,10 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const filteredPresets = useMemo(() => config?.presets.custom
+    .map((preset, index) => ({ preset, index }))
+    .filter(({ preset }) => matchesSearch(preset.name, presetSearch)) ?? [], [config, presetSearch]);
+
   const activePreset = useMemo(() => {
     if (!config) {
       return null;
@@ -846,6 +878,12 @@ function App() {
     const profile = currentProfile(config);
     return presetNames.find((name) => profilesMatch(profile, config.presets[name]));
   }, [config]);
+
+  const activeCustomPreset = useMemo(() => {
+    if (!config) return -1;
+    const profile = currentProfile(overlayPreviewConfig(config, activeOverlayId));
+    return config.presets.custom.findIndex((preset) => profilesMatch(profile, preset.profile));
+  }, [config, activeOverlayId]);
 
   if (!config) {
     return (
@@ -856,6 +894,18 @@ function App() {
       </main>
     );
   }
+
+  if (recovery) return (
+    <main className="shell loading" aria-busy={replacingConfig}>
+      <section className="recoveryBanner" aria-label="Recover unsaved settings">
+        <strong>Unsaved settings from {new Date(recovery.draft.savedAt).toLocaleString()}</strong>
+        <p>{recovery.conflict ? "The configuration file has changed since this draft was created. Restoring will replace the current editor settings." : "A previous editing session left a local draft. Review it before continuing."}</p>
+        <div className="buttonRow"><button className="primaryButton" disabled={replacingConfig} onClick={() => void restoreRecovery()}>Restore draft for review</button>
+        <button className="secondaryButton" disabled={replacingConfig} onClick={() => { setRecoveryError(draftStore.current.clear()); setRecovery(null); setStatus("Local draft discarded; configuration file kept"); }}>Discard draft</button></div>
+        {recoveryError && <p role="status">{recoveryError}</p>}
+      </section>
+    </main>
+  );
 
   const statusNeedsAttention = /could not|did not|failed|error|conflict|invalid/i.test(status);
   const hasPendingChanges = JSON.stringify(config) !== lastSavedConfig.current;
@@ -910,6 +960,10 @@ function App() {
           </span>
           </div>
         </div>
+
+      {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
+      {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
+
       </header>
 
       <section className="sceneBar">
@@ -929,7 +983,7 @@ function App() {
             </button>
           ))}
           {config.presets.custom.map((preset, index) => (
-            <button key={`custom-${index}`} className="customScene" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
+            <button key={`custom-${index}`} className={`customScene ${activeCustomPreset === index ? "selected" : ""}`} aria-pressed={activeCustomPreset === index} onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
               {preset.name || `Custom ${index + 1}`}
             </button>
           ))}
@@ -1197,18 +1251,20 @@ function App() {
                 <button key={category} aria-pressed={widgetCategory === category} className={widgetCategory === category ? "selected" : ""} onClick={() => setWidgetCategory(category)}>{category}</button>
               ))}
             </div>
-            {(widgetSearch || widgetCategory !== "All") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); }}>Clear filters</button>}
+            <div className="segmented" role="group" aria-label="Widget visibility on selected surface">
+              {[["all", "All widgets"], ["enabled", "Enabled here"], ["disabled", "Disabled here"]].map(([value, label]) => <button key={value} aria-pressed={widgetVisibility === value} className={widgetVisibility === value ? "selected" : ""} onClick={() => setWidgetVisibility(value)}>{label}</button>)}
+            </div>
+            <label className="toggle"><input type="checkbox" checked={availableWidgetsOnly} onChange={(event) => setAvailableWidgetsOnly(event.target.checked)} /><span>Hide widgets unavailable in LMU</span></label>
+            {(widgetSearch || widgetCategory !== "All" || widgetVisibility !== "all" || availableWidgetsOnly) && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); setWidgetVisibility("all"); setAvailableWidgetsOnly(false); }}>Clear filters</button>}
             {widgetCatalog.length === 0 && <button className="secondaryButton" onClick={() => void loadWidgetCatalog()}>Retry loading widgets</button>}
-            <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
-            {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
+            <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets; {config ? widgetCatalog.filter((widget) => catalogWidgetEnabled(config, activeOverlayId, widget.id)).length : 0} enabled on this surface</p>
+            <div className="buttonRow">
+              <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(true)}>Enable matching</button>
+              <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(false)}>Disable matching</button>
+            </div>
+            {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Clear filters or change the search, category or visibility.</p>}
             {filteredWidgetCatalog.map((widget) => {
-              const legacy = legacyWidgetById[widget.id];
-              const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
-              const surface = catalogSurfaceId(widget.id);
-              const globallyEnabled = legacy ? activeLegacyWidgetEnabled(config, activeOverlayId, legacy) : config.extra_widgets[widget.id]?.enabled ?? false;
-              const enabled = activeOverlay
-                ? activeOverlay.widgets.includes(surface) && globallyEnabled
-                : globallyEnabled;
+              const enabled = catalogWidgetEnabled(config, activeOverlayId, widget.id);
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
                   <input type="checkbox" checked={enabled} disabled={widget.status === "Unavailable in current LMU interface"} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />
@@ -1252,25 +1308,36 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
-          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config), "Custom preset created")} disabled={saving}>
+          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config, currentProfile(overlayPreviewConfig(config, activeOverlayId))), "Custom preset created")} disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT}>
             <Plus size={18} />
             New from current
           </button>
+          <p className="sectionNote">{config.presets.custom.length} of {CUSTOM_PRESET_LIMIT} saved presets. Delete a preset to free space when the list is full.</p>
+          <input type="search" className="presetSearch" aria-label="Search saved presets" placeholder="Search saved presets" value={presetSearch} onChange={(event) => setPresetSearch(event.target.value)} />
+          <p className="catalogSummary" role="status">{filteredPresets.length} matching saved presets</p>
+          {config.presets.custom.length === 0 && <p className="previewHint">Save your current setup to reuse its widgets, appearance and timing settings.</p>}
+          {config.presets.custom.length > 0 && filteredPresets.length === 0 && <div className="buttonRow"><p className="previewHint">No saved presets match this search.</p><button className="secondaryButton" onClick={() => setPresetSearch("")}>Clear preset search</button></div>}
           <div className="presetList">
-            {config.presets.custom.map((preset, index) => (
-              <div className="presetItem" key={index}>
+            {filteredPresets.map(({ preset, index }) => (
+              <div className="presetItem" key={index} data-active={activeCustomPreset === index}>
                 <input
                   disabled={saving}
+                  maxLength={160}
                   aria-label={`Preset ${index + 1} name`}
                   value={preset.name}
                   onChange={(event) => setConfig(renameCustomPreset(config, index, event.target.value))}
-                  onBlur={(event) => setConfig(renameCustomPreset(config, index, event.target.value.trim() || `Custom ${index + 1}`))}
+                  onBlur={(event) => setConfig(renameCustomPreset(config, index, normalizePresetName(event.target.value, `Custom ${index + 1}`)))}
                 />
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
                 </button>
-                <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
+                <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => { if (window.confirm(`Replace the saved settings in “${preset.name}” with the current setup?`)) void saveCustomPreset(saveCurrentIntoCustomPreset(config, index, currentProfile(overlayPreviewConfig(config, activeOverlayId))), "Custom preset updated"); }} disabled={saving}>
                   <Save size={16} />
+                </button>
+                <button aria-label={`Move ${preset.name} up`} title="Move preset up" disabled={saving || index === 0} onClick={() => void saveCustomPreset(moveCustomPreset(config, index, -1), "Preset moved up")}><ArrowUp size={16} /></button>
+                <button aria-label={`Move ${preset.name} down`} title="Move preset down" disabled={saving || index === config.presets.custom.length - 1} onClick={() => void saveCustomPreset(moveCustomPreset(config, index, 1), "Preset moved down")}><ArrowDown size={16} /></button>
+                <button aria-label={`Duplicate ${preset.name}`} title="Duplicate preset" disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT} onClick={() => void saveCustomPreset(duplicateCustomPreset(config, index), "Preset duplicated")}>
+                  <Copy size={16} />
                 </button>
                 <button aria-label={`Delete ${preset.name}`} title="Delete preset" onClick={() => { if (window.confirm(`Delete preset “${preset.name}”?`)) void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted"); }} disabled={saving}>
                   <Trash2 size={16} />
@@ -1730,20 +1797,6 @@ function overlayPreviewConfig(config: OverlayConfig, overlayId: string): Overlay
   return next;
 }
 
-function activeLegacyWidgetEnabled(config: OverlayConfig, overlayId: string, key: keyof WidgetConfig): boolean {
-  const surface = legacySurfaceByWidgetKey[key];
-  if (!surface || !config.widgets[key]) {
-    return config.widgets[key];
-  }
-  const overlay = config.overlays.find((item) => item.id === overlayId);
-  return overlay ? overlay.widgets.includes(surface) : config.widgets[key];
-}
-
-function catalogSurfaceId(id: string): string {
-  const key = legacyWidgetById[id];
-  return key ? legacySurfaceByWidgetKey[key] ?? id : id;
-}
-
 function nextOverlayId(overlays: OverlayLayerConfig[]): string {
   const ids = new Set(overlays.map((overlay) => overlay.id));
   let ordinal = 1;
@@ -2126,29 +2179,6 @@ function legacySurfaceEnabled(widgets: WidgetConfig, surface: LayoutWidgetKey): 
   ));
 }
 
-function overlayIdUsedByOtherLayer(overlays: OverlayLayerConfig[], activeOverlayId: string, id: string): boolean {
-  return overlays.some((overlay) => overlay.id !== activeOverlayId && overlay.widgets.includes(id));
-}
-
-function syncExtraWidgetsWithOverlayMembership(config: OverlayConfig): OverlayConfig {
-  const usedIds = new Set(config.overlays.flatMap((overlay) => overlay.widgets));
-  const widgets = { ...config.widgets };
-  for (const id of usedIds) {
-    const key = legacyWidgetById[id];
-    if (key) {
-      widgets[key] = true;
-    }
-  }
-  return {
-    ...config,
-    widgets,
-    extra_widgets: Object.fromEntries(Object.entries(config.extra_widgets).map(([id, widget]) => [
-      id,
-      usedIds.has(id) ? { ...widget, enabled: true } : widget,
-    ])),
-  };
-}
-
 function setUnits<K extends keyof UnitsConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: UnitsConfig[K]) {
   setConfig({ ...config, units: { ...config.units, [key]: value } });
 }
@@ -2369,84 +2399,20 @@ function applyPerformanceMode(config: OverlayConfig, mode: string): OverlayConfi
   };
 }
 
-function addCustomPreset(config: OverlayConfig): OverlayConfig {
-  const nextPreset: CustomPresetConfig = {
-    name: `Custom ${config.presets.custom.length + 1}`,
-    profile: currentProfile(config),
-  };
-  return {
-    ...config,
-    presets: {
-      ...config.presets,
-      custom: [...config.presets.custom, nextPreset].slice(0, 32),
-    },
-  };
-}
-
-function renameCustomPreset(config: OverlayConfig, index: number, name: string): OverlayConfig {
-  return updateCustomPreset(config, index, (preset) => ({ ...preset, name }));
-}
-
-function saveCurrentIntoCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
-  return updateCustomPreset(config, index, (preset) => ({ ...preset, profile: currentProfile(config) }));
-}
-
-function deleteCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
-  return {
-    ...config,
-    presets: {
-      ...config.presets,
-      custom: config.presets.custom.filter((_, presetIndex) => presetIndex !== index),
-    },
-  };
-}
-
 function applyCustomPreset(config: OverlayConfig, index: number, overlayId?: string): OverlayConfig {
   const preset = config.presets.custom[index];
   if (!preset) {
     return config;
   }
-  return applyProfile(config, preset.profile, overlayId);
-}
-
-function updateCustomPreset(
-  config: OverlayConfig,
-  index: number,
-  update: (preset: CustomPresetConfig) => CustomPresetConfig,
-): OverlayConfig {
-  return {
-    ...config,
-    presets: {
-      ...config.presets,
-      custom: config.presets.custom.map((preset, presetIndex) => (presetIndex === index ? update(preset) : preset)),
-    },
-  };
+  return applyProfile(config, preset.profile, overlayId, false);
 }
 
 function pickWidgets(profile: PresetProfileConfig): WidgetConfig {
   return Object.fromEntries(widgetLabels.map(([key]) => [key, profile[key]])) as WidgetConfig;
 }
 
-function currentProfile(config: OverlayConfig): PresetProfileConfig {
-  return {
-    performance_mode: config.performance.mode,
-    reference_mode: config.timing.reference_mode,
-    mini_sectors: config.timing.mini_sectors,
-    style: structuredClone(config.style),
-    units: structuredClone(config.units),
-    coaching_config: structuredClone(config.coaching),
-    layout: structuredClone(config.layout),
-    extra_widgets: structuredClone(config.extra_widgets),
-    ...config.widgets,
-  };
-}
-
-function profilesMatch(left: PresetProfileConfig, right: PresetProfileConfig): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
-  const arranged = arrangeProfileLayout(profile);
+function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string, arrange = true): OverlayConfig {
+  const arranged = arrange ? arrangeProfileLayout(profile) : { layout: structuredClone(profile.layout), widgets: structuredClone(profile.extra_widgets), height: config.overlays.find((overlay) => overlay.id === overlayId)?.window.height ?? config.window.height };
   const next = applyPerformanceMode({
     ...config,
     timing: {
@@ -2483,7 +2449,7 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overl
           layout_overrides: layoutOverridesFromArrangedProfile(arranged.layout, arranged.widgets),
         }
       : overlay);
-  return syncExtraWidgetsWithOverlayMembership({ ...next, overlays });
+  return syncExtraWidgetsWithOverlayMembership(preserveOtherSurfaceWidgets(config, { ...next, overlays }, overlayId));
 }
 
 function arrangeProfileLayout(profile: PresetProfileConfig) {
