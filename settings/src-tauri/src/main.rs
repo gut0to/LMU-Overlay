@@ -585,8 +585,10 @@ mod ipc_tests {
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
             .build()
             .unwrap();
-        let mut future = OverlayConfig::default();
-        future.config_version = u32::MAX;
+        let future = OverlayConfig {
+            config_version: u32::MAX,
+            ..OverlayConfig::default()
+        };
         for (cmd, body) in [
             (
                 "save_config",

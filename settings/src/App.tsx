@@ -1,7 +1,27 @@
-import { legacyWidgetById, legacySurfaceByWidgetKey, catalogWidgetEnabled, setCatalogWidgets, activeLegacyWidgetEnabled, overlayIdUsedByOtherLayer } from "./widget-membership";
+import { useDraftPersistence } from "./useDraftPersistence";
+import {
+  legacySurfaceByWidgetKey,
+  catalogWidgetEnabled,
+  setCatalogWidgets,
+  preserveOtherSurfaceWidgets,
+  synchronizeWidgetMembership as syncExtraWidgetsWithOverlayMembership,
+  activeLegacyWidgetEnabled,
+  overlayIdUsedByOtherLayer,
+} from "./widget-membership";
 import { createDraft, findRecovery, type RecoveryDraft } from "./drafts";
 import { DraftStore } from "./draft-storage";
-import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, moveCustomPreset, normalizePresetName, CUSTOM_PRESET_LIMIT } from "./presets";
+import {
+  currentProfile,
+  profilesMatch,
+  addCustomPreset,
+  renameCustomPreset,
+  saveCurrentIntoCustomPreset,
+  deleteCustomPreset,
+  duplicateCustomPreset,
+  moveCustomPreset,
+  normalizePresetName,
+  CUSTOM_PRESET_LIMIT,
+} from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -174,7 +194,6 @@ const layoutLabels: Array<[LayoutWidgetKey, string]> = [
   ["performance", "Performance"],
 ];
 
-
 const colorLabels: Array<[keyof StyleConfig, string]> = [
   ["background", "Background"],
   ["border", "Border"],
@@ -342,17 +361,9 @@ function App() {
     }
   }, [workspace]);
 
-  useEffect(() => {
-    if (!config || !hydratedConfig.current || replacingConfig || recovery) return;
-    const serialized = JSON.stringify(config);
-    if (serialized === lastSavedConfig.current) {
-      setRecoveryError(draftStore.current.clear());
-      return;
-    }
-    try {
-      setRecoveryError(draftStore.current.write(createDraft(path, lastSavedConfig.current, config)));
-    } catch (error) { setRecoveryError(String(error)); }
-  }, [config, path, saving, replacingConfig, recovery]);
+  useDraftPersistence(config, path, lastSavedConfig.current,
+    hydratedConfig.current && !replacingConfig && !recovery,
+    draftStore.current, setRecoveryError);
 
   async function refreshOverlayStatus(): Promise<boolean> {
     return statusRequest.current.run(async () => {
@@ -868,7 +879,11 @@ function App() {
     return presetNames.find((name) => profilesMatch(profile, config.presets[name]));
   }, [config]);
 
-  const activeCustomPreset = useMemo(() => config ? config.presets.custom.findIndex((preset) => profilesMatch(currentProfile(overlayPreviewConfig(config, activeOverlayId)), preset.profile)) : -1, [config, activeOverlayId]);
+  const activeCustomPreset = useMemo(() => {
+    if (!config) return -1;
+    const profile = currentProfile(overlayPreviewConfig(config, activeOverlayId));
+    return config.presets.custom.findIndex((preset) => profilesMatch(profile, preset.profile));
+  }, [config, activeOverlayId]);
 
   if (!config) {
     return (
@@ -945,10 +960,11 @@ function App() {
           </span>
           </div>
         </div>
-      </header>
 
       {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
       {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
+
+      </header>
 
       <section className="sceneBar">
         <div className="sceneHeading">
@@ -2163,25 +2179,6 @@ function legacySurfaceEnabled(widgets: WidgetConfig, surface: LayoutWidgetKey): 
   ));
 }
 
-function syncExtraWidgetsWithOverlayMembership(config: OverlayConfig): OverlayConfig {
-  const usedIds = new Set(config.overlays.flatMap((overlay) => overlay.widgets));
-  const widgets = { ...config.widgets };
-  for (const id of usedIds) {
-    const key = legacyWidgetById[id];
-    if (key) {
-      widgets[key] = true;
-    }
-  }
-  return {
-    ...config,
-    widgets,
-    extra_widgets: Object.fromEntries(Object.entries(config.extra_widgets).map(([id, widget]) => [
-      id,
-      usedIds.has(id) ? { ...widget, enabled: true } : widget,
-    ])),
-  };
-}
-
 function setUnits<K extends keyof UnitsConfig>(config: OverlayConfig, setConfig: React.Dispatch<React.SetStateAction<OverlayConfig | null>>, key: K, value: UnitsConfig[K]) {
   setConfig({ ...config, units: { ...config.units, [key]: value } });
 }
@@ -2452,7 +2449,7 @@ function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overl
           layout_overrides: layoutOverridesFromArrangedProfile(arranged.layout, arranged.widgets),
         }
       : overlay);
-  return syncExtraWidgetsWithOverlayMembership({ ...next, overlays });
+  return syncExtraWidgetsWithOverlayMembership(preserveOtherSurfaceWidgets(config, { ...next, overlays }, overlayId));
 }
 
 function arrangeProfileLayout(profile: PresetProfileConfig) {

@@ -1188,8 +1188,18 @@ impl PresetConfig {
         self.minimal.normalize();
         self.custom.truncate(32);
         for (index, preset) in self.custom.iter_mut().enumerate() {
-            preset.name = preset.name.chars().filter(|ch| !ch.is_control()).collect::<String>().trim().chars().take(80).collect();
-            if preset.name.is_empty() { preset.name = format!("Custom {}", index + 1); }
+            preset.name = preset
+                .name
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect::<String>()
+                .trim()
+                .chars()
+                .take(80)
+                .collect();
+            if preset.name.is_empty() {
+                preset.name = format!("Custom {}", index + 1);
+            }
             preset.profile.normalize();
         }
     }
@@ -2073,8 +2083,14 @@ mod tests {
     fn normalizes_custom_preset_names_without_cutting_unicode() {
         let mut config = OverlayConfig::default();
         config.presets.custom = vec![
-            CustomPresetConfig { name: " \n\t ".into(), ..CustomPresetConfig::default() },
-            CustomPresetConfig { name: "é".repeat(100), ..CustomPresetConfig::default() },
+            CustomPresetConfig {
+                name: " \n\t ".into(),
+                ..CustomPresetConfig::default()
+            },
+            CustomPresetConfig {
+                name: "é".repeat(100),
+                ..CustomPresetConfig::default()
+            },
         ];
         config.normalize();
         assert_eq!(config.presets.custom[0].name, "Custom 1");

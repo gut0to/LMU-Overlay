@@ -1410,3 +1410,6 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .recoveryBanner, .recoveryWarning { grid-column: 1 / -1; margin: 16px 0 0; padding: 16px; border: 1px solid var(--amber); color: var(--ink); background: var(--surface); overflow-wrap: anywhere; }
 .recoveryBanner p { max-width: 76ch; margin: 8px 0 12px; color: var(--muted); }
 .recoveryWarning { border-color: var(--danger); font-size: 12px; }
+
+.topbar { flex-wrap: wrap; }
+.topbar > .recoveryWarning { flex-basis: 100%; margin-top: 0; }
