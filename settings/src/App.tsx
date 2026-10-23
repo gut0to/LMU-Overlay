@@ -362,6 +362,18 @@ function App() {
     }
   }, [workspace]);
 
+  useEffect(() => {
+    if (!config || !hydratedConfig.current || replacingConfig || recovery) return;
+    const serialized = JSON.stringify(config);
+    if (serialized === lastSavedConfig.current) {
+      setRecoveryError(draftStore.current.clear());
+      return;
+    }
+    try {
+      setRecoveryError(draftStore.current.write(createDraft(path, lastSavedConfig.current, config)));
+    } catch (error) { setRecoveryError(String(error)); }
+  }, [config, path, saving, replacingConfig, recovery]);
+
   async function refreshOverlayStatus(): Promise<boolean> {
     return statusRequest.current.run(async () => {
       try {
