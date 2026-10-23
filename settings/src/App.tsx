@@ -673,6 +673,12 @@ function App() {
     await persistConfig(next, successStatus);
   }
 
+  function setFilteredWidgets(enabled: boolean) {
+    const ids = filteredWidgetCatalog.filter((widget) => widget.status !== "Unavailable in current LMU interface").map((widget) => widget.id);
+    setConfig((current) => current ? setCatalogWidgets(current, activeOverlayId, ids, enabled) : current);
+    setStatus(`${enabled ? "Enabled" : "Disabled"} matching available widgets on the selected surface`);
+  }
+
   function setCatalogWidget(id: string, enabled: boolean) {
     setConfig((current) => current ? setCatalogWidgets(current, activeOverlayId, [id], enabled) : current);
   }
@@ -1223,6 +1229,10 @@ function App() {
             {(widgetSearch || widgetCategory !== "All") && <button className="secondaryButton" onClick={() => { setWidgetSearch(""); setWidgetCategory("All"); }}>Clear filters</button>}
             {widgetCatalog.length === 0 && <button className="secondaryButton" onClick={() => void loadWidgetCatalog()}>Retry loading widgets</button>}
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
+            <div className="buttonRow">
+              <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(true)}>Enable matching</button>
+              <button className="secondaryButton" disabled={saving || !filteredWidgetCatalog.some((widget) => widget.status !== "Unavailable in current LMU interface")} onClick={() => setFilteredWidgets(false)}>Disable matching</button>
+            </div>
             {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
             {filteredWidgetCatalog.map((widget) => {
               const enabled = catalogWidgetEnabled(config, activeOverlayId, widget.id);
