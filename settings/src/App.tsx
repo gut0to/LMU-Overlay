@@ -532,7 +532,7 @@ function App() {
       setSaving(true);
       setReplacingConfig(true);
       try {
-        const response = await invoke<LoadResponse>("reset_config");
+        const response = await invoke<LoadResponse>("reset_config", { expected_revision: revision.current });
         const normalized = normalizeUiConfig(response.config);
         lastSavedConfig.current = JSON.stringify(normalized);
         replaceConfig(normalized);

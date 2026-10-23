@@ -86,11 +86,16 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
 }
 
 #[tauri::command]
-fn reset_config() -> Result<ConfigResponse, String> {
-    let config: OverlayConfig =
+fn reset_config(expected_revision: u64) -> Result<ConfigResponse, String> {
+    let path = overlay_config_path();
+    reset_config_at(&path, expected_revision)?;
+    finish_saved_config(path, reload_overlay_config_after_save())
+}
+
+fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(), String> {
+    let mut config: OverlayConfig =
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
-    let revision = OverlayConfig::revision(overlay_config_path()).unwrap_or_default();
-    save_config(config, revision)
+    config.save_if_revision(path, expected_revision).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
