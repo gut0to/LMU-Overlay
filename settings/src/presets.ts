@@ -32,7 +32,7 @@ export const CUSTOM_PRESET_LIMIT = 32;
 export function addCustomPreset(config: OverlayConfig): OverlayConfig {
   if (config.presets.custom.length >= CUSTOM_PRESET_LIMIT) return config;
   const nextPreset: CustomPresetConfig = {
-    name: `Custom ${config.presets.custom.length + 1}`,
+    name: uniquePresetName(config.presets.custom, "Custom"),
     profile: currentProfile(config),
   };
   return {
@@ -76,3 +76,11 @@ function updateCustomPreset(
   };
 }
 
+
+/** Allocate a readable name even after deletions, imports or case-only renames. */
+export function uniquePresetName(presets: Pick<CustomPresetConfig, "name">[], base: string): string {
+  const names = new Set(presets.map((preset) => preset.name.trim().toLocaleLowerCase()));
+  let suffix = 1;
+  while (names.has(`${base} ${suffix}`.toLocaleLowerCase())) suffix++;
+  return `${base} ${suffix}`;
+}
