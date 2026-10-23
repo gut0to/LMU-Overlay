@@ -93,3 +93,11 @@ export function duplicateCustomPreset(config: OverlayConfig, index: number): Ove
   custom.splice(index + 1, 0, copy);
   return { ...config, presets: { ...config.presets, custom } };
 }
+
+export function moveCustomPreset(config: OverlayConfig, index: number, direction: -1 | 1): OverlayConfig {
+  const custom = [...config.presets.custom];
+  const target = index + direction;
+  if (!custom[index] || target < 0 || target >= custom.length) return config;
+  [custom[index], custom[target]] = [custom[target], custom[index]];
+  return { ...config, presets: { ...config.presets, custom } };
+}

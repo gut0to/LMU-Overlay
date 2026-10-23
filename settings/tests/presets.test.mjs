@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT, uniquePresetName, duplicateCustomPreset } from "../src/presets.ts";
+import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT, uniquePresetName, duplicateCustomPreset, moveCustomPreset } from "../src/presets.ts";
 
 test("preset identity ignores object insertion order, including nested widget maps", () => {
   assert.equal(profilesMatch({ style: { a: 1, b: 2 }, extra_widgets: {} }, { extra_widgets: {}, style: { b: 2, a: 1 } }), true);
@@ -33,4 +33,12 @@ test("duplicate inserts an independent profile immediately after its source", ()
   result.presets.custom[1].profile.style.opacity = 0.4;
   assert.equal(config.presets.custom[0].profile.style.opacity, 1);
   assert.equal(duplicateCustomPreset(config, -1), config);
+});
+
+test("reordering preserves all profiles and refuses moves past either end", () => {
+  const config = { presets: { custom: [{ name: "A" }, { name: "B" }, { name: "C" }] } };
+  assert.deepEqual(moveCustomPreset(config, 0, 1).presets.custom.map((p) => p.name), ["B", "A", "C"]);
+  assert.equal(moveCustomPreset(config, 0, -1), config);
+  assert.equal(moveCustomPreset(config, 2, 1), config);
+  assert.deepEqual(config.presets.custom.map((p) => p.name), ["A", "B", "C"]);
 });
