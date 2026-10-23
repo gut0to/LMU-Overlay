@@ -1,3 +1,4 @@
+import { currentProfile, profilesMatch } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -2425,24 +2426,6 @@ function updateCustomPreset(
 
 function pickWidgets(profile: PresetProfileConfig): WidgetConfig {
   return Object.fromEntries(widgetLabels.map(([key]) => [key, profile[key]])) as WidgetConfig;
-}
-
-function currentProfile(config: OverlayConfig): PresetProfileConfig {
-  return {
-    performance_mode: config.performance.mode,
-    reference_mode: config.timing.reference_mode,
-    mini_sectors: config.timing.mini_sectors,
-    style: structuredClone(config.style),
-    units: structuredClone(config.units),
-    coaching_config: structuredClone(config.coaching),
-    layout: structuredClone(config.layout),
-    extra_widgets: structuredClone(config.extra_widgets),
-    ...config.widgets,
-  };
-}
-
-function profilesMatch(left: PresetProfileConfig, right: PresetProfileConfig): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
