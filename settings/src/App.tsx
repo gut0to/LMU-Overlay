@@ -261,6 +261,7 @@ function App() {
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
+  const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
@@ -841,6 +842,10 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const filteredPresets = useMemo(() => config?.presets.custom
+    .map((preset, index) => ({ preset, index }))
+    .filter(({ preset }) => matchesSearch(preset.name, presetSearch)) ?? [], [config, presetSearch]);
+
   const activePreset = useMemo(() => {
     if (!config) {
       return null;
@@ -1259,8 +1264,10 @@ function App() {
             New from current
           </button>
           <p className="sectionNote">{config.presets.custom.length} of {CUSTOM_PRESET_LIMIT} saved presets. Delete a preset to free space when the list is full.</p>
+          <input type="search" className="presetSearch" aria-label="Search saved presets" placeholder="Search saved presets" value={presetSearch} onChange={(event) => setPresetSearch(event.target.value)} />
+          <p className="catalogSummary" role="status">{filteredPresets.length} matching saved presets</p>
           <div className="presetList">
-            {config.presets.custom.map((preset, index) => (
+            {filteredPresets.map(({ preset, index }) => (
               <div className="presetItem" key={index}>
                 <input
                   disabled={saving}
