@@ -324,16 +324,16 @@ function App() {
     const saveShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (!saving && !event.repeat) void saveConfig();
+        if (!saving && !recovery && !event.repeat) void saveConfig();
       }
     };
     window.addEventListener("keydown", saveShortcut);
     return () => window.removeEventListener("keydown", saveShortcut);
-  }, [saving]);
+  }, [saving, recovery]);
 
   useEffect(() => {
     const handleHistory = (event: KeyboardEvent) => {
-      if (saving || replacingConfig || editingGesture) return;
+      if (saving || replacingConfig || editingGesture || recovery) return;
       const target = event.target;
       const editingText = target instanceof HTMLElement && (target.isContentEditable || Boolean(target.closest("input, textarea, select, [role='textbox']")));
       const action = historyShortcut(event, editingText);
@@ -342,7 +342,7 @@ function App() {
     };
     window.addEventListener("keydown", handleHistory);
     return () => window.removeEventListener("keydown", handleHistory);
-  }, [saving, replacingConfig, editingGesture, canUndo, canRedo, undo, redo]);
+  }, [saving, replacingConfig, editingGesture, recovery, canUndo, canRedo, undo, redo]);
 
   useEffect(() => {
     const protectEdits = (event: BeforeUnloadEvent) => {
@@ -906,6 +906,18 @@ function App() {
     );
   }
 
+  if (recovery) return (
+    <main className="shell loading" aria-busy={replacingConfig}>
+      <section className="recoveryBanner" aria-label="Recover unsaved settings">
+        <strong>Unsaved settings from {new Date(recovery.draft.savedAt).toLocaleString()}</strong>
+        <p>{recovery.conflict ? "The configuration file has changed since this draft was created. Restoring will replace the current editor settings." : "A previous editing session left a local draft. Review it before continuing."}</p>
+        <div className="buttonRow"><button className="primaryButton" disabled={replacingConfig} onClick={() => void restoreRecovery()}>Restore draft for review</button>
+        <button className="secondaryButton" disabled={replacingConfig} onClick={() => { setRecoveryError(draftStore.current.clear()); setRecovery(null); setStatus("Local draft discarded; configuration file kept"); }}>Discard draft</button></div>
+        {recoveryError && <p role="status">{recoveryError}</p>}
+      </section>
+    </main>
+  );
+
   const statusNeedsAttention = /could not|did not|failed|error|conflict|invalid/i.test(status);
   const hasPendingChanges = JSON.stringify(config) !== lastSavedConfig.current;
 
@@ -961,11 +973,6 @@ function App() {
         </div>
       </header>
 
-      {recovery && <section className="recoveryBanner" aria-label="Recover unsaved settings">
-        <strong>Unsaved settings from {new Date(recovery.draft.savedAt).toLocaleString()}</strong>
-        <p>{recovery.conflict ? "The configuration file has changed since this draft was created. Restoring will replace the current editor settings." : "A previous editing session left a local draft. Review it before continuing."}</p>
-        <button className="primaryButton" disabled={replacingConfig} onClick={() => void restoreRecovery()}>Restore draft for review</button>
-      </section>}
       {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
       {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
 
