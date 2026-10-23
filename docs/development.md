@@ -86,3 +86,16 @@ History hook integration tests render the real hook with the React 18 test
 renderer, covering batched functional updates and stable action identities.
 This renderer is a development-only dependency; it does not replace visual or
 native-window smoke testing.
+
+## Recovery, Presets and Bulk Membership Regressions
+
+`npm test` covers draft expiry, malformed envelopes, file identity, external edit
+conflicts, unavailable storage, immutable preset lifecycle operations and shared
+widget membership. Native Settings tests validate candidates without persistence
+and verify that a stale defaults reset leaves external file bytes untouched.
+
+For manual verification, leave an unsaved edit (for example after a deliberate
+revision conflict), reopen Settings and inspect the recovery choice. Restore it,
+check that the file stays unchanged until Save, then test Undo, explicit Save and
+Discard. Also test two surfaces sharing a widget before using filtered bulk
+visibility controls. These tests complement the manual LMU driving checks.
