@@ -1,3 +1,5 @@
+import { createDraft, findRecovery, type RecoveryDraft } from "./drafts";
+import { DraftStore } from "./draft-storage";
 import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, moveCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -247,6 +249,10 @@ function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
   const revision = useRef(0);
+  const draftStore = useRef(new DraftStore(() => window.localStorage));
+  const recoveryChecked = useRef(false);
+  const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const configTasks = useRef(new ConfigTasks());
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
@@ -399,6 +405,12 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config loaded", response.reload_warning).message);
+        if (!recoveryChecked.current) {
+          const stored = draftStore.current.read();
+          setRecoveryError(stored.error);
+          setRecovery(findRecovery(stored.raw, response.path, normalized));
+          recoveryChecked.current = true;
+        }
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -920,6 +932,12 @@ function App() {
           </div>
         </div>
       </header>
+
+      {recovery && <section className="recoveryBanner" aria-label="Recover unsaved settings">
+        <strong>Unsaved settings from {new Date(recovery.draft.savedAt).toLocaleString()}</strong>
+        <p>{recovery.conflict ? "The configuration file has changed since this draft was created. Restoring will replace the current editor settings." : "A previous editing session left a local draft. Review it before continuing."}</p>
+      </section>}
+      {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
 
       <section className="sceneBar">
         <div className="sceneHeading">
