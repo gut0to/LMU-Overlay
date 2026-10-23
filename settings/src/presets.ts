@@ -84,3 +84,12 @@ export function uniquePresetName(presets: Pick<CustomPresetConfig, "name">[], ba
   while (names.has(`${base} ${suffix}`.toLocaleLowerCase())) suffix++;
   return `${base} ${suffix}`;
 }
+
+export function duplicateCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
+  const source = config.presets.custom[index];
+  if (!source || config.presets.custom.length >= CUSTOM_PRESET_LIMIT) return config;
+  const copy = { name: uniquePresetName(config.presets.custom, `${source.name} copy`), profile: structuredClone(source.profile) };
+  const custom = [...config.presets.custom];
+  custom.splice(index + 1, 0, copy);
+  return { ...config, presets: { ...config.presets, custom } };
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT, uniquePresetName } from "../src/presets.ts";
+import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT, uniquePresetName, duplicateCustomPreset } from "../src/presets.ts";
 
 test("preset identity ignores object insertion order, including nested widget maps", () => {
   assert.equal(profilesMatch({ style: { a: 1, b: 2 }, extra_widgets: {} }, { extra_widgets: {}, style: { b: 2, a: 1 } }), true);
@@ -24,4 +24,13 @@ test("creating beyond the preset limit leaves existing profiles untouched", () =
 
 test("new names fill gaps and avoid case-insensitive collisions", () => {
   assert.equal(uniquePresetName([{ name: "CUSTOM 1" }, { name: "Custom 3" }], "Custom"), "Custom 2");
+});
+
+test("duplicate inserts an independent profile immediately after its source", () => {
+  const config = { presets: { custom: [{ name: "Race", profile: { style: { opacity: 1 } } }, { name: "Practice", profile: {} }] } };
+  const result = duplicateCustomPreset(config, 0);
+  assert.deepEqual(result.presets.custom.map((p) => p.name), ["Race", "Race copy 1", "Practice"]);
+  result.presets.custom[1].profile.style.opacity = 0.4;
+  assert.equal(config.presets.custom[0].profile.style.opacity, 1);
+  assert.equal(duplicateCustomPreset(config, -1), config);
 });
