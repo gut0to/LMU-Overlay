@@ -1,4 +1,4 @@
-import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset } from "./presets";
+import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -1252,10 +1252,11 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
-          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config), "Custom preset created")} disabled={saving}>
+          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config), "Custom preset created")} disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT}>
             <Plus size={18} />
             New from current
           </button>
+          <p className="sectionNote">{config.presets.custom.length} of {CUSTOM_PRESET_LIMIT} saved presets. Delete a preset to free space when the list is full.</p>
           <div className="presetList">
             {config.presets.custom.map((preset, index) => (
               <div className="presetItem" key={index}>
