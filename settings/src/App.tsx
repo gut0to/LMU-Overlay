@@ -1,4 +1,4 @@
-import { legacyWidgetById, legacySurfaceByWidgetKey, activeLegacyWidgetEnabled, catalogSurfaceId, overlayIdUsedByOtherLayer } from "./widget-membership";
+import { legacyWidgetById, legacySurfaceByWidgetKey, catalogWidgetEnabled, setCatalogWidgets, activeLegacyWidgetEnabled, overlayIdUsedByOtherLayer } from "./widget-membership";
 import { createDraft, findRecovery, type RecoveryDraft } from "./drafts";
 import { DraftStore } from "./draft-storage";
 import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, moveCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
@@ -674,27 +674,7 @@ function App() {
   }
 
   function setCatalogWidget(id: string, enabled: boolean) {
-    const legacy = legacyWidgetById[id];
-    const surface = catalogSurfaceId(id);
-    setConfig((current) => {
-      if (!current) {
-        return current;
-      }
-      const overlays = current.overlays.map((overlay) => overlay.id === activeOverlayId
-        ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, surface])] : overlay.widgets.filter((widget) => widget !== surface) }
-        : overlay);
-      const usedElsewhere = overlayIdUsedByOtherLayer(overlays, activeOverlayId, surface);
-      let next = legacy
-        ? { ...current, widgets: { ...current.widgets, [legacy]: enabled || usedElsewhere } }
-        : current.extra_widgets[id]
-          ? { ...current, extra_widgets: { ...current.extra_widgets, [id]: { ...current.extra_widgets[id], enabled: enabled || usedElsewhere } } }
-          : current;
-      next = {
-        ...next,
-        overlays,
-      };
-      return next;
-    });
+    setConfig((current) => current ? setCatalogWidgets(current, activeOverlayId, [id], enabled) : current);
   }
 
   function addOverlayLayer() {
@@ -1245,13 +1225,7 @@ function App() {
             <p className="catalogSummary" role="status">{filteredWidgetCatalog.length} of {widgetCatalog.length} widgets</p>
             {filteredWidgetCatalog.length === 0 && <p className="previewHint">No widgets match. Try another search or choose All categories.</p>}
             {filteredWidgetCatalog.map((widget) => {
-              const legacy = legacyWidgetById[widget.id];
-              const activeOverlay = config.overlays.find((overlay) => overlay.id === activeOverlayId);
-              const surface = catalogSurfaceId(widget.id);
-              const globallyEnabled = legacy ? activeLegacyWidgetEnabled(config, activeOverlayId, legacy) : config.extra_widgets[widget.id]?.enabled ?? false;
-              const enabled = activeOverlay
-                ? activeOverlay.widgets.includes(surface) && globallyEnabled
-                : globallyEnabled;
+              const enabled = catalogWidgetEnabled(config, activeOverlayId, widget.id);
               return (
                 <label className="widgetCatalogRow" key={widget.id}>
                   <input type="checkbox" checked={enabled} disabled={widget.status === "Unavailable in current LMU interface"} onChange={(event) => setCatalogWidget(widget.id, event.target.checked)} />

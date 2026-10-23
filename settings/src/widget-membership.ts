@@ -48,3 +48,29 @@ export function overlayIdUsedByOtherLayer(overlays: OverlayLayerConfig[], active
   return overlays.some((overlay) => overlay.id !== activeOverlayId && overlay.widgets.includes(id));
 }
 
+
+export function catalogWidgetEnabled(config: OverlayConfig, overlayId: string, id: string): boolean {
+  const legacy = legacyWidgetById[id];
+  const globallyEnabled = legacy ? config.widgets[legacy] : config.extra_widgets[id]?.enabled ?? false;
+  const overlay = config.overlays.find((item) => item.id === overlayId);
+  return Boolean(globallyEnabled && (overlay ? overlay.widgets.includes(catalogSurfaceId(id)) : true));
+}
+
+/** Change membership once for an entire selection, keeping other surfaces alive. */
+export function setCatalogWidgets(config: OverlayConfig, overlayId: string, ids: string[], enabled: boolean): OverlayConfig {
+  if (!config.overlays.some((overlay) => overlay.id === overlayId)) return config;
+  let next = config;
+  for (const id of new Set(ids)) {
+    const legacy = legacyWidgetById[id];
+    if (!legacy && !config.extra_widgets[id]) continue;
+    const surface = catalogSurfaceId(id);
+    const overlays = next.overlays.map((overlay) => overlay.id === overlayId
+      ? { ...overlay, widgets: enabled ? [...new Set([...overlay.widgets, surface])] : overlay.widgets.filter((widget) => widget !== surface) }
+      : overlay);
+    const needed = enabled || overlayIdUsedByOtherLayer(overlays, overlayId, surface);
+    next = legacy
+      ? { ...next, widgets: { ...next.widgets, [legacy]: needed }, overlays }
+      : { ...next, extra_widgets: { ...next.extra_widgets, [id]: { ...next.extra_widgets[id], enabled: needed } }, overlays };
+  }
+  return next;
+}
