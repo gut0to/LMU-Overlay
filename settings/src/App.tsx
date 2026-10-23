@@ -854,7 +854,7 @@ function App() {
     return presetNames.find((name) => profilesMatch(profile, config.presets[name]));
   }, [config]);
 
-  const activeCustomPreset = useMemo(() => config ? config.presets.custom.findIndex((preset) => profilesMatch(currentProfile(config), preset.profile)) : -1, [config]);
+  const activeCustomPreset = useMemo(() => config ? config.presets.custom.findIndex((preset) => profilesMatch(currentProfile(overlayPreviewConfig(config, activeOverlayId)), preset.profile)) : -1, [config, activeOverlayId]);
 
   if (!config) {
     return (
@@ -1261,7 +1261,7 @@ function App() {
         </Section>}
 
         {showPanel(activePage, "Dashboard", "Presets") && <Section icon={<Plus />} title="Custom Presets">
-          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config), "Custom preset created")} disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT}>
+          <button className="primaryButton wide" onClick={() => void saveCustomPreset(addCustomPreset(config, currentProfile(overlayPreviewConfig(config, activeOverlayId))), "Custom preset created")} disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT}>
             <Plus size={18} />
             New from current
           </button>
@@ -1283,7 +1283,7 @@ function App() {
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
                 </button>
-                <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => { if (window.confirm(`Replace the saved settings in “${preset.name}” with the current setup?`)) void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated"); }} disabled={saving}>
+                <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => { if (window.confirm(`Replace the saved settings in “${preset.name}” with the current setup?`)) void saveCustomPreset(saveCurrentIntoCustomPreset(config, index, currentProfile(overlayPreviewConfig(config, activeOverlayId))), "Custom preset updated"); }} disabled={saving}>
                   <Save size={16} />
                 </button>
                 <button aria-label={`Move ${preset.name} up`} title="Move preset up" disabled={saving || index === 0} onClick={() => void saveCustomPreset(moveCustomPreset(config, index, -1), "Preset moved up")}><ArrowUp size={16} /></button>
@@ -2393,15 +2393,15 @@ function applyCustomPreset(config: OverlayConfig, index: number, overlayId?: str
   if (!preset) {
     return config;
   }
-  return applyProfile(config, preset.profile, overlayId);
+  return applyProfile(config, preset.profile, overlayId, false);
 }
 
 function pickWidgets(profile: PresetProfileConfig): WidgetConfig {
   return Object.fromEntries(widgetLabels.map(([key]) => [key, profile[key]])) as WidgetConfig;
 }
 
-function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string): OverlayConfig {
-  const arranged = arrangeProfileLayout(profile);
+function applyProfile(config: OverlayConfig, profile: PresetProfileConfig, overlayId?: string, arrange = true): OverlayConfig {
+  const arranged = arrange ? arrangeProfileLayout(profile) : { layout: structuredClone(profile.layout), widgets: structuredClone(profile.extra_widgets), height: config.overlays.find((overlay) => overlay.id === overlayId)?.window.height ?? config.window.height };
   const next = applyPerformanceMode({
     ...config,
     timing: {

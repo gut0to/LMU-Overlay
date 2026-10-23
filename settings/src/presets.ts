@@ -29,11 +29,11 @@ function canonicalJson(value: unknown): string {
 
 export const CUSTOM_PRESET_LIMIT = 32;
 
-export function addCustomPreset(config: OverlayConfig): OverlayConfig {
+export function addCustomPreset(config: OverlayConfig, profile?: PresetProfileConfig): OverlayConfig {
   if (config.presets.custom.length >= CUSTOM_PRESET_LIMIT) return config;
   const nextPreset: CustomPresetConfig = {
     name: uniquePresetName(config.presets.custom, "Custom"),
-    profile: currentProfile(config),
+    profile: structuredClone(profile ?? currentProfile(config)),
   };
   return {
     ...config,
@@ -48,8 +48,8 @@ export function renameCustomPreset(config: OverlayConfig, index: number, name: s
   return updateCustomPreset(config, index, (preset) => ({ ...preset, name }));
 }
 
-export function saveCurrentIntoCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
-  return updateCustomPreset(config, index, (preset) => ({ ...preset, profile: currentProfile(config) }));
+export function saveCurrentIntoCustomPreset(config: OverlayConfig, index: number, profile = currentProfile(config)): OverlayConfig {
+  return updateCustomPreset(config, index, (preset) => ({ ...preset, profile: structuredClone(profile) }));
 }
 
 export function deleteCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
@@ -67,6 +67,7 @@ function updateCustomPreset(
   index: number,
   update: (preset: CustomPresetConfig) => CustomPresetConfig,
 ): OverlayConfig {
+  if (!config.presets.custom[index]) return config;
   return {
     ...config,
     presets: {
