@@ -261,6 +261,8 @@ function App() {
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
   const reloadWarning = useRef<string | null>(null);
+  const configPath = useRef(path);
+  configPath.current = path;
   const currentConfig = useRef(config);
   currentConfig.current = config;
 
@@ -321,7 +323,9 @@ function App() {
 
   useEffect(() => {
     const protectEdits = (event: BeforeUnloadEvent) => {
-      if (hydratedConfig.current && JSON.stringify(currentConfig.current) !== lastSavedConfig.current) {
+      if (hydratedConfig.current && currentConfig.current && JSON.stringify(currentConfig.current) !== lastSavedConfig.current) {
+        try { draftStore.current.write(createDraft(configPath.current, lastSavedConfig.current, currentConfig.current)); }
+        catch { /* Keep the browser's unsaved-change protection if local recovery fails. */ }
         event.preventDefault();
         event.returnValue = "";
       }
