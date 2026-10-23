@@ -61,6 +61,14 @@ fn default_config() -> Result<OverlayConfig, String> {
     Ok(config)
 }
 
+/// Validate a recovery candidate without writing the file or contacting the host.
+#[tauri::command]
+fn validate_config(mut config: OverlayConfig) -> Result<OverlayConfig, String> {
+    config.validate_for_save().map_err(|error| error.to_string())?;
+    config.normalize();
+    Ok(config)
+}
+
 #[tauri::command]
 fn export_config(mut config: OverlayConfig) -> Result<String, String> {
     config.normalize();
@@ -482,6 +490,7 @@ fn main() {
             load_config,
             save_config,
             default_config,
+            validate_config,
             export_config,
             import_config,
             reset_config,
