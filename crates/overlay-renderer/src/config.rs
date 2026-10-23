@@ -2070,6 +2070,18 @@ mod tests {
     }
 
     #[test]
+    fn normalizes_custom_preset_names_without_cutting_unicode() {
+        let mut config = OverlayConfig::default();
+        config.presets.custom = vec![
+            CustomPresetConfig { name: " \n\t ".into(), ..CustomPresetConfig::default() },
+            CustomPresetConfig { name: "é".repeat(100), ..CustomPresetConfig::default() },
+        ];
+        config.normalize();
+        assert_eq!(config.presets.custom[0].name, "Custom 1");
+        assert_eq!(config.presets.custom[1].name.chars().count(), 80);
+    }
+
+    #[test]
     fn normalizes_risky_values() {
         let mut config = OverlayConfig {
             config_version: 0,

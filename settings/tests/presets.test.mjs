@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT, uniquePresetName, duplicateCustomPreset, moveCustomPreset } from "../src/presets.ts";
+import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT, uniquePresetName, duplicateCustomPreset, moveCustomPreset, normalizePresetName, renameCustomPreset, deleteCustomPreset, saveCurrentIntoCustomPreset } from "../src/presets.ts";
 
 test("preset identity ignores object insertion order, including nested widget maps", () => {
   assert.equal(profilesMatch({ style: { a: 1, b: 2 }, extra_widgets: {} }, { extra_widgets: {}, style: { b: 2, a: 1 } }), true);
@@ -41,4 +41,26 @@ test("reordering preserves all profiles and refuses moves past either end", () =
   assert.equal(moveCustomPreset(config, 0, -1), config);
   assert.equal(moveCustomPreset(config, 2, 1), config);
   assert.deepEqual(config.presets.custom.map((p) => p.name), ["A", "B", "C"]);
+});
+
+test("names stay readable and duplicate suffixes fit the native character limit", () => {
+  assert.equal(normalizePresetName(" \nRace\t ", "Custom 1"), "Race");
+  assert.equal(normalizePresetName(" \n ", "Custom 1"), "Custom 1");
+  assert.equal(Array.from(normalizePresetName("🏎️".repeat(90), "Custom")).length, 80);
+  const name = uniquePresetName([], "Long".repeat(40));
+  assert.equal(Array.from(name).length, 80);
+  assert.notEqual(uniquePresetName([{ name }], "Long".repeat(40)), name);
+});
+
+test("rename, overwrite and delete do not mutate earlier preset snapshots", () => {
+  const profile = { style: { opacity: 0.8 } };
+  const initial = { presets: { custom: [{ name: "Race", profile: { style: { opacity: 1 } } }] } };
+  const renamed = renameCustomPreset(initial, 0, "Wet race");
+  const updated = saveCurrentIntoCustomPreset(renamed, 0, profile);
+  profile.style.opacity = 0.1;
+  assert.equal(updated.presets.custom[0].profile.style.opacity, 0.8);
+  assert.equal(initial.presets.custom[0].name, "Race");
+  assert.equal(initial.presets.custom[0].profile.style.opacity, 1);
+  assert.deepEqual(deleteCustomPreset(updated, 0).presets.custom, []);
+  assert.equal(renameCustomPreset(initial, 99, "Invalid"), initial);
 });
