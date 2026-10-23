@@ -854,6 +854,8 @@ function App() {
     return presetNames.find((name) => profilesMatch(profile, config.presets[name]));
   }, [config]);
 
+  const activeCustomPreset = useMemo(() => config ? config.presets.custom.findIndex((preset) => profilesMatch(currentProfile(config), preset.profile)) : -1, [config]);
+
   if (!config) {
     return (
       <main className="shell loading" role="status" aria-live="polite">
@@ -936,7 +938,7 @@ function App() {
             </button>
           ))}
           {config.presets.custom.map((preset, index) => (
-            <button key={`custom-${index}`} className="customScene" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
+            <button key={`custom-${index}`} className={`customScene ${activeCustomPreset === index ? "selected" : ""}`} aria-pressed={activeCustomPreset === index} onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
               {preset.name || `Custom ${index + 1}`}
             </button>
           ))}
@@ -1268,7 +1270,7 @@ function App() {
           <p className="catalogSummary" role="status">{filteredPresets.length} matching saved presets</p>
           <div className="presetList">
             {filteredPresets.map(({ preset, index }) => (
-              <div className="presetItem" key={index}>
+              <div className="presetItem" key={index} data-active={activeCustomPreset === index}>
                 <input
                   disabled={saving}
                   aria-label={`Preset ${index + 1} name`}
