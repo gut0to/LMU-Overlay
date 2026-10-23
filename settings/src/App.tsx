@@ -418,6 +418,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config loaded", response.reload_warning).message);
+        failedSave.current = null;
+        setPauseAutosave(false);
         if (!recoveryChecked.current) {
           const stored = draftStore.current.read();
           setRecoveryError(stored.error);
@@ -532,6 +534,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config imported", response.reload_warning).message);
+        failedSave.current = null;
+        setPauseAutosave(false);
       } catch (error) {
         setStatus(String(error));
       } finally {
@@ -561,6 +565,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config reset", response.reload_warning).message);
+        failedSave.current = null;
+        setPauseAutosave(false);
       } catch (error) {
         setStatus(String(error));
       } finally {
