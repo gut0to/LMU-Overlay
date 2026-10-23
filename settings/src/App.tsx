@@ -1,4 +1,4 @@
-import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
+import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset, duplicateCustomPreset, CUSTOM_PRESET_LIMIT } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -1272,6 +1272,9 @@ function App() {
                 </button>
                 <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
                   <Save size={16} />
+                </button>
+                <button aria-label={`Duplicate ${preset.name}`} title="Duplicate preset" disabled={saving || config.presets.custom.length >= CUSTOM_PRESET_LIMIT} onClick={() => void saveCustomPreset(duplicateCustomPreset(config, index), "Preset duplicated")}>
+                  <Copy size={16} />
                 </button>
                 <button aria-label={`Delete ${preset.name}`} title="Delete preset" onClick={() => { if (window.confirm(`Delete preset “${preset.name}”?`)) void saveCustomPreset(deleteCustomPreset(config, index), "Custom preset deleted"); }} disabled={saving}>
                   <Trash2 size={16} />
