@@ -1268,6 +1268,8 @@ function App() {
           <p className="sectionNote">{config.presets.custom.length} of {CUSTOM_PRESET_LIMIT} saved presets. Delete a preset to free space when the list is full.</p>
           <input type="search" className="presetSearch" aria-label="Search saved presets" placeholder="Search saved presets" value={presetSearch} onChange={(event) => setPresetSearch(event.target.value)} />
           <p className="catalogSummary" role="status">{filteredPresets.length} matching saved presets</p>
+          {config.presets.custom.length === 0 && <p className="previewHint">Save your current setup to reuse its widgets, appearance and timing settings.</p>}
+          {config.presets.custom.length > 0 && filteredPresets.length === 0 && <div className="buttonRow"><p className="previewHint">No saved presets match this search.</p><button className="secondaryButton" onClick={() => setPresetSearch("")}>Clear preset search</button></div>}
           <div className="presetList">
             {filteredPresets.map(({ preset, index }) => (
               <div className="presetItem" key={index} data-active={activeCustomPreset === index}>
@@ -1281,7 +1283,7 @@ function App() {
                 <button title="Apply preset" onClick={() => void applyCustomPresetAndSave(index)} disabled={saving}>
                   Apply
                 </button>
-                <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated")} disabled={saving}>
+                <button aria-label={`Save current into ${preset.name}`} title="Save current into preset" onClick={() => { if (window.confirm(`Replace the saved settings in “${preset.name}” with the current setup?`)) void saveCustomPreset(saveCurrentIntoCustomPreset(config, index), "Custom preset updated"); }} disabled={saving}>
                   <Save size={16} />
                 </button>
                 <button aria-label={`Move ${preset.name} up`} title="Move preset up" disabled={saving || index === 0} onClick={() => void saveCustomPreset(moveCustomPreset(config, index, -1), "Preset moved up")}><ArrowUp size={16} /></button>
