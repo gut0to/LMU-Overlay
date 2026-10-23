@@ -1226,6 +1226,7 @@ dependencies = [
  "host-protocol",
  "overlay-renderer",
  "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
  "toml 0.8.23",

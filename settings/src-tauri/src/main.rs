@@ -41,7 +41,7 @@ fn load_config() -> Result<ConfigResponse, String> {
     Ok(ConfigResponse::new(path, config))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn save_config(
     mut config: OverlayConfig,
     expected_revision: u64,
@@ -77,7 +77,7 @@ fn export_config(mut config: OverlayConfig) -> Result<String, String> {
     toml::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse, String> {
     let mut config: OverlayConfig = toml::from_str(&text).map_err(|error| error.to_string())?;
     let path = overlay_config_path();
@@ -87,7 +87,7 @@ fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse,
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 fn reset_config(expected_revision: u64) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     reset_config_at(&path, expected_revision)?;
@@ -99,6 +99,7 @@ fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(),
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
     config
         .save_if_revision(path, expected_revision)
+        .map(|_| ())
         .map_err(|error| error.to_string())
 }
 
@@ -564,4 +565,54 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("failed to run HashOverlay settings");
+}
+
+#[cfg(test)]
+mod ipc_tests {
+    use super::*;
+    use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+
+    #[test]
+    fn frontend_revision_arguments_reach_save_and_import_validation() {
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![
+                save_config,
+                import_config,
+                validate_config
+            ])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let mut future = OverlayConfig::default();
+        future.config_version = u32::MAX;
+        for (cmd, body) in [
+            (
+                "save_config",
+                serde_json::json!({ "config": future, "expected_revision": 0 }),
+            ),
+            (
+                "import_config",
+                serde_json::json!({ "text": "not valid TOML", "expected_revision": 0 }),
+            ),
+        ] {
+            let error = get_ipc_response(
+                &webview,
+                tauri::webview::InvokeRequest {
+                    cmd: cmd.into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "http://tauri.localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: INVOKE_KEY.into(),
+                },
+            )
+            .unwrap_err()
+            .to_string();
+            assert!(!error.contains("invalid args"), "{cmd}: {error}");
+            assert!(!error.contains("missing required key"), "{cmd}: {error}");
+        }
+    }
 }
