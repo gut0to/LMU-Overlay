@@ -4,7 +4,8 @@ type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 /** Browser storage may fail at access time or during any operation. */
 export class DraftStore {
-  constructor(private readonly storage: () => DraftStorage) {}
+  private readonly storage: () => DraftStorage;
+  constructor(storage: () => DraftStorage) { this.storage = storage; }
 
   read(): { raw: string | null; error: string | null } {
     try { return { raw: this.storage().getItem(DRAFT_STORAGE_KEY), error: null }; }
