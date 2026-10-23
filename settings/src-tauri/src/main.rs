@@ -446,6 +446,23 @@ mod save_feedback_tests {
     use super::*;
 
     #[test]
+    fn reset_preserves_external_edits_and_accepts_the_latest_revision() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-reset-conflict-{}.toml", std::process::id()));
+        let mut config = OverlayConfig::default();
+        config.save(&path).unwrap();
+        let stale = OverlayConfig::revision(&path).unwrap();
+        config.window.x = 123;
+        config.save(&path).unwrap();
+        let external = fs::read(&path).unwrap();
+        assert!(reset_config_at(&path, stale).is_err());
+        assert_eq!(fs::read(&path).unwrap(), external);
+        let latest = OverlayConfig::revision(&path).unwrap();
+        reset_config_at(&path, latest).unwrap();
+        assert_eq!(OverlayConfig::load(&path).unwrap().window.x, OverlayConfig::default().window.x);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn recovery_validation_normalizes_geometry_without_accepting_future_schemas() {
         let mut candidate = OverlayConfig::default();
         candidate.window.width = 0;
