@@ -1,4 +1,4 @@
-import { currentProfile, profilesMatch } from "./presets";
+import { currentProfile, profilesMatch, addCustomPreset, renameCustomPreset, saveCurrentIntoCustomPreset, deleteCustomPreset } from "./presets";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
@@ -35,7 +35,6 @@ import { captureHotkey, normalizeHotkey } from "./hotkeys";
 import { restoreWorkspace, type WorkspaceSize } from "./workspace";
 import type {
   CoachingConfig,
-  CustomPresetConfig,
   HotkeyConfig,
   LayoutConfig,
   LayoutSelection,
@@ -2370,58 +2369,12 @@ function applyPerformanceMode(config: OverlayConfig, mode: string): OverlayConfi
   };
 }
 
-function addCustomPreset(config: OverlayConfig): OverlayConfig {
-  const nextPreset: CustomPresetConfig = {
-    name: `Custom ${config.presets.custom.length + 1}`,
-    profile: currentProfile(config),
-  };
-  return {
-    ...config,
-    presets: {
-      ...config.presets,
-      custom: [...config.presets.custom, nextPreset].slice(0, 32),
-    },
-  };
-}
-
-function renameCustomPreset(config: OverlayConfig, index: number, name: string): OverlayConfig {
-  return updateCustomPreset(config, index, (preset) => ({ ...preset, name }));
-}
-
-function saveCurrentIntoCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
-  return updateCustomPreset(config, index, (preset) => ({ ...preset, profile: currentProfile(config) }));
-}
-
-function deleteCustomPreset(config: OverlayConfig, index: number): OverlayConfig {
-  return {
-    ...config,
-    presets: {
-      ...config.presets,
-      custom: config.presets.custom.filter((_, presetIndex) => presetIndex !== index),
-    },
-  };
-}
-
 function applyCustomPreset(config: OverlayConfig, index: number, overlayId?: string): OverlayConfig {
   const preset = config.presets.custom[index];
   if (!preset) {
     return config;
   }
   return applyProfile(config, preset.profile, overlayId);
-}
-
-function updateCustomPreset(
-  config: OverlayConfig,
-  index: number,
-  update: (preset: CustomPresetConfig) => CustomPresetConfig,
-): OverlayConfig {
-  return {
-    ...config,
-    presets: {
-      ...config.presets,
-      custom: config.presets.custom.map((preset, presetIndex) => (presetIndex === index ? update(preset) : preset)),
-    },
-  };
 }
 
 function pickWidgets(profile: PresetProfileConfig): WidgetConfig {

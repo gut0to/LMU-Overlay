@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { currentProfile, profilesMatch } from "../src/presets.ts";
+import { currentProfile, profilesMatch, addCustomPreset, CUSTOM_PRESET_LIMIT } from "../src/presets.ts";
 
 test("preset identity ignores object insertion order, including nested widget maps", () => {
   assert.equal(profilesMatch({ style: { a: 1, b: 2 }, extra_widgets: {} }, { extra_widgets: {}, style: { b: 2, a: 1 } }), true);
@@ -15,4 +15,9 @@ test("captured profiles own their nested values", () => {
   assert.equal(profile.layout.telemetry.x, 10);
   assert.equal(config.style.opacity, 1);
   assert.equal(profile.pedals, true);
+});
+
+test("creating beyond the preset limit leaves existing profiles untouched", () => {
+  const config = { presets: { custom: Array.from({ length: CUSTOM_PRESET_LIMIT }, (_, i) => ({ name: `Preset ${i}` })) } };
+  assert.equal(addCustomPreset(config), config);
 });
