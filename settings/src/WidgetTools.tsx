@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { alignWidgetToReference, type WidgetAlignment } from "./layout-tools";
+import { alignWidgetToReference, nudgeWidget, type WidgetAlignment } from "./layout-tools";
 import type { LayoutSelection, WidgetLayout, WindowConfig } from "./types";
 
 type LayoutEntry = { key: LayoutSelection; label: string; layout: WidgetLayout };
@@ -12,6 +12,7 @@ type WidgetToolsProps = {
 };
 
 export function WidgetTools(props: WidgetToolsProps) {
+  const [nudgeStep, setNudgeStep] = useState(1);
   const [referenceKey, setReferenceKey] = useState("");
   const selected = props.entries.find((entry) => entry.key === props.selected);
   const references = props.entries.filter((entry) => entry.key !== props.selected);
@@ -19,7 +20,12 @@ export function WidgetTools(props: WidgetToolsProps) {
   const alignments: Array<[WidgetAlignment, string]> = [["left", "Left edges"], ["center-x", "Horizontal centers"], ["right", "Right edges"], ["top", "Top edges"], ["center-y", "Vertical centers"], ["bottom", "Bottom edges"]];
   if (!selected) return null;
   return <fieldset className="widgetTools" disabled={props.locked || selected.layout.locked}>
-    <legend>Align with another widget</legend>
+    <legend>Widget placement</legend>
+    <label className="referenceField">Nudge distance<select value={nudgeStep} onChange={(event) => setNudgeStep(Number(event.target.value))}><option value={1}>1 pixel</option><option value={10}>10 pixels</option></select></label>
+    <div className="buttonRow" role="group" aria-label="Move selected widget">
+      {[["Left", -1, 0], ["Right", 1, 0], ["Up", 0, -1], ["Down", 0, 1]].map(([label, dx, dy]) => <button key={label} className="secondaryButton" onClick={() => props.onReplace(nudgeWidget(props.window, selected.layout, Number(dx) * nudgeStep, Number(dy) * nudgeStep))}>{label}</button>)}
+    </div>
+    <p className="previewHint">Arrow keys move a focused preview widget by 1 pixel; Shift moves 10 pixels. Precision moves ignore snapping.</p>
     <label className="referenceField">Reference widget
       <select value={reference?.key ?? ""} onChange={(event) => setReferenceKey(event.target.value)}>
         <option value="">Choose a visible widget</option>
