@@ -70,8 +70,10 @@ impl OverlayConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        if !path.exists() {
-            fs::write(path, default_config_text())?;
+        match fs::OpenOptions::new().write(true).create_new(true).open(path) {
+            Ok(mut file) => { file.write_all(default_config_text().as_bytes())?; file.sync_all()?; }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
         }
         Ok(())
     }
