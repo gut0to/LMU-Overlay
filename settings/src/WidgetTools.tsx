@@ -1,6 +1,6 @@
 import { copyWidgetLayout, pasteWidgetLayout, type LayoutClipboard, type LayoutPaste } from "./layout-clipboard";
 import { useState } from "react";
-import { alignWidgetToReference, nudgeWidget, type WidgetAlignment } from "./layout-tools";
+import { alignWidgetToReference, nudgeWidget, moveWidgetInStack, type WidgetAlignment } from "./layout-tools";
 import type { LayoutSelection, WidgetLayout, WindowConfig } from "./types";
 
 type LayoutEntry = { key: LayoutSelection; label: string; layout: WidgetLayout };
@@ -36,6 +36,10 @@ export function WidgetTools(props: WidgetToolsProps) {
       {[["Left", -1, 0], ["Right", 1, 0], ["Up", 0, -1], ["Down", 0, 1]].map(([label, dx, dy]) => <button key={label} className="secondaryButton" onClick={() => props.onReplace(nudgeWidget(props.window, selected.layout, Number(dx) * nudgeStep, Number(dy) * nudgeStep))}>{label}</button>)}
     </div>
     <p className="previewHint">Arrow keys move a focused preview widget by 1 pixel; Shift moves 10 pixels. Precision moves ignore snapping.</p>
+    <div className="buttonRow">
+      <button className="secondaryButton" onClick={() => props.onReplace(moveWidgetInStack(selected.layout, references.map((entry) => entry.layout), "front"))}>Bring to front</button>
+      <button className="secondaryButton" onClick={() => props.onReplace(moveWidgetInStack(selected.layout, references.map((entry) => entry.layout), "back"))}>Send to back</button>
+    </div>
     <label className="referenceField">Reference widget
       <select value={reference?.key ?? ""} onChange={(event) => setReferenceKey(event.target.value)}>
         <option value="">Choose a visible widget</option>

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { alignWidgetToReference, nudgeWidget } from "../src/layout-tools.ts";
+import { alignWidgetToReference, nudgeWidget, moveWidgetInStack } from "../src/layout-tools.ts";
 
 export const window = { x: 0, y: 0, width: 800, height: 600 };
 export const widget = { x: 10, y: 20, width: 100, height: 40, scale: 2, opacity: 1, z_index: 1, locked: false };
@@ -29,4 +29,12 @@ test("nudges are exact pixels without grid snapping and clamp at all surface edg
   assert.equal(nudgeWidget(window, widget, NaN, 0), widget);
   const locked = { ...widget, locked: true };
   assert.equal(nudgeWidget(window, locked, 10, 10), locked);
+});
+
+test("stacking moves past visible neighbors and stays within native order limits", () => {
+  assert.equal(moveWidgetInStack(widget, [{ ...widget, z_index: 100 }], "front").z_index, 101);
+  assert.equal(moveWidgetInStack(widget, [{ ...widget, z_index: -100 }], "back").z_index, -101);
+  assert.equal(moveWidgetInStack({ ...widget, z_index: 1000 }, [], "front").z_index, 1000);
+  const locked = { ...widget, locked: true };
+  assert.equal(moveWidgetInStack(locked, [], "front"), locked);
 });

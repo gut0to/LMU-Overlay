@@ -26,3 +26,10 @@ export function nudgeWidget(window: WindowConfig, layout: WidgetLayout, dx: numb
   if (layout.locked || !Number.isFinite(dx) || !Number.isFinite(dy)) return layout;
   return normalizeWidgetLayoutForWindow(window, { ...layout, x: layout.x + dx, y: layout.y + dy });
 }
+
+export function moveWidgetInStack(layout: WidgetLayout, neighbors: WidgetLayout[], direction: "front" | "back"): WidgetLayout {
+  if (layout.locked) return layout;
+  const orders = neighbors.map((neighbor) => neighbor.z_index).filter(Number.isFinite);
+  const z_index = direction === "front" ? Math.min(1000, Math.max(layout.z_index, ...orders) + 1) : Math.max(-1000, Math.min(layout.z_index, ...orders) - 1);
+  return { ...layout, z_index };
+}
