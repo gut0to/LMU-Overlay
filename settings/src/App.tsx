@@ -636,12 +636,9 @@ function App() {
       if (!current) {
         return current;
       }
-      const arranged = arrangeProfileLayout(currentProfile(current));
+      const arranged = arrangeProfileLayout(currentProfile(overlayPreviewConfig(current, activeOverlayId)));
       return {
         ...current,
-        window: { ...defaultConfigState.window, height: arranged.height },
-        layout: arranged.layout,
-        extra_widgets: arranged.widgets,
         overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId
           ? {
               ...overlay,
@@ -659,7 +656,7 @@ function App() {
       if (!current) {
         return current;
       }
-      const arranged = arrangeProfileLayout(currentProfile(current));
+      const arranged = arrangeProfileLayout(currentProfile(overlayPreviewConfig(current, activeOverlayId)));
       const currentOverlay = current.overlays.find((overlay) => overlay.id === activeOverlayId);
       if (!currentOverlay) {
         return current;
@@ -1714,6 +1711,7 @@ function OverlayPreview(props: {
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
                 }
+                finishNudge();
                 props.onEditStart();
                 const bounds = event.currentTarget.getBoundingClientRect();
                 const resize = event.clientX >= bounds.right - 14 && event.clientY >= bounds.bottom - 14;
@@ -1727,7 +1725,7 @@ function OverlayPreview(props: {
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Escape") { finishDrag(); return; }
+                if (event.key === "Escape") { finishNudge(); finishDrag(); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
                 if (drag) return;
                 const delta = layoutNudge(event);

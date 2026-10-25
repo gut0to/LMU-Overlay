@@ -72,15 +72,23 @@ fn validate_config(mut config: OverlayConfig) -> Result<OverlayConfig, String> {
 
 #[tauri::command]
 fn export_config(mut config: OverlayConfig) -> Result<String, String> {
-    config.validate_for_save().map_err(|error| error.to_string())?;
+    config
+        .validate_for_save()
+        .map_err(|error| error.to_string())?;
     config.normalize();
     toml::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn preview_import(text: String) -> Result<OverlayConfig, String> {
-    if text.len() > 4 * 1024 * 1024 { return Err("Configuration import exceeds 4 MiB. Choose a smaller TOML configuration.".into()); }
-    if text.trim().is_empty() { return Err("Paste a TOML configuration before previewing the import.".into()); }
+    if text.len() > 4 * 1024 * 1024 {
+        return Err(
+            "Configuration import exceeds 4 MiB. Choose a smaller TOML configuration.".into(),
+        );
+    }
+    if text.trim().is_empty() {
+        return Err("Paste a TOML configuration before previewing the import.".into());
+    }
     OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())
 }
 
@@ -503,16 +511,28 @@ mod save_feedback_tests {
         assert!(preview.config_version > 3);
         assert!(preview.window.width >= 280);
         assert!(!preview.overlays.is_empty());
-        for text in ["", "not TOML", "config_version = 999999", "[hotkeys]\ntoggle_overlay = 'F9'\nedit_mode = 'F9'"] {
+        for text in [
+            "",
+            "not TOML",
+            "config_version = 999999",
+            "[hotkeys]\ntoggle_overlay = 'F9'\nedit_mode = 'F9'",
+        ] {
             assert!(preview_import(text.into()).is_err(), "{text}");
         }
         assert!(preview_import("#".repeat(4 * 1024 * 1024 + 1)).is_err());
-        assert!(export_config(OverlayConfig { config_version: u32::MAX, ..OverlayConfig::default() }).is_err());
+        assert!(export_config(OverlayConfig {
+            config_version: u32::MAX,
+            ..OverlayConfig::default()
+        })
+        .is_err());
     }
 
     #[test]
     fn snapshot_read_errors_never_become_a_valid_zero_revision() {
-        let missing = std::env::temp_dir().join(format!("hashoverlay-missing-snapshot-{}.toml", std::process::id()));
+        let missing = std::env::temp_dir().join(format!(
+            "hashoverlay-missing-snapshot-{}.toml",
+            std::process::id()
+        ));
         assert!(ConfigResponse::read(missing).is_err());
     }
 
@@ -528,8 +548,10 @@ mod save_feedback_tests {
     #[test]
     fn revisions_cross_json_as_lossless_decimal_tokens() {
         let response = ConfigResponse {
-            path: "test.toml".into(), config: OverlayConfig::default(),
-            revision: u64::MAX.to_string(), reload_warning: None,
+            path: "test.toml".into(),
+            config: OverlayConfig::default(),
+            revision: u64::MAX.to_string(),
+            reload_warning: None,
         };
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["revision"].as_str(), Some("18446744073709551615"));
@@ -546,7 +568,10 @@ mod save_feedback_tests {
         config.save(&path).unwrap();
         let response = finish_saved_config(path.clone(), Err("host reload failed".into())).unwrap();
         assert_eq!(response.config.window.x, 42);
-        assert_eq!(response.revision, OverlayConfig::revision(&path).unwrap().to_string());
+        assert_eq!(
+            response.revision,
+            OverlayConfig::revision(&path).unwrap().to_string()
+        );
         assert_eq!(
             response.reload_warning.as_deref(),
             Some("host reload failed")
@@ -566,7 +591,12 @@ impl ConfigResponse {
             let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
             let after = OverlayConfig::revision(&path).map_err(|error| error.to_string())?;
             if before == after {
-                return Ok(Self { path: path.display().to_string(), config, revision: after.to_string(), reload_warning: None });
+                return Ok(Self {
+                    path: path.display().to_string(),
+                    config,
+                    revision: after.to_string(),
+                    reload_warning: None,
+                });
             }
         }
         Err("Configuration kept changing while being read. Wait for the other editor to finish, then reload.".into())
@@ -577,7 +607,9 @@ fn parse_revision(value: &str) -> Result<u64, String> {
     if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
         return Err("Invalid configuration revision. Reload the configuration and retry.".into());
     }
-    value.parse().map_err(|_| "Configuration revision is out of range. Reload the configuration and retry.".into())
+    value.parse().map_err(|_| {
+        "Configuration revision is out of range. Reload the configuration and retry.".into()
+    })
 }
 
 fn overlay_config_path() -> PathBuf {

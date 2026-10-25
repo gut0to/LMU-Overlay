@@ -1430,3 +1430,9 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .referenceField { display: grid; gap: 6px; color: var(--muted); font-size: 12px; margin-bottom: 10px; }
 .referenceField select { min-width: 0; width: 100%; min-height: 36px; border: 1px solid var(--line); border-radius: 6px; padding: 6px; background: var(--field); color: var(--ink); font: inherit; }
 .referenceField select:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+
+.widgetToolsGroup { display: grid; gap: 12px; min-width: 0; }
+
+.widgetToolsGroup > summary { cursor: pointer; color: var(--blue); font-size: 13px; padding: 6px 0; }
+.widgetToolsGroup > summary:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+.widgetToolsGroup[open] > .secondaryButton { margin: 10px 0; }

@@ -70,9 +70,14 @@ impl OverlayConfig {
         let mut config: Self = toml::from_str(text)?;
         let version = config.config_version;
         if version > CURRENT_CONFIG_VERSION {
-            return Err(ConfigError::UnsupportedVersion { found: version, supported: CURRENT_CONFIG_VERSION });
+            return Err(ConfigError::UnsupportedVersion {
+                found: version,
+                supported: CURRENT_CONFIG_VERSION,
+            });
         }
-        if version < CURRENT_CONFIG_VERSION { migrate_config(&mut config, version); }
+        if version < CURRENT_CONFIG_VERSION {
+            migrate_config(&mut config, version);
+        }
         config.normalize();
         config.validate_for_save()?;
         Ok(config)
@@ -83,8 +88,15 @@ impl OverlayConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        match fs::OpenOptions::new().write(true).create_new(true).open(path) {
-            Ok(mut file) => { file.write_all(default_config_text().as_bytes())?; file.sync_all()?; }
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+        {
+            Ok(mut file) => {
+                file.write_all(default_config_text().as_bytes())?;
+                file.sync_all()?;
+            }
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error.into()),
         }
@@ -490,11 +502,18 @@ fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<(
 
 fn atomic_write(path: &Path, text: String) -> io::Result<()> {
     let temp_path = temp_config_path(path);
-    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temp_path)?;
-    let result = file.write_all(text.as_bytes()).and_then(|_| file.sync_all());
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)?;
+    let result = file
+        .write_all(text.as_bytes())
+        .and_then(|_| file.sync_all());
     drop(file);
     let result = result.and_then(|_| replace_file(&temp_path, path));
-    if result.is_err() { let _ = fs::remove_file(&temp_path); }
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
     result
 }
 
@@ -2119,7 +2138,10 @@ mod tests {
 
     #[test]
     fn default_creation_is_idempotent_and_keeps_existing_bytes() {
-        let path = std::env::temp_dir().join(format!("hashoverlay-create-default-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-create-default-{}.toml",
+            std::process::id()
+        ));
         OverlayConfig::save_default(&path).unwrap();
         assert!(OverlayConfig::load(&path).is_ok());
         fs::write(&path, "user-owned contents").unwrap();
@@ -2130,7 +2152,8 @@ mod tests {
 
     #[test]
     fn failed_config_replacement_cleans_up_its_temporary_file() {
-        let root = std::env::temp_dir().join(format!("hashoverlay-atomic-failure-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("hashoverlay-atomic-failure-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
         let destination = root.join("existing-directory");
         fs::create_dir_all(&destination).unwrap();
