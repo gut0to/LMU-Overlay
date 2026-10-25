@@ -240,7 +240,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
-  const revision = useRef(0);
+  const revision = useRef("0");
   const draftStore = useRef(new DraftStore(() => window.localStorage));
   const recoveryChecked = useRef(false);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);

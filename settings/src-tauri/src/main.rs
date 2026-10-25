@@ -28,7 +28,7 @@ enum StartupDecision {
 struct ConfigResponse {
     path: String,
     config: OverlayConfig,
-    revision: u64,
+    revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     reload_warning: Option<String>,
 }
@@ -44,11 +44,11 @@ fn load_config() -> Result<ConfigResponse, String> {
 #[tauri::command(rename_all = "snake_case")]
 fn save_config(
     mut config: OverlayConfig,
-    expected_revision: u64,
+    expected_revision: String,
 ) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     config
-        .save_if_revision(&path, expected_revision)
+        .save_if_revision(&path, parse_revision(&expected_revision)?)
         .map_err(|error| error.to_string())?;
     finish_saved_config(path, reload_overlay_config_after_save())
 }
@@ -78,19 +78,19 @@ fn export_config(mut config: OverlayConfig) -> Result<String, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse, String> {
+fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
     let mut config: OverlayConfig = toml::from_str(&text).map_err(|error| error.to_string())?;
     let path = overlay_config_path();
     config
-        .save_if_revision(&path, expected_revision)
+        .save_if_revision(&path, parse_revision(&expected_revision)?)
         .map_err(|error| error.to_string())?;
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn reset_config(expected_revision: u64) -> Result<ConfigResponse, String> {
+fn reset_config(expected_revision: String) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
-    reset_config_at(&path, expected_revision)?;
+    reset_config_at(&path, parse_revision(&expected_revision)?)?;
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
@@ -495,7 +495,7 @@ mod save_feedback_tests {
     fn revisions_cross_json_as_lossless_decimal_tokens() {
         let response = ConfigResponse {
             path: "test.toml".into(), config: OverlayConfig::default(),
-            revision: u64::MAX, reload_warning: None,
+            revision: u64::MAX.to_string(), reload_warning: None,
         };
         let json = serde_json::to_value(response).unwrap();
         assert_eq!(json["revision"].as_str(), Some("18446744073709551615"));
@@ -512,7 +512,7 @@ mod save_feedback_tests {
         config.save(&path).unwrap();
         let response = finish_saved_config(path.clone(), Err("host reload failed".into())).unwrap();
         assert_eq!(response.config.window.x, 42);
-        assert_eq!(response.revision, OverlayConfig::revision(&path).unwrap());
+        assert_eq!(response.revision, OverlayConfig::revision(&path).unwrap().to_string());
         assert_eq!(
             response.reload_warning.as_deref(),
             Some("host reload failed")
@@ -530,10 +530,17 @@ impl ConfigResponse {
         Self {
             path: path.display().to_string(),
             config,
-            revision: OverlayConfig::revision(&path).unwrap_or_default(),
+            revision: OverlayConfig::revision(&path).unwrap_or_default().to_string(),
             reload_warning: None,
         }
     }
+}
+
+fn parse_revision(value: &str) -> Result<u64, String> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("Invalid configuration revision. Reload the configuration and retry.".into());
+    }
+    value.parse().map_err(|_| "Configuration revision is out of range. Reload the configuration and retry.".into())
 }
 
 fn overlay_config_path() -> PathBuf {
@@ -602,11 +609,11 @@ mod ipc_tests {
         for (cmd, body) in [
             (
                 "save_config",
-                serde_json::json!({ "config": future, "expected_revision": 0 }),
+                serde_json::json!({ "config": future, "expected_revision": "0" }),
             ),
             (
                 "import_config",
-                serde_json::json!({ "text": "not valid TOML", "expected_revision": 0 }),
+                serde_json::json!({ "text": "not valid TOML", "expected_revision": "0" }),
             ),
         ] {
             let error = get_ipc_response(
