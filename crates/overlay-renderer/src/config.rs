@@ -2103,6 +2103,18 @@ mod tests {
     }
 
     #[test]
+    fn failed_config_replacement_cleans_up_its_temporary_file() {
+        let root = std::env::temp_dir().join(format!("hashoverlay-atomic-failure-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let destination = root.join("existing-directory");
+        fs::create_dir_all(&destination).unwrap();
+        assert!(atomic_write(&destination, "new config".into()).is_err());
+        assert!(destination.is_dir());
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn normalizes_risky_values() {
         let mut config = OverlayConfig {
             config_version: 0,
