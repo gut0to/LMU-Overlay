@@ -1,3 +1,5 @@
+import { layoutNudge } from "./layout-shortcuts";
+import { nudgeWidget } from "./layout-tools";
 import { WidgetTools } from "./WidgetTools";
 import { configurationChanges, formatChangeValue } from "./config-changes";
 import { useImportPreview } from "./useImportPreview";
@@ -1604,6 +1606,8 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
+  const nudging = useRef(false);
+  function finishNudge() { if (nudging.current) { nudging.current = false; props.onEditEnd(); } }
   function finishDrag() { setDrag(null); props.onEditEnd(); }
   useEffect(() => () => props.onEditEnd(), [props.onEditEnd]);
   const maxPreviewWidth = 760;
@@ -1713,22 +1717,16 @@ function OverlayPreview(props: {
               onKeyDown={(event) => {
                 if (event.key === "Escape") { finishDrag(); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
-                const step = event.shiftKey ? 10 : 1;
-                let dx = 0;
-                let dy = 0;
-                if (event.key === "ArrowLeft") dx = -step;
-                if (event.key === "ArrowRight") dx = step;
-                if (event.key === "ArrowUp") dy = -step;
-                if (event.key === "ArrowDown") dy = step;
-                if (dx === 0 && dy === 0) return;
+                if (drag) return;
+                const delta = layoutNudge(event);
+                if (!delta) return;
                 event.preventDefault();
+                if (!nudging.current) { props.onEditStart(); nudging.current = true; }
                 props.onSelect(key);
-                props.onLayoutChange(key, snapLayout(props.config, key, {
-                  ...layout,
-                  x: layout.x + dx,
-                  y: layout.y + dy,
-                }));
+                props.onLayoutChange(key, nudgeWidget(props.config.window, layout, delta.dx, delta.dy));
               }}
+              onKeyUp={(event) => { if (event.key.startsWith("Arrow")) finishNudge(); }}
+              onBlur={finishNudge}
               aria-label={`${label}, position ${layout.x}, ${layout.y}${layout.locked ? ". Locked." : ". Use arrow keys to move."}`}
               title={layout.locked ? `${label} · locked` : label}
             >
