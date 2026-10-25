@@ -492,6 +492,16 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn revisions_cross_json_as_lossless_decimal_tokens() {
+        let response = ConfigResponse {
+            path: "test.toml".into(), config: OverlayConfig::default(),
+            revision: u64::MAX, reload_warning: None,
+        };
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["revision"].as_str(), Some("18446744073709551615"));
+    }
+
+    #[test]
     fn a_reload_failure_still_returns_the_saved_config_and_revision() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-reload-warning-{}.toml",
