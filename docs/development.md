@@ -99,3 +99,15 @@ revision conflict), reopen Settings and inspect the recovery choice. Restore it,
 check that the file stays unchanged until Save, then test Undo, explicit Save and
 Discard. Also test two surfaces sharing a widget before using filtered bulk
 visibility controls. These tests complement the manual LMU driving checks.
+
+## Import and Precision Layout Regression Checks
+
+Run `npm test` for field-level import differences, stale preview response ownership,
+scale-aware alignment, geometry clipboard isolation, exact keyboard deltas, surface
+layout ownership and React undo integration. Run workspace tests for exclusive
+config initialization and temporary-file cleanup after replacement failure.
+
+The native Settings tests cover the full u64 revision token range at the JSON
+interface, invalid tokens, import migration, payload limits and validation errors.
+Native commands and packaged frontend must ship together because revision tokens
+are strings throughout the current Settings command interface.
