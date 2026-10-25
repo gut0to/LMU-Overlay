@@ -21,3 +21,8 @@ export function alignWidgetToReference(window: WindowConfig, layout: WidgetLayou
   }
   return normalizeWidgetLayoutForWindow(window, { ...layout, x, y });
 }
+
+export function nudgeWidget(window: WindowConfig, layout: WidgetLayout, dx: number, dy: number): WidgetLayout {
+  if (layout.locked || !Number.isFinite(dx) || !Number.isFinite(dy)) return layout;
+  return normalizeWidgetLayoutForWindow(window, { ...layout, x: layout.x + dx, y: layout.y + dy });
+}
