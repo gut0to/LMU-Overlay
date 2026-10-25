@@ -72,12 +72,15 @@ fn validate_config(mut config: OverlayConfig) -> Result<OverlayConfig, String> {
 
 #[tauri::command]
 fn export_config(mut config: OverlayConfig) -> Result<String, String> {
+    config.validate_for_save().map_err(|error| error.to_string())?;
     config.normalize();
     toml::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn preview_import(text: String) -> Result<OverlayConfig, String> {
+    if text.len() > 4 * 1024 * 1024 { return Err("Configuration import exceeds 4 MiB. Choose a smaller TOML configuration.".into()); }
+    if text.trim().is_empty() { return Err("Paste a TOML configuration before previewing the import.".into()); }
     OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())
 }
 
