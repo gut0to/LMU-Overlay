@@ -177,3 +177,39 @@ Drafts belong to one configuration path, expire after 30 days and have a 4 MiB
 character limit. They are local convenience copies, not exported backups. Storage
 errors do not block editing or saving, but Settings warns when recovery cannot be
 kept. Export important setups before closing if saving or local storage fails.
+
+## Review TOML Before Importing
+
+In **Advanced**, paste TOML and choose **Preview import**. Settings validates and
+migrates it without changing the configuration file or contacting the overlay.
+The review lists the setting path, current value and imported value. Large reviews
+show the first 80 changed fields and the full change count. Text edits invalidate
+the preview, so **Apply reviewed import** always uses the text you reviewed.
+
+An import replaces the entire configuration, including surfaces and custom
+presets. Export first to keep a backup; **Copy TOML** copies the text for saving
+elsewhere. Validation errors appear beside the editor. Empty or larger-than-4-MiB
+imports are rejected, and an import identical to current settings needs no apply.
+
+## Arrange Widgets Precisely
+
+In the layout inspector, choose another visible widget as a reference and align
+edges or centers. **Match reference size** matches its visible dimensions even
+when the two widgets use different scales. The reference itself never moves.
+
+**Copy layout** keeps geometry inside Settings. Select a different widget or
+surface, then paste position, size or full geometry. Paste preserves the target's
+opacity, lock state and stacking order; geometry is constrained to its surface.
+The internal layout clipboard lasts only until Settings closes.
+
+Use the movement controls for 1-pixel or 10-pixel adjustments. Arrow keys on a
+focused preview widget move 1 pixel, or 10 with Shift. These precision operations
+ignore snapping; dragging continues to use the snap settings. A held arrow key
+is one undo action after release. Locked widgets and the global edit lock prevent
+placement changes.
+
+**Bring to front** and **Send to back** change the widget's stacking order within
+native limits. **Fit window to widgets** resizes only the selected surface to its
+visible content, without moving its screen origin or its widgets. Widget edits
+belong to their selected surface and leave other surfaces' inherited templates
+unchanged.
