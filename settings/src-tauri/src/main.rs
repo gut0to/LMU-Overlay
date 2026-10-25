@@ -37,8 +37,7 @@ struct ConfigResponse {
 fn load_config() -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     OverlayConfig::save_default(&path).map_err(|error| error.to_string())?;
-    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
-    Ok(ConfigResponse::new(path, config))
+    ConfigResponse::read(path)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -440,8 +439,7 @@ fn finish_saved_config(
     path: PathBuf,
     reload_result: Result<(), String>,
 ) -> Result<ConfigResponse, String> {
-    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
-    let mut response = ConfigResponse::new(path, config);
+    let mut response = ConfigResponse::read(path)?;
     response.reload_warning = reload_result.err();
     Ok(response)
 }
@@ -492,6 +490,12 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn snapshot_read_errors_never_become_a_valid_zero_revision() {
+        let missing = std::env::temp_dir().join(format!("hashoverlay-missing-snapshot-{}.toml", std::process::id()));
+        assert!(ConfigResponse::read(missing).is_err());
+    }
+
+    #[test]
     fn revision_tokens_reject_rounded_numbers_and_preserve_the_full_u64_range() {
         assert_eq!(parse_revision("18446744073709551615").unwrap(), u64::MAX);
         assert_eq!(parse_revision("0").unwrap(), 0);
@@ -535,13 +539,16 @@ mod save_feedback_tests {
 }
 
 impl ConfigResponse {
-    fn new(path: PathBuf, config: OverlayConfig) -> Self {
-        Self {
-            path: path.display().to_string(),
-            config,
-            revision: OverlayConfig::revision(&path).unwrap_or_default().to_string(),
-            reload_warning: None,
+    fn read(path: PathBuf) -> Result<Self, String> {
+        for _ in 0..3 {
+            let before = OverlayConfig::revision(&path).map_err(|error| error.to_string())?;
+            let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
+            let after = OverlayConfig::revision(&path).map_err(|error| error.to_string())?;
+            if before == after {
+                return Ok(Self { path: path.display().to_string(), config, revision: after.to_string(), reload_warning: None });
+            }
         }
+        Err("Configuration kept changing while being read. Wait for the other editor to finish, then reload.".into())
     }
 }
 
