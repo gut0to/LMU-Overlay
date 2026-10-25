@@ -872,6 +872,10 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const importChanges = useMemo(() => config && importPreview.config
+    ? configurationChanges(config, normalizeUiConfig(importPreview.config)) : null,
+    [config, importPreview.config]);
+
   const filteredPresets = useMemo(() => config?.presets.custom
     .map((preset, index) => ({ preset, index }))
     .filter(({ preset }) => matchesSearch(preset.name, presetSearch)) ?? [], [config, presetSearch]);
@@ -1377,6 +1381,14 @@ function App() {
             <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
             <textarea aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
           </label>
+          {importChanges && <section className="importReview" aria-label="Import changes">
+            <p role="status">{importChanges.total === 0 ? "This import matches the current settings." : `${importChanges.total} fields will change. Review them before applying.`}</p>
+            {importChanges.items.length > 0 && <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Changed configuration fields"><table>
+              <thead><tr><th scope="col">Setting</th><th scope="col">Current</th><th scope="col">Imported</th></tr></thead>
+              <tbody>{importChanges.items.map((change) => <tr key={change.path}><th scope="row">{change.path}</th><td>{formatChangeValue(change.before)}</td><td>{formatChangeValue(change.after)}</td></tr>)}</tbody>
+            </table></div>}
+            {importChanges.total > importChanges.items.length && <p>Showing the first {importChanges.items.length} changes of {importChanges.total}.</p>}
+          </section>}
           <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
         </Section>}
       </fieldset>

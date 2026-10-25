@@ -1413,3 +1413,12 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .topbar { flex-wrap: wrap; }
 .topbar > .recoveryWarning { flex-basis: 100%; margin-top: 0; }
+
+.importReview { min-width: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.importReview p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.importChangesScroll { max-height: 320px; overflow: auto; border: 1px solid var(--line); }
+.importChangesScroll:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+.importReview table { border-collapse: collapse; table-layout: fixed; width: 100%; font-size: 11px; }
+.importReview th, .importReview td { padding: 9px; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--line); }
+.importReview thead th { position: sticky; top: 0; background: var(--surface-raised); color: var(--ink); }
+.importReview tbody th { color: var(--blue); font-weight: 500; }
