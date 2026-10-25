@@ -76,9 +76,14 @@ fn export_config(mut config: OverlayConfig) -> Result<String, String> {
     toml::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn preview_import(text: String) -> Result<OverlayConfig, String> {
+    OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
-    let mut config: OverlayConfig = toml::from_str(&text).map_err(|error| error.to_string())?;
+    let mut config = preview_import(text)?;
     let path = overlay_config_path();
     config
         .save_if_revision(&path, parse_revision(&expected_revision)?)
@@ -577,6 +582,7 @@ fn main() {
             validate_config,
             export_config,
             import_config,
+            preview_import,
             reset_config,
             widget_catalog,
             start_overlay,

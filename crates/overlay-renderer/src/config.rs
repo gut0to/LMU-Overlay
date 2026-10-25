@@ -65,6 +65,19 @@ impl OverlayConfig {
         Ok(config)
     }
 
+    /// Parse imported TOML using the same migrations as file loading, without IO.
+    pub fn from_import_text(text: &str) -> Result<Self, ConfigError> {
+        let mut config: Self = toml::from_str(text)?;
+        let version = config.config_version;
+        if version > CURRENT_CONFIG_VERSION {
+            return Err(ConfigError::UnsupportedVersion { found: version, supported: CURRENT_CONFIG_VERSION });
+        }
+        if version < CURRENT_CONFIG_VERSION { migrate_config(&mut config, version); }
+        config.normalize();
+        config.validate_for_save()?;
+        Ok(config)
+    }
+
     pub fn save_default(path: impl AsRef<Path>) -> Result<(), ConfigError> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
