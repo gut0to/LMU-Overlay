@@ -1,3 +1,4 @@
+import { updateOverlayLayoutSelection } from "./layout-state";
 import type { LayoutClipboard } from "./layout-clipboard";
 import { layoutNudge } from "./layout-shortcuts";
 import { nudgeWidget, fitWindowToWidgets } from "./layout-tools";
@@ -1860,26 +1861,6 @@ function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): 
     return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
   }
   return config.layout[selection as LayoutWidgetKey];
-}
-
-function updateLayoutSelection(config: OverlayConfig, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
-  if (selection.startsWith("extra:")) {
-    const id = selection.slice("extra:".length);
-    const widget = config.extra_widgets[id];
-    return widget ? { ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, layout } } } : config;
-  }
-  return { ...config, layout: { ...config.layout, [selection]: layout } };
-}
-
-function updateOverlayLayoutSelection(config: OverlayConfig, overlayId: string, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
-  const next = updateLayoutSelection(config, selection, layout);
-  const key = selection.startsWith("extra:") ? selection.slice("extra:".length) : selection;
-  return {
-    ...next,
-    overlays: next.overlays.map((overlay) => overlay.id === overlayId
-      ? { ...overlay, layout_overrides: { ...overlay.layout_overrides, [key]: layout } }
-      : overlay),
-  };
 }
 
 function layoutOverridesFromArrangedProfile(
