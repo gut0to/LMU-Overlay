@@ -2105,6 +2105,17 @@ mod tests {
     }
 
     #[test]
+    fn default_creation_is_idempotent_and_keeps_existing_bytes() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-create-default-{}.toml", std::process::id()));
+        OverlayConfig::save_default(&path).unwrap();
+        assert!(OverlayConfig::load(&path).is_ok());
+        fs::write(&path, "user-owned contents").unwrap();
+        OverlayConfig::save_default(&path).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "user-owned contents");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn failed_config_replacement_cleans_up_its_temporary_file() {
         let root = std::env::temp_dir().join(format!("hashoverlay-atomic-failure-{}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
