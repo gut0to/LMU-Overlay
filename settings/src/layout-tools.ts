@@ -33,3 +33,13 @@ export function moveWidgetInStack(layout: WidgetLayout, neighbors: WidgetLayout[
   const z_index = direction === "front" ? Math.min(1000, Math.max(layout.z_index, ...orders) + 1) : Math.max(-1000, Math.min(layout.z_index, ...orders) - 1);
   return { ...layout, z_index };
 }
+
+export function fitWindowToWidgets(window: WindowConfig, layouts: WidgetLayout[], padding = 14): WindowConfig {
+  if (layouts.length === 0) return window;
+  const gap = Number.isFinite(padding) ? Math.max(0, padding) : 14;
+  return {
+    ...window,
+    width: Math.min(1200, Math.max(280, Math.ceil(Math.max(...layouts.map((layout) => layout.x + scaledDimension(layout.width, layout.scale))) + gap))),
+    height: Math.min(800, Math.max(140, Math.ceil(Math.max(...layouts.map((layout) => layout.y + scaledDimension(layout.height, layout.scale))) + gap))),
+  };
+}

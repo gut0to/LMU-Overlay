@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { alignWidgetToReference, nudgeWidget, moveWidgetInStack } from "../src/layout-tools.ts";
+import { alignWidgetToReference, nudgeWidget, moveWidgetInStack, fitWindowToWidgets } from "../src/layout-tools.ts";
 
 export const window = { x: 0, y: 0, width: 800, height: 600 };
 export const widget = { x: 10, y: 20, width: 100, height: 40, scale: 2, opacity: 1, z_index: 1, locked: false };
@@ -37,4 +37,15 @@ test("stacking moves past visible neighbors and stays within native order limits
   assert.equal(moveWidgetInStack({ ...widget, z_index: 1000 }, [], "front").z_index, 1000);
   const locked = { ...widget, locked: true };
   assert.equal(moveWidgetInStack(locked, [], "front"), locked);
+});
+
+test("fit window accounts for scaled extents while preserving monitor position and widgets", () => {
+  const source = { ...window, x: -1920, y: 120 };
+  const fitted = fitWindowToWidgets(source, [{ ...widget, x: 300, y: 200 }]);
+  assert.equal(fitted.width, 514);
+  assert.equal(fitted.height, 294);
+  assert.equal(fitted.x, -1920);
+  assert.equal(fitted.y, 120);
+  assert.equal(fitWindowToWidgets(source, []), source);
+  assert.equal(fitWindowToWidgets(source, [{ ...widget, x: 9999 }]).width, 1200);
 });

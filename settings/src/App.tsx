@@ -1,6 +1,6 @@
 import type { LayoutClipboard } from "./layout-clipboard";
 import { layoutNudge } from "./layout-shortcuts";
-import { nudgeWidget } from "./layout-tools";
+import { nudgeWidget, fitWindowToWidgets } from "./layout-tools";
 import { WidgetTools } from "./WidgetTools";
 import { configurationChanges, formatChangeValue } from "./config-changes";
 import { useImportPreview } from "./useImportPreview";
@@ -1109,6 +1109,15 @@ function App() {
                 copiedWindowTimer.current = window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
                 setStatus(copied ? "Window geometry copied" : "Could not copy window geometry. Clipboard access is unavailable.");
               }}>{copiedWindowGeometry ? "Copied" : "Copy window geometry"}</button>
+              <button className="secondaryButton" disabled={availableLayoutEntries.length === 0} onClick={() => {
+                setConfig((current) => {
+                  if (!current) return current;
+                  const view = overlayPreviewConfig(current, activeOverlayId);
+                  const fitted = fitWindowToWidgets(view.window, layoutEntries(view).map((entry) => entry.layout));
+                  return { ...current, overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId ? { ...overlay, window: fitted } : overlay) };
+                });
+                setStatus("Selected surface resized to fit its visible widgets");
+              }}>Fit window to widgets</button>
               <div className="windowPositionFields">
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
                 <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
