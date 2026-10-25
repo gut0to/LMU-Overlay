@@ -1,6 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs, io,
+    io::Write,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -474,8 +475,12 @@ fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<(
 
 fn atomic_write(path: &Path, text: String) -> io::Result<()> {
     let temp_path = temp_config_path(path);
-    fs::write(&temp_path, text)?;
-    replace_file(&temp_path, path)
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temp_path)?;
+    let result = file.write_all(text.as_bytes()).and_then(|_| file.sync_all());
+    drop(file);
+    let result = result.and_then(|_| replace_file(&temp_path, path));
+    if result.is_err() { let _ = fs::remove_file(&temp_path); }
+    result
 }
 
 fn temp_config_path(path: &Path) -> PathBuf {
