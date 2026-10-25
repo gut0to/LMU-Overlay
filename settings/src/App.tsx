@@ -506,6 +506,8 @@ function App() {
   }
 
   async function importConfigText() {
+    if (!importPreview.config || importPreview.pending) { setStatus("Preview the current TOML before importing."); return; }
+    const reviewedText = configText;
     if (config && JSON.stringify(config) !== lastSavedConfig.current
       && !window.confirm("Importing will replace your pending changes. Continue?")) {
       return;
@@ -519,7 +521,7 @@ function App() {
       setReplacingConfig(true);
       try {
         const response = await invoke<LoadResponse>("import_config", {
-          text: configText,
+          text: reviewedText,
           expected_revision: revision.current,
         });
         const normalized = normalizeUiConfig(response.config);
@@ -529,6 +531,7 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config imported", response.reload_warning).message);
+        importPreview.clear();
         failedSave.current = null;
         setPauseAutosave(false);
       } catch (error) {
@@ -1364,8 +1367,8 @@ function App() {
             <button className="secondaryButton" onClick={() => void importPreview.review()} disabled={saving || importPreview.pending || !configText.trim()}>
               {importPreview.pending ? "Checking TOML…" : "Preview import"}
             </button>
-            <button className="primaryButton" onClick={importConfigText} disabled={saving || !configText.trim()}>
-              Import
+            <button className="primaryButton" onClick={importConfigText} disabled={saving || !importPreview.config || importPreview.pending || importChanges?.total === 0}>
+              Apply reviewed import
             </button>
             <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
               Clear text
