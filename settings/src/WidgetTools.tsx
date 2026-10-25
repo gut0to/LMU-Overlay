@@ -1,3 +1,4 @@
+import { copyWidgetLayout, pasteWidgetLayout } from "./layout-clipboard";
 import { useState } from "react";
 import { alignWidgetToReference, nudgeWidget, type WidgetAlignment } from "./layout-tools";
 import type { LayoutSelection, WidgetLayout, WindowConfig } from "./types";
@@ -35,6 +36,9 @@ export function WidgetTools(props: WidgetToolsProps) {
     <div className="buttonRow">{alignments.map(([alignment, label]) => <button key={alignment} className="secondaryButton" disabled={!reference} onClick={() => {
       if (reference) props.onReplace(alignWidgetToReference(props.window, selected.layout, reference.layout, alignment));
     }}>{label}</button>)}</div>
+    <button className="secondaryButton" disabled={!reference} onClick={() => {
+      if (reference) props.onReplace(pasteWidgetLayout(props.window, selected.layout, copyWidgetLayout(reference.label, reference.layout), "size"));
+    }}>Match reference size</button>
     {references.length === 0 && <p className="previewHint">Enable a second widget on this surface to align their edges or centers.</p>}
   </fieldset>;
 }
