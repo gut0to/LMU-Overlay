@@ -1,4 +1,4 @@
-import { copyWidgetLayout, pasteWidgetLayout } from "./layout-clipboard";
+import { copyWidgetLayout, pasteWidgetLayout, type LayoutClipboard, type LayoutPaste } from "./layout-clipboard";
 import { useState } from "react";
 import { alignWidgetToReference, nudgeWidget, type WidgetAlignment } from "./layout-tools";
 import type { LayoutSelection, WidgetLayout, WindowConfig } from "./types";
@@ -10,6 +10,8 @@ type WidgetToolsProps = {
   window: WindowConfig;
   locked: boolean;
   onReplace: (layout: WidgetLayout) => void;
+  clipboard: LayoutClipboard | null;
+  onCopy: (clipboard: LayoutClipboard) => void;
 };
 
 export function WidgetTools(props: WidgetToolsProps) {
@@ -22,6 +24,13 @@ export function WidgetTools(props: WidgetToolsProps) {
   if (!selected) return null;
   return <fieldset className="widgetTools" disabled={props.locked || selected.layout.locked}>
     <legend>Widget placement</legend>
+    <div className="buttonRow">
+      <button className="secondaryButton" onClick={() => props.onCopy(copyWidgetLayout(selected.label, selected.layout))}>Copy layout</button>
+      {([["position", "Paste position"], ["size", "Paste size"], ["geometry", "Paste full geometry"]] as Array<[LayoutPaste, string]>).map(([mode, label]) => <button key={mode} className="secondaryButton" disabled={!props.clipboard} onClick={() => {
+        if (props.clipboard) props.onReplace(pasteWidgetLayout(props.window, selected.layout, props.clipboard, mode));
+      }}>{label}</button>)}
+    </div>
+    {props.clipboard && <p className="previewHint" role="status">Layout copied from {props.clipboard.source}. Choose a widget on any surface to paste.</p>}
     <label className="referenceField">Nudge distance<select value={nudgeStep} onChange={(event) => setNudgeStep(Number(event.target.value))}><option value={1}>1 pixel</option><option value={10}>10 pixels</option></select></label>
     <div className="buttonRow" role="group" aria-label="Move selected widget">
       {[["Left", -1, 0], ["Right", 1, 0], ["Up", 0, -1], ["Down", 0, 1]].map(([label, dx, dy]) => <button key={label} className="secondaryButton" onClick={() => props.onReplace(nudgeWidget(props.window, selected.layout, Number(dx) * nudgeStep, Number(dy) * nudgeStep))}>{label}</button>)}

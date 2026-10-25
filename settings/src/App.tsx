@@ -1,3 +1,4 @@
+import type { LayoutClipboard } from "./layout-clipboard";
 import { layoutNudge } from "./layout-shortcuts";
 import { nudgeWidget } from "./layout-tools";
 import { WidgetTools } from "./WidgetTools";
@@ -263,6 +264,7 @@ function App() {
   const [copiedWindowGeometry, setCopiedWindowGeometry] = useState(false);
   const copiedWindowTimer = useRef<number | null>(null);
   useEffect(() => () => { if (copiedWindowTimer.current !== null) window.clearTimeout(copiedWindowTimer.current); }, []);
+  const [layoutClipboard, setLayoutClipboard] = useState<LayoutClipboard | null>(null);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [layoutSearch, setLayoutSearch] = useState("");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
@@ -1182,7 +1184,7 @@ function App() {
             </div>
             <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
           </div>
-          <WidgetTools selected={selectedLayout} entries={availableLayoutEntries} window={(activeOverlayConfig ?? config).window} locked={config.layout.lock_all}
+          <WidgetTools clipboard={layoutClipboard} onCopy={(value) => { setLayoutClipboard({ ...value, source: `${activeOverlay?.name ?? activeOverlayId} / ${value.source}` }); setStatus("Widget layout copied inside Settings"); }} selected={selectedLayout} entries={availableLayoutEntries} window={(activeOverlayConfig ?? config).window} locked={config.layout.lock_all}
             onReplace={(layout) => setConfig((current) => current ? updateOverlayLayoutSelection(current, activeOverlayId, selectedLayout, layout) : current)} />
           <WidgetLayoutFields
             key={selectedLayout}
