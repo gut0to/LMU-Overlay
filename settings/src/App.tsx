@@ -1,3 +1,4 @@
+import { WidgetTools } from "./WidgetTools";
 import { configurationChanges, formatChangeValue } from "./config-changes";
 import { useImportPreview } from "./useImportPreview";
 import { useDraftPersistence } from "./useDraftPersistence";
@@ -1179,6 +1180,8 @@ function App() {
             </div>
             <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
           </div>
+          <WidgetTools selected={selectedLayout} entries={availableLayoutEntries} window={(activeOverlayConfig ?? config).window} locked={config.layout.lock_all}
+            onReplace={(layout) => setConfig((current) => current ? updateOverlayLayoutSelection(current, activeOverlayId, selectedLayout, layout) : current)} />
           <WidgetLayoutFields
             key={selectedLayout}
             lockAll={config.layout.lock_all}
