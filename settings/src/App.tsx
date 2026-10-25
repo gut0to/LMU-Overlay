@@ -1382,8 +1382,10 @@ function App() {
           </div>
           <label className="field stack">
             <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
-            <textarea aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
+            <textarea aria-invalid={Boolean(importPreview.error)} aria-describedby={importPreview.error ? "importError importHint" : "importHint"} aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
           </label>
+          {importPreview.pending && <p className="previewHint" role="status">Checking TOML and preparing the import preview…</p>}
+          {importPreview.error && <p id="importError" className="inlineError" role="alert">{importPreview.error}</p>}
           {importChanges && <section className="importReview" aria-label="Import changes">
             <p role="status">{importChanges.total === 0 ? "This import matches the current settings." : `${importChanges.total} fields will change. Review them before applying.`}</p>
             {importChanges.items.length > 0 && <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Changed configuration fields"><table>
@@ -1392,7 +1394,7 @@ function App() {
             </table></div>}
             {importChanges.total > importChanges.items.length && <p>Showing the first {importChanges.items.length} changes of {importChanges.total}.</p>}
           </section>}
-          <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
+          <p id="importHint" className="previewHint">Preview the TOML to review changes. Applying replaces all current settings, including surfaces and saved presets. Export first to keep a backup.</p>
         </Section>}
       </fieldset>
 
