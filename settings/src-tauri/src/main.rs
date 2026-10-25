@@ -498,6 +498,19 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn import_preview_migrates_and_normalizes_without_accepting_invalid_candidates() {
+        let preview = preview_import("config_version = 3\n[window]\nwidth = 0\n".into()).unwrap();
+        assert!(preview.config_version > 3);
+        assert!(preview.window.width >= 280);
+        assert!(!preview.overlays.is_empty());
+        for text in ["", "not TOML", "config_version = 999999", "[hotkeys]\ntoggle_overlay = 'F9'\nedit_mode = 'F9'"] {
+            assert!(preview_import(text.into()).is_err(), "{text}");
+        }
+        assert!(preview_import("#".repeat(4 * 1024 * 1024 + 1)).is_err());
+        assert!(export_config(OverlayConfig { config_version: u32::MAX, ..OverlayConfig::default() }).is_err());
+    }
+
+    #[test]
     fn snapshot_read_errors_never_become_a_valid_zero_revision() {
         let missing = std::env::temp_dir().join(format!("hashoverlay-missing-snapshot-{}.toml", std::process::id()));
         assert!(ConfigResponse::read(missing).is_err());
