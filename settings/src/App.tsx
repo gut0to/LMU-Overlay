@@ -258,6 +258,8 @@ function App() {
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [copiedWindowGeometry, setCopiedWindowGeometry] = useState(false);
+  const copiedWindowTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (copiedWindowTimer.current !== null) window.clearTimeout(copiedWindowTimer.current); }, []);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [layoutSearch, setLayoutSearch] = useState("");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
@@ -1094,12 +1096,13 @@ function App() {
           <aside className="layoutInspector">
             <Section icon={<LayoutGrid />} title="Overlay Window">
               <p className="previewHint">This is the real screen position of the selected surface. Set it here, or use F10 in-game for direct adjustment.</p>
-              <button className="secondaryButton geometryCopyButton" onClick={() => {
+              <button className="secondaryButton geometryCopyButton" onClick={async () => {
                 const windowConfig = (activeOverlayConfig ?? config).window;
-                void navigator.clipboard?.writeText(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
-                setCopiedWindowGeometry(true);
-                window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
-                setStatus("Window geometry copied");
+                const copied = await copyGeometryToClipboard(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
+                setCopiedWindowGeometry(copied);
+                if (copiedWindowTimer.current !== null) window.clearTimeout(copiedWindowTimer.current);
+                copiedWindowTimer.current = window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
+                setStatus(copied ? "Window geometry copied" : "Could not copy window geometry. Clipboard access is unavailable.");
               }}>{copiedWindowGeometry ? "Copied" : "Copy window geometry"}</button>
               <div className="windowPositionFields">
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
@@ -1373,6 +1376,10 @@ function App() {
             <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
               Clear text
             </button>
+            <button className="secondaryButton" disabled={!configText} onClick={async () => {
+              const copied = await copyGeometryToClipboard(configText);
+              setStatus(copied ? "Configuration TOML copied" : "Could not copy TOML. Select the text and copy it manually.");
+            }}>Copy TOML</button>
             <button className="primaryButton" onClick={resetLayout} disabled={saving || !defaultConfigState}>
               Reset layout
             </button>
