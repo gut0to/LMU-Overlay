@@ -492,6 +492,15 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn revision_tokens_reject_rounded_numbers_and_preserve_the_full_u64_range() {
+        assert_eq!(parse_revision("18446744073709551615").unwrap(), u64::MAX);
+        assert_eq!(parse_revision("0").unwrap(), 0);
+        for invalid in ["", "-1", "1.5", "1e9", " 1", "18446744073709551616"] {
+            assert!(parse_revision(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn revisions_cross_json_as_lossless_decimal_tokens() {
         let response = ConfigResponse {
             path: "test.toml".into(), config: OverlayConfig::default(),

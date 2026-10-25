@@ -31,3 +31,14 @@ test("waiting writes use the revision produced by the previous operation", async
   await Promise.all([first, second]);
   assert.deepEqual(observed, [1, 2]);
 });
+
+test("queued writes retain all digits in opaque revision tokens", async () => {
+  const tasks = new ConfigTasks();
+  let revision = "18446744073709551614";
+  const observed = [];
+  await Promise.all([
+    tasks.run(async () => { observed.push(revision); revision = "18446744073709551615"; }),
+    tasks.run(async () => { observed.push(revision); }),
+  ]);
+  assert.deepEqual(observed, ["18446744073709551614", "18446744073709551615"]);
+});
