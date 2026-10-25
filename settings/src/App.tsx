@@ -1,3 +1,5 @@
+import { configurationChanges, formatChangeValue } from "./config-changes";
+import { useImportPreview } from "./useImportPreview";
 import { useDraftPersistence } from "./useDraftPersistence";
 import {
   legacySurfaceByWidgetKey,
@@ -237,6 +239,8 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   });
 }
 
+function validateImportText(text: string) { return invoke<OverlayConfig>("preview_import", { text }); }
+
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
@@ -259,6 +263,7 @@ function App() {
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
+  const importPreview = useImportPreview(configText, validateImportText);
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
@@ -1351,6 +1356,9 @@ function App() {
           <div className="buttonRow">
             <button className="primaryButton" onClick={exportConfigText}>
               Export
+            </button>
+            <button className="secondaryButton" onClick={() => void importPreview.review()} disabled={saving || importPreview.pending || !configText.trim()}>
+              {importPreview.pending ? "Checking TOML…" : "Preview import"}
             </button>
             <button className="primaryButton" onClick={importConfigText} disabled={saving || !configText.trim()}>
               Import
