@@ -28,7 +28,7 @@ enum StartupDecision {
 struct ConfigResponse {
     path: String,
     config: OverlayConfig,
-    revision: u64,
+    revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     reload_warning: Option<String>,
 }
@@ -37,18 +37,17 @@ struct ConfigResponse {
 fn load_config() -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     OverlayConfig::save_default(&path).map_err(|error| error.to_string())?;
-    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
-    Ok(ConfigResponse::new(path, config))
+    ConfigResponse::read(path)
 }
 
 #[tauri::command(rename_all = "snake_case")]
 fn save_config(
     mut config: OverlayConfig,
-    expected_revision: u64,
+    expected_revision: String,
 ) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     config
-        .save_if_revision(&path, expected_revision)
+        .save_if_revision(&path, parse_revision(&expected_revision)?)
         .map_err(|error| error.to_string())?;
     finish_saved_config(path, reload_overlay_config_after_save())
 }
@@ -73,24 +72,40 @@ fn validate_config(mut config: OverlayConfig) -> Result<OverlayConfig, String> {
 
 #[tauri::command]
 fn export_config(mut config: OverlayConfig) -> Result<String, String> {
+    config
+        .validate_for_save()
+        .map_err(|error| error.to_string())?;
     config.normalize();
     toml::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn preview_import(text: String) -> Result<OverlayConfig, String> {
+    if text.len() > 4 * 1024 * 1024 {
+        return Err(
+            "Configuration import exceeds 4 MiB. Choose a smaller TOML configuration.".into(),
+        );
+    }
+    if text.trim().is_empty() {
+        return Err("Paste a TOML configuration before previewing the import.".into());
+    }
+    OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())
+}
+
 #[tauri::command(rename_all = "snake_case")]
-fn import_config(text: String, expected_revision: u64) -> Result<ConfigResponse, String> {
-    let mut config: OverlayConfig = toml::from_str(&text).map_err(|error| error.to_string())?;
+fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
+    let mut config = preview_import(text)?;
     let path = overlay_config_path();
     config
-        .save_if_revision(&path, expected_revision)
+        .save_if_revision(&path, parse_revision(&expected_revision)?)
         .map_err(|error| error.to_string())?;
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn reset_config(expected_revision: u64) -> Result<ConfigResponse, String> {
+fn reset_config(expected_revision: String) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
-    reset_config_at(&path, expected_revision)?;
+    reset_config_at(&path, parse_revision(&expected_revision)?)?;
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
@@ -440,8 +455,7 @@ fn finish_saved_config(
     path: PathBuf,
     reload_result: Result<(), String>,
 ) -> Result<ConfigResponse, String> {
-    let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
-    let mut response = ConfigResponse::new(path, config);
+    let mut response = ConfigResponse::read(path)?;
     response.reload_warning = reload_result.err();
     Ok(response)
 }
@@ -492,6 +506,58 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn import_preview_migrates_and_normalizes_without_accepting_invalid_candidates() {
+        let preview = preview_import("config_version = 3\n[window]\nwidth = 0\n".into()).unwrap();
+        assert!(preview.config_version > 3);
+        assert!(preview.window.width >= 280);
+        assert!(!preview.overlays.is_empty());
+        for text in [
+            "",
+            "not TOML",
+            "config_version = 999999",
+            "[hotkeys]\ntoggle_overlay = 'F9'\nedit_mode = 'F9'",
+        ] {
+            assert!(preview_import(text.into()).is_err(), "{text}");
+        }
+        assert!(preview_import("#".repeat(4 * 1024 * 1024 + 1)).is_err());
+        assert!(export_config(OverlayConfig {
+            config_version: u32::MAX,
+            ..OverlayConfig::default()
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn snapshot_read_errors_never_become_a_valid_zero_revision() {
+        let missing = std::env::temp_dir().join(format!(
+            "hashoverlay-missing-snapshot-{}.toml",
+            std::process::id()
+        ));
+        assert!(ConfigResponse::read(missing).is_err());
+    }
+
+    #[test]
+    fn revision_tokens_reject_rounded_numbers_and_preserve_the_full_u64_range() {
+        assert_eq!(parse_revision("18446744073709551615").unwrap(), u64::MAX);
+        assert_eq!(parse_revision("0").unwrap(), 0);
+        for invalid in ["", "-1", "1.5", "1e9", " 1", "18446744073709551616"] {
+            assert!(parse_revision(invalid).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn revisions_cross_json_as_lossless_decimal_tokens() {
+        let response = ConfigResponse {
+            path: "test.toml".into(),
+            config: OverlayConfig::default(),
+            revision: u64::MAX.to_string(),
+            reload_warning: None,
+        };
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["revision"].as_str(), Some("18446744073709551615"));
+    }
+
+    #[test]
     fn a_reload_failure_still_returns_the_saved_config_and_revision() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-reload-warning-{}.toml",
@@ -502,7 +568,10 @@ mod save_feedback_tests {
         config.save(&path).unwrap();
         let response = finish_saved_config(path.clone(), Err("host reload failed".into())).unwrap();
         assert_eq!(response.config.window.x, 42);
-        assert_eq!(response.revision, OverlayConfig::revision(&path).unwrap());
+        assert_eq!(
+            response.revision,
+            OverlayConfig::revision(&path).unwrap().to_string()
+        );
         assert_eq!(
             response.reload_warning.as_deref(),
             Some("host reload failed")
@@ -516,14 +585,31 @@ mod save_feedback_tests {
 }
 
 impl ConfigResponse {
-    fn new(path: PathBuf, config: OverlayConfig) -> Self {
-        Self {
-            path: path.display().to_string(),
-            config,
-            revision: OverlayConfig::revision(&path).unwrap_or_default(),
-            reload_warning: None,
+    fn read(path: PathBuf) -> Result<Self, String> {
+        for _ in 0..3 {
+            let before = OverlayConfig::revision(&path).map_err(|error| error.to_string())?;
+            let config = OverlayConfig::load(&path).map_err(|error| error.to_string())?;
+            let after = OverlayConfig::revision(&path).map_err(|error| error.to_string())?;
+            if before == after {
+                return Ok(Self {
+                    path: path.display().to_string(),
+                    config,
+                    revision: after.to_string(),
+                    reload_warning: None,
+                });
+            }
         }
+        Err("Configuration kept changing while being read. Wait for the other editor to finish, then reload.".into())
     }
+}
+
+fn parse_revision(value: &str) -> Result<u64, String> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("Invalid configuration revision. Reload the configuration and retry.".into());
+    }
+    value.parse().map_err(|_| {
+        "Configuration revision is out of range. Reload the configuration and retry.".into()
+    })
 }
 
 fn overlay_config_path() -> PathBuf {
@@ -544,6 +630,7 @@ fn main() {
             validate_config,
             export_config,
             import_config,
+            preview_import,
             reset_config,
             widget_catalog,
             start_overlay,
@@ -592,11 +679,11 @@ mod ipc_tests {
         for (cmd, body) in [
             (
                 "save_config",
-                serde_json::json!({ "config": future, "expected_revision": 0 }),
+                serde_json::json!({ "config": future, "expected_revision": "0" }),
             ),
             (
                 "import_config",
-                serde_json::json!({ "text": "not valid TOML", "expected_revision": 0 }),
+                serde_json::json!({ "text": "not valid TOML", "expected_revision": "0" }),
             ),
         ] {
             let error = get_ipc_response(

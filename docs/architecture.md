@@ -156,3 +156,28 @@ Recovery is best effort: abrupt termination before the latest snapshot reaches
 storage may lose the final edit. A single local draft is retained, for at most
 30 days; a second Settings window shares this storage. Exported TOML remains the
 portable backup. Native close behavior and live LMU behavior need manual checks.
+
+## Revision Tokens, Imports and Scoped Geometry
+
+Settings transports the full 64-bit config revision as a decimal string. JavaScript
+must treat it as an opaque token: numeric conversion would round most revision
+hashes and cause false conflicts. Native commands parse the string explicitly.
+Config responses retry reads that changed revision and propagate IO failures,
+rather than pairing stale contents with a newer token or substituting zero.
+Revision checks remain optimistic; they are not a cross-process transaction lock.
+
+Config replacement exclusively creates a sibling temporary file, writes and syncs
+it before replacement, and removes that temporary file if writing or replacement
+fails. Default initialization uses exclusive creation to avoid overwriting a file
+created after an existence check.
+
+`OverlayConfig::from_import_text` shares version migrations with file loading but
+performs no IO. Preview and apply use this same parser and schema validation.
+`useImportPreview` owns asynchronous preview results; changed text cannot expose
+an obsolete candidate. `config-changes.ts` counts field-level differences while
+bounding the list rendered in the review.
+
+`layout-tools.ts` and `layout-clipboard.ts` implement scale-aware geometry without
+React or native dependencies. `layout-state.ts` records scoped layout overrides
+without mutating shared templates used by other surfaces. History sees each
+operation as one immutable config update; held arrow-key edits use a history group.

@@ -1,3 +1,10 @@
+import { updateOverlayLayoutSelection } from "./layout-state";
+import type { LayoutClipboard } from "./layout-clipboard";
+import { layoutNudge } from "./layout-shortcuts";
+import { nudgeWidget, fitWindowToWidgets } from "./layout-tools";
+import { WidgetTools } from "./WidgetTools";
+import { configurationChanges, formatChangeValue } from "./config-changes";
+import { useImportPreview } from "./useImportPreview";
 import { useDraftPersistence } from "./useDraftPersistence";
 import {
   legacySurfaceByWidgetKey,
@@ -237,10 +244,12 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   });
 }
 
+function validateImportText(text: string) { return invoke<OverlayConfig>("preview_import", { text }); }
+
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
-  const revision = useRef(0);
+  const revision = useRef("0");
   const draftStore = useRef(new DraftStore(() => window.localStorage));
   const recoveryChecked = useRef(false);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
@@ -254,11 +263,15 @@ function App() {
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [copiedWindowGeometry, setCopiedWindowGeometry] = useState(false);
+  const copiedWindowTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (copiedWindowTimer.current !== null) window.clearTimeout(copiedWindowTimer.current); }, []);
+  const [layoutClipboard, setLayoutClipboard] = useState<LayoutClipboard | null>(null);
   const [selectedLayout, setSelectedLayout] = useState<LayoutSelection>("telemetry");
   const [layoutSearch, setLayoutSearch] = useState("");
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
+  const importPreview = useImportPreview(configText, validateImportText);
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
@@ -501,6 +514,8 @@ function App() {
   }
 
   async function importConfigText() {
+    if (!importPreview.config || importPreview.pending) { setStatus("Preview the current TOML before importing."); return; }
+    const reviewedText = configText;
     if (config && JSON.stringify(config) !== lastSavedConfig.current
       && !window.confirm("Importing will replace your pending changes. Continue?")) {
       return;
@@ -514,7 +529,7 @@ function App() {
       setReplacingConfig(true);
       try {
         const response = await invoke<LoadResponse>("import_config", {
-          text: configText,
+          text: reviewedText,
           expected_revision: revision.current,
         });
         const normalized = normalizeUiConfig(response.config);
@@ -524,6 +539,7 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config imported", response.reload_warning).message);
+        importPreview.clear();
         failedSave.current = null;
         setPauseAutosave(false);
       } catch (error) {
@@ -620,12 +636,9 @@ function App() {
       if (!current) {
         return current;
       }
-      const arranged = arrangeProfileLayout(currentProfile(current));
+      const arranged = arrangeProfileLayout(currentProfile(overlayPreviewConfig(current, activeOverlayId)));
       return {
         ...current,
-        window: { ...defaultConfigState.window, height: arranged.height },
-        layout: arranged.layout,
-        extra_widgets: arranged.widgets,
         overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId
           ? {
               ...overlay,
@@ -643,7 +656,7 @@ function App() {
       if (!current) {
         return current;
       }
-      const arranged = arrangeProfileLayout(currentProfile(current));
+      const arranged = arrangeProfileLayout(currentProfile(overlayPreviewConfig(current, activeOverlayId)));
       const currentOverlay = current.overlays.find((overlay) => overlay.id === activeOverlayId);
       if (!currentOverlay) {
         return current;
@@ -867,6 +880,10 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const importChanges = useMemo(() => config && importPreview.config
+    ? configurationChanges(config, normalizeUiConfig(importPreview.config)) : null,
+    [config, importPreview.config]);
+
   const filteredPresets = useMemo(() => config?.presets.custom
     .map((preset, index) => ({ preset, index }))
     .filter(({ preset }) => matchesSearch(preset.name, presetSearch)) ?? [], [config, presetSearch]);
@@ -1082,13 +1099,23 @@ function App() {
           <aside className="layoutInspector">
             <Section icon={<LayoutGrid />} title="Overlay Window">
               <p className="previewHint">This is the real screen position of the selected surface. Set it here, or use F10 in-game for direct adjustment.</p>
-              <button className="secondaryButton geometryCopyButton" onClick={() => {
+              <button className="secondaryButton geometryCopyButton" onClick={async () => {
                 const windowConfig = (activeOverlayConfig ?? config).window;
-                void navigator.clipboard?.writeText(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
-                setCopiedWindowGeometry(true);
-                window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
-                setStatus("Window geometry copied");
+                const copied = await copyGeometryToClipboard(`x=${windowConfig.x}, y=${windowConfig.y}, width=${windowConfig.width}, height=${windowConfig.height}`);
+                setCopiedWindowGeometry(copied);
+                if (copiedWindowTimer.current !== null) window.clearTimeout(copiedWindowTimer.current);
+                copiedWindowTimer.current = window.setTimeout(() => setCopiedWindowGeometry(false), 1400);
+                setStatus(copied ? "Window geometry copied" : "Could not copy window geometry. Clipboard access is unavailable.");
               }}>{copiedWindowGeometry ? "Copied" : "Copy window geometry"}</button>
+              <button className="secondaryButton" disabled={availableLayoutEntries.length === 0} onClick={() => {
+                setConfig((current) => {
+                  if (!current) return current;
+                  const view = overlayPreviewConfig(current, activeOverlayId);
+                  const fitted = fitWindowToWidgets(view.window, layoutEntries(view).map((entry) => entry.layout));
+                  return { ...current, overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId ? { ...overlay, window: fitted } : overlay) };
+                });
+                setStatus("Selected surface resized to fit its visible widgets");
+              }}>Fit window to widgets</button>
               <div className="windowPositionFields">
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
                 <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
@@ -1164,6 +1191,8 @@ function App() {
             </div>
             <p>Drag the widget in the preview or use the shortcuts below to place it precisely.</p>
           </div>
+          <WidgetTools clipboard={layoutClipboard} onCopy={(value) => { setLayoutClipboard({ ...value, source: `${activeOverlay?.name ?? activeOverlayId} / ${value.source}` }); setStatus("Widget layout copied inside Settings"); }} selected={selectedLayout} entries={availableLayoutEntries} window={(activeOverlayConfig ?? config).window} locked={config.layout.lock_all}
+            onReplace={(layout) => setConfig((current) => current ? updateOverlayLayoutSelection(current, activeOverlayId, selectedLayout, layout) : current)} />
           <WidgetLayoutFields
             key={selectedLayout}
             lockAll={config.layout.lock_all}
@@ -1352,12 +1381,19 @@ function App() {
             <button className="primaryButton" onClick={exportConfigText}>
               Export
             </button>
-            <button className="primaryButton" onClick={importConfigText} disabled={saving || !configText.trim()}>
-              Import
+            <button className="secondaryButton" onClick={() => void importPreview.review()} disabled={saving || importPreview.pending || !configText.trim()}>
+              {importPreview.pending ? "Checking TOML…" : "Preview import"}
+            </button>
+            <button className="primaryButton" onClick={importConfigText} disabled={saving || !importPreview.config || importPreview.pending || importChanges?.total === 0}>
+              Apply reviewed import
             </button>
             <button className="secondaryButton" onClick={() => setConfigText("")} disabled={!configText}>
               Clear text
             </button>
+            <button className="secondaryButton" disabled={!configText} onClick={async () => {
+              const copied = await copyGeometryToClipboard(configText);
+              setStatus(copied ? "Configuration TOML copied" : "Could not copy TOML. Select the text and copy it manually.");
+            }}>Copy TOML</button>
             <button className="primaryButton" onClick={resetLayout} disabled={saving || !defaultConfigState}>
               Reset layout
             </button>
@@ -1367,9 +1403,19 @@ function App() {
           </div>
           <label className="field stack">
             <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
-            <textarea aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
+            <textarea aria-invalid={Boolean(importPreview.error)} aria-describedby={importPreview.error ? "importError importHint" : "importHint"} aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
           </label>
-          <p className="previewHint">Import replaces the current settings after validation. Export first if you want a backup.</p>
+          {importPreview.pending && <p className="previewHint" role="status">Checking TOML and preparing the import preview…</p>}
+          {importPreview.error && <p id="importError" className="inlineError" role="alert">{importPreview.error}</p>}
+          {importChanges && <section className="importReview" aria-label="Import changes">
+            <p role="status">{importChanges.total === 0 ? "This import matches the current settings." : `${importChanges.total} fields will change. Review them before applying.`}</p>
+            {importChanges.items.length > 0 && <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Changed configuration fields"><table>
+              <thead><tr><th scope="col">Setting</th><th scope="col">Current</th><th scope="col">Imported</th></tr></thead>
+              <tbody>{importChanges.items.map((change) => <tr key={change.path}><th scope="row">{change.path}</th><td>{formatChangeValue(change.before)}</td><td>{formatChangeValue(change.after)}</td></tr>)}</tbody>
+            </table></div>}
+            {importChanges.total > importChanges.items.length && <p>Showing the first {importChanges.items.length} changes of {importChanges.total}.</p>}
+          </section>}
+          <p id="importHint" className="previewHint">Preview the TOML to review changes. Applying replaces all current settings, including surfaces and saved presets. Export first to keep a backup.</p>
         </Section>}
       </fieldset>
 
@@ -1569,6 +1615,8 @@ function OverlayPreview(props: {
     layout: WidgetLayout;
     resize: boolean;
   } | null>(null);
+  const nudging = useRef(false);
+  function finishNudge() { if (nudging.current) { nudging.current = false; props.onEditEnd(); } }
   function finishDrag() { setDrag(null); props.onEditEnd(); }
   useEffect(() => () => props.onEditEnd(), [props.onEditEnd]);
   const maxPreviewWidth = 760;
@@ -1663,6 +1711,7 @@ function OverlayPreview(props: {
                 if (props.config.layout.lock_all || layout.locked) {
                   return;
                 }
+                finishNudge();
                 props.onEditStart();
                 const bounds = event.currentTarget.getBoundingClientRect();
                 const resize = event.clientX >= bounds.right - 14 && event.clientY >= bounds.bottom - 14;
@@ -1676,24 +1725,18 @@ function OverlayPreview(props: {
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Escape") { finishDrag(); return; }
+                if (event.key === "Escape") { finishNudge(); finishDrag(); return; }
                 if (props.config.layout.lock_all || layout.locked) return;
-                const step = event.shiftKey ? 10 : 1;
-                let dx = 0;
-                let dy = 0;
-                if (event.key === "ArrowLeft") dx = -step;
-                if (event.key === "ArrowRight") dx = step;
-                if (event.key === "ArrowUp") dy = -step;
-                if (event.key === "ArrowDown") dy = step;
-                if (dx === 0 && dy === 0) return;
+                if (drag) return;
+                const delta = layoutNudge(event);
+                if (!delta) return;
                 event.preventDefault();
+                if (!nudging.current) { props.onEditStart(); nudging.current = true; }
                 props.onSelect(key);
-                props.onLayoutChange(key, snapLayout(props.config, key, {
-                  ...layout,
-                  x: layout.x + dx,
-                  y: layout.y + dy,
-                }));
+                props.onLayoutChange(key, nudgeWidget(props.config.window, layout, delta.dx, delta.dy));
               }}
+              onKeyUp={(event) => { if (event.key.startsWith("Arrow")) finishNudge(); }}
+              onBlur={finishNudge}
               aria-label={`${label}, position ${layout.x}, ${layout.y}${layout.locked ? ". Locked." : ". Use arrow keys to move."}`}
               title={layout.locked ? `${label} · locked` : label}
             >
@@ -1816,26 +1859,6 @@ function layoutForSelection(config: OverlayConfig, selection: LayoutSelection): 
     return config.extra_widgets[selection.slice("extra:".length)]?.layout ?? config.layout.telemetry;
   }
   return config.layout[selection as LayoutWidgetKey];
-}
-
-function updateLayoutSelection(config: OverlayConfig, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
-  if (selection.startsWith("extra:")) {
-    const id = selection.slice("extra:".length);
-    const widget = config.extra_widgets[id];
-    return widget ? { ...config, extra_widgets: { ...config.extra_widgets, [id]: { ...widget, layout } } } : config;
-  }
-  return { ...config, layout: { ...config.layout, [selection]: layout } };
-}
-
-function updateOverlayLayoutSelection(config: OverlayConfig, overlayId: string, selection: LayoutSelection, layout: WidgetLayout): OverlayConfig {
-  const next = updateLayoutSelection(config, selection, layout);
-  const key = selection.startsWith("extra:") ? selection.slice("extra:".length) : selection;
-  return {
-    ...next,
-    overlays: next.overlays.map((overlay) => overlay.id === overlayId
-      ? { ...overlay, layout_overrides: { ...overlay.layout_overrides, [key]: layout } }
-      : overlay),
-  };
 }
 
 function layoutOverridesFromArrangedProfile(
