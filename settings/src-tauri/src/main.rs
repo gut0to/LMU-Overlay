@@ -136,7 +136,11 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 }
 
 #[tauri::command]
-fn start_overlay(
+async fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    native_task(move || { let processes = app.state::<OverlayProcesses>(); start_overlay_blocking(app.clone(), processes) }).await
+}
+
+fn start_overlay_blocking(
     app: tauri::AppHandle,
     processes: tauri::State<'_, OverlayProcesses>,
 ) -> Result<(), String> {
@@ -187,7 +191,11 @@ fn start_overlay(
 }
 
 #[tauri::command]
-fn stop_overlay(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
+async fn stop_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    native_task(move || stop_overlay_blocking(app.state::<OverlayProcesses>())).await
+}
+
+fn stop_overlay_blocking(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
     let graceful = send_host_command("stop")
         .is_ok_and(|response| HostReply::parse(&response) == Some(HostReply::Stopping));
     if graceful {

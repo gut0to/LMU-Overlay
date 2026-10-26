@@ -27,5 +27,14 @@ registration paths.
 
 The pipe adapter checks the documented INVALID_HANDLE_VALUE failure result for
 [CreateNamedPipeW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipew).
-Transport IO is synchronous. Frame validation does not add an IO timeout; a
-nonresponsive local peer remains a transport limitation requiring host restart.
+The shared `host-client` uses overlapped client IO with one three-second budget
+for connecting to a busy pipe, writing and reading. Timeouts cancel the pending
+request and wait for its completion before releasing the OVERLAPPED structure or
+buffer, following [Microsoft's overlapped IO guidance](https://learn.microsoft.com/en-us/windows/win32/sync/synchronization-and-overlapped-input-and-output).
+Reply reads use message mode and enforce the frame limit. Native Settings host
+operations run in blocking workers rather than the window's invocation thread.
+
+The host server itself still accepts clients synchronously. A client that connects
+and never sends a command can stall the server, and server shutdown/join remains
+a limitation in that case. Client deadlines make this failure reportable; they do
+not claim to repair the server or make shutdown wait-free.
