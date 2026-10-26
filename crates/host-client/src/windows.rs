@@ -111,3 +111,48 @@ pub(super) fn send_to(name: &str, command: host_protocol::Command, timeout: std:
     write_command(&pipe, command, deadline)?;
     read_reply(&pipe, deadline)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{sync::{atomic::{AtomicU64, Ordering}, mpsc}, thread, time::Duration};
+    use windows_sys::Win32::{
+        Foundation::{GetLastError, ERROR_PIPE_CONNECTED},
+        Storage::FileSystem::{ReadFile, WriteFile, FlushFileBuffers, PIPE_ACCESS_DUPLEX},
+        System::Pipes::{CreateNamedPipeW, ConnectNamedPipe, PIPE_TYPE_MESSAGE, PIPE_READMODE_MESSAGE, PIPE_WAIT},
+    };
+    static NEXT_PIPE: AtomicU64 = AtomicU64::new(0);
+
+    fn serve(reply: Option<Vec<u8>>, delay: Duration) -> (String, thread::JoinHandle<()>) {
+        let name = format!(r"\\.\pipe\HashOverlay.Test.{}.{}", std::process::id(), NEXT_PIPE.fetch_add(1, Ordering::Relaxed));
+        let server_name = name.clone();
+        let (ready, wait) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let wide: Vec<_> = server_name.encode_utf16().chain(Some(0)).collect();
+            let pipe = Handle::new(unsafe { CreateNamedPipeW(wide.as_ptr(), PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, 1, 512, 512, 0, ptr::null()) }).unwrap();
+            ready.send(()).unwrap();
+            let connected = unsafe { ConnectNamedPipe(pipe.0, ptr::null_mut()) } != 0 || unsafe { GetLastError() } == ERROR_PIPE_CONNECTED;
+            assert!(connected);
+            let mut command = [0_u8; 128];
+            let mut count = 0;
+            assert_ne!(unsafe { ReadFile(pipe.0, command.as_mut_ptr().cast(), 128, &mut count, ptr::null_mut()) }, 0);
+            assert!(host_protocol::Command::parse(std::str::from_utf8(&command[..count as usize]).unwrap()).is_some());
+            thread::sleep(delay);
+            if let Some(reply) = reply {
+                let mut written = 0;
+                unsafe { WriteFile(pipe.0, reply.as_ptr().cast(), reply.len() as u32, &mut written, ptr::null_mut()); FlushFileBuffers(pipe.0); }
+            }
+        });
+        wait.recv_timeout(Duration::from_secs(5)).unwrap();
+        (name, worker)
+    }
+
+    #[test]
+    fn real_pipe_round_trips_complete_before_client_handles_are_released() {
+        for _ in 0..10 {
+            let (name, server) = serve(Some(b"running".to_vec()), Duration::ZERO);
+            assert_eq!(send_to(&name, host_protocol::Command::Status, Duration::from_secs(2)).unwrap(), "running");
+            server.join().unwrap();
+        }
+    }
+}
