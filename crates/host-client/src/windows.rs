@@ -82,3 +82,12 @@ fn open_pipe(name: &str, deadline: Instant) -> io::Result<Handle> {
         unsafe { WaitNamedPipeW(wide.as_ptr(), remaining); }
     }
 }
+
+fn read_reply(pipe: &Handle, deadline: Instant) -> io::Result<String> {
+    use windows_sys::Win32::Storage::FileSystem::ReadFile;
+    let mut bytes = [0_u8; host_protocol::MAX_FRAME_BYTES + 1];
+    let mut operation = Operation::new(pipe)?;
+    let succeeded = unsafe { ReadFile(pipe.0, bytes.as_mut_ptr().cast(), bytes.len() as u32, ptr::null_mut(), &mut operation.overlapped) };
+    let count = operation.finish(succeeded, deadline)? as usize;
+    host_protocol::decode_frame(&bytes[..count]).map(str::to_owned).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+}
