@@ -17,3 +17,8 @@ test("window limits preserve negative monitor origins and integer dimensions", a
     assert.equal(normalizeWindowField(key, min + 0.6), min + 1);
   }
 });
+
+test("native-supported custom window values survive editor normalization unchanged", () => {
+  const values = { width: 1200, height: 800, refresh_hz: 144, sample_ms: 250, history_samples: 900, x: -3840, y: -1080 };
+  for (const [key, value] of Object.entries(values)) assert.equal(normalizeWindowField(key, value), value);
+});

@@ -1141,8 +1141,8 @@ function App() {
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
                 <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
               </div>
-              <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
-              <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
+              <NumberField label="Width" min={280} max={1200} value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
+              <NumberField label="Height" min={140} max={800} value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
               <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
               <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
             </Section>
@@ -1248,9 +1248,9 @@ function App() {
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
-          <NumberField label="Render FPS" value={config.window.refresh_hz} onChange={(value) => setPerformanceWindow(config, setConfig, "refresh_hz", value)} />
-          <NumberField label="Sample ms" value={config.window.sample_ms} onChange={(value) => setPerformanceWindow(config, setConfig, "sample_ms", value)} />
-          <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setPerformanceWindow(config, setConfig, "history_samples", value)} />
+          <NumberField label="Render FPS" min={15} max={144} value={config.window.refresh_hz} onChange={(value) => setPerformanceWindow(config, setConfig, "refresh_hz", value)} />
+          <NumberField label="Sample ms" min={5} max={250} value={config.window.sample_ms} onChange={(value) => setPerformanceWindow(config, setConfig, "sample_ms", value)} />
+          <NumberField label="History samples" min={16} max={900} value={config.window.history_samples} onChange={(value) => setPerformanceWindow(config, setConfig, "history_samples", value)} />
           <RangeField label="Line thickness" min={1} max={8} step={1} value={config.style.line_thickness} onChange={(value) => setStyle(config, setConfig, "line_thickness", value)} />
         </Section>}
 
@@ -2008,11 +2008,11 @@ function WidgetLayoutFields(props: {
   );
 }
 
-function NumberField(props: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberField(props: { label: string; value: number; onChange: (value: number) => void; min?: number; max?: number }) {
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input type="number" step="any" value={props.value} onChange={(event) => {
+      <input type="number" step="any" min={props.min} max={props.max} value={props.value} onChange={(event) => {
         const value = event.target.valueAsNumber;
         if (Number.isFinite(value)) props.onChange(value);
       }} />
