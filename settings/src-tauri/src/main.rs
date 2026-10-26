@@ -41,7 +41,11 @@ fn load_config() -> Result<ConfigResponse, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn save_config(
+async fn save_config(config: OverlayConfig, expected_revision: String) -> Result<ConfigResponse, String> {
+    native_task(move || save_config_blocking(config, expected_revision)).await
+}
+
+fn save_config_blocking(
     mut config: OverlayConfig,
     expected_revision: String,
 ) -> Result<ConfigResponse, String> {
@@ -93,7 +97,11 @@ fn preview_import(text: String) -> Result<OverlayConfig, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
+async fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
+    native_task(move || import_config_blocking(text, expected_revision)).await
+}
+
+fn import_config_blocking(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
     let mut config = preview_import(text)?;
     let path = overlay_config_path();
     config
@@ -103,7 +111,11 @@ fn import_config(text: String, expected_revision: String) -> Result<ConfigRespon
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn reset_config(expected_revision: String) -> Result<ConfigResponse, String> {
+async fn reset_config(expected_revision: String) -> Result<ConfigResponse, String> {
+    native_task(move || reset_config_blocking(expected_revision)).await
+}
+
+fn reset_config_blocking(expected_revision: String) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     reset_config_at(&path, parse_revision(&expected_revision)?)?;
     finish_saved_config(path, reload_overlay_config_after_save())
@@ -211,12 +223,20 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 }
 
 #[tauri::command]
-fn overlay_status() -> Result<bool, String> {
+async fn overlay_status() -> Result<bool, String> {
+    native_task(move || overlay_status_blocking()).await
+}
+
+fn overlay_status_blocking() -> Result<bool, String> {
     Ok(host_control_is_ready())
 }
 
 #[tauri::command]
-fn toggle_overlay_edit_mode() -> Result<String, String> {
+async fn toggle_overlay_edit_mode() -> Result<String, String> {
+    native_task(move || toggle_overlay_edit_mode_blocking()).await
+}
+
+fn toggle_overlay_edit_mode_blocking() -> Result<String, String> {
     let response = send_host_command("edit")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     if response == "edit_on" || response == "edit_off" {
@@ -227,7 +247,11 @@ fn toggle_overlay_edit_mode() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn overlay_edit_status() -> Result<bool, String> {
+async fn overlay_edit_status() -> Result<bool, String> {
+    native_task(move || overlay_edit_status_blocking()).await
+}
+
+fn overlay_edit_status_blocking() -> Result<bool, String> {
     let response = send_host_command("edit_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     HostReply::parse(&response)
@@ -236,7 +260,11 @@ fn overlay_edit_status() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn toggle_overlay_visibility() -> Result<bool, String> {
+async fn toggle_overlay_visibility() -> Result<bool, String> {
+    native_task(move || toggle_overlay_visibility_blocking()).await
+}
+
+fn toggle_overlay_visibility_blocking() -> Result<bool, String> {
     let response = send_host_command("toggle_visibility")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     HostReply::parse(&response)
@@ -245,7 +273,11 @@ fn toggle_overlay_visibility() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn overlay_visibility_status() -> Result<bool, String> {
+async fn overlay_visibility_status() -> Result<bool, String> {
+    native_task(move || overlay_visibility_status_blocking()).await
+}
+
+fn overlay_visibility_status_blocking() -> Result<bool, String> {
     let response = send_host_command("visibility_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     HostReply::parse(&response)
@@ -624,4 +656,8 @@ mod ipc_tests {
             assert!(!error.contains("missing required key"), "{cmd}: {error}");
         }
     }
+}
+
+async fn native_task<T: Send + 'static>(task: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(task).await.map_err(|error| format!("Native operation failed: {error}"))?
 }
