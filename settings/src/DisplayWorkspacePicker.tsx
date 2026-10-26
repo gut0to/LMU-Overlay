@@ -2,7 +2,7 @@ import { useState } from "react";
 import { displayWorkspace, matchesDisplay, type Display } from "./displays";
 import type { WorkspaceSize } from "./workspace";
 
-export function DisplayWorkspacePicker(props: { displays: Display[]; workspace: WorkspaceSize; onChange: (workspace: WorkspaceSize) => void }) {
+export function DisplayWorkspacePicker(props: { displays: Display[]; workspace: WorkspaceSize; onChange: (workspace: WorkspaceSize) => void; loading: boolean; error: string | null; onRefresh: () => void }) {
   const [workArea, setWorkArea] = useState(false);
   const selected = props.displays.find((display) => matchesDisplay(props.workspace, display, workArea));
   return <div className="displayWorkspacePicker">
@@ -17,6 +17,9 @@ export function DisplayWorkspacePicker(props: { displays: Display[]; workspace: 
       setWorkArea(event.target.checked);
       if (selected) props.onChange(displayWorkspace(selected, event.target.checked));
     }} /><span>Use work area, excluding taskbars</span></label>
+    <button className="secondaryButton" disabled={props.loading} onClick={props.onRefresh}>{props.loading ? "Detecting displays…" : "Refresh connected displays"}</button>
+    {props.error && <p className="inlineError" role="status">{props.error}</p>}
+    {!props.loading && !props.error && props.displays.length === 0 && <p className="previewHint">No displays were reported. Choose a workspace preset or enter the desktop size manually.</p>}
     {selected && <p className="previewHint">Screen origin: {props.workspace.originX}, {props.workspace.originY}. Choosing a display changes only the editor workspace.</p>}
   </div>;
 }
