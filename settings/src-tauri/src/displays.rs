@@ -25,3 +25,26 @@ fn display_from_edges(id: String, monitor: [i32; 4], work: [i32; 4], primary: bo
     let work_area = DisplayRect::from_edges(work).unwrap_or_else(|| bounds.clone());
     Some(Display { name: id.trim_start_matches(r"\\.\").to_string(), id, primary, bounds, work_area })
 }
+
+#[cfg(windows)]
+pub fn list() -> Result<Vec<Display>, String> {
+    use windows_sys::Win32::{Foundation::{BOOL, LPARAM, RECT}, Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW, MONITORINFOF_PRIMARY}};
+    unsafe extern "system" fn collect(monitor: HMONITOR, _dc: HDC, _clip: *mut RECT, data: LPARAM) -> BOOL {
+        let displays = &mut *(data as *mut Vec<Display>);
+        let mut info: MONITORINFOEXW = std::mem::zeroed();
+        info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+        if GetMonitorInfoW(monitor, (&mut info as *mut MONITORINFOEXW).cast::<MONITORINFO>()) == 0 { return 1; }
+        let end = info.szDevice.iter().position(|value| *value == 0).unwrap_or(info.szDevice.len());
+        let id = String::from_utf16_lossy(&info.szDevice[..end]);
+        let rect = |value: RECT| [value.left, value.top, value.right, value.bottom];
+        if let Some(display) = display_from_edges(id, rect(info.monitorInfo.rcMonitor), rect(info.monitorInfo.rcWork), info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0) { displays.push(display); }
+        1
+    }
+    let mut displays = Vec::new();
+    if unsafe { EnumDisplayMonitors(std::ptr::null_mut(), std::ptr::null(), Some(collect), &mut displays as *mut Vec<Display> as LPARAM) } == 0 { return Err(format!("Could not enumerate Windows displays: {}", std::io::Error::last_os_error())); }
+    displays.sort_by(|left, right| right.primary.cmp(&left.primary).then(left.id.cmp(&right.id)));
+    Ok(displays)
+}
+
+#[cfg(not(windows))]
+pub fn list() -> Result<Vec<Display>, String> { Err("Display discovery requires Windows".into()) }

@@ -1,3 +1,4 @@
+mod displays;
 use std::{
     fs,
     path::PathBuf,
@@ -399,6 +400,9 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
     host_client::send(command)
 }
 
+#[tauri::command]
+async fn list_displays() -> Result<Vec<displays::Display>, String> { native_task(displays::list).await }
+
 fn host_is_running() -> bool {
     #[cfg(windows)]
     unsafe {
@@ -629,6 +633,7 @@ fn main() {
             preview_import,
             reset_config,
             widget_catalog,
+            list_displays,
             start_overlay,
             stop_overlay,
             overlay_status,
