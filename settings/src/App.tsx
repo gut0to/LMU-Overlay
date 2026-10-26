@@ -1,3 +1,4 @@
+import { initialHostState, projectHostState } from "./host-state";
 import { updateOverlayLayoutSelection } from "./layout-state";
 import type { LayoutClipboard } from "./layout-clipboard";
 import { layoutNudge } from "./layout-shortcuts";
@@ -259,6 +260,7 @@ function App() {
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [replacingConfig, setReplacingConfig] = useState(false);
+  const [hostState, setHostState] = useState(initialHostState);
   const [overlayRunning, setOverlayRunning] = useState(false);
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
@@ -381,19 +383,19 @@ function App() {
   async function refreshOverlayStatus(): Promise<boolean> {
     return statusRequest.current.run(async () => {
       try {
-        const running = await invoke<boolean>("overlay_status");
+        const snapshot = projectHostState(await invoke<unknown>("host_state"));
+        setHostState(snapshot);
+        const running = snapshot.state === "running";
         setOverlayRunning(running);
-        if (running) {
-          const editing = await invoke<boolean>("overlay_edit_status");
-          setOverlayEditMode(editing);
-          setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
-        } else {
-          setOverlayEditMode(false);
-          setOverlayVisible(false);
-        }
+        setOverlayEditMode(snapshot.editing);
+        setOverlayVisible(snapshot.visible);
         return running;
       } catch (error) {
-        setStatus(String(error));
+        const snapshot = projectHostState({ state: "unreachable", error: String(error) });
+        setHostState(snapshot);
+        setOverlayRunning(false);
+        setOverlayEditMode(false);
+        setOverlayVisible(false);
         return false;
       }
     });
