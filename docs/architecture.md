@@ -181,3 +181,24 @@ bounding the list rendered in the review.
 React or native dependencies. `layout-state.ts` records scoped layout overrides
 without mutating shared templates used by other surfaces. History sees each
 operation as one immutable config update; held arrow-key edits use a history group.
+
+## Bounded Host Clients and Display Workspaces
+
+`host-client` owns the Windows client transport used by Settings and host wakeup
+requests. Its small interface accepts a protocol command. Internally it retries a
+busy pipe, opens an overlapped handle in message mode and uses one deadline across
+writes and reads. Cancellation drains the request before its buffer and event are
+released. This does not add a timeout to the synchronous host server itself.
+
+The `snapshot` command reports running, visible and editing bits in one reply.
+Settings maps its result into running, stopped or unreachable states. Only a
+missing pipe without a host mutex is treated as stopped; timeout and malformed
+reply errors remain visible as communication failures. Host work runs in native
+blocking workers. Sequential browser polling pauses with document visibility.
+
+`displays.rs` enumerates Windows monitor rectangles and work areas, with overflow
+checks before converting edge coordinates into dimensions. `displays.ts` validates
+that native payload and converts it into editor-only workspace state. Refreshing
+displays never silently relocates overlays. Moving a selected surface is a separate
+configuration edit. Frontend window normalization follows native limits so accepted
+editor values do not shrink or change rate unexpectedly at the next save.
