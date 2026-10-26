@@ -1,3 +1,5 @@
+import { DisplayWorkspacePicker } from "./DisplayWorkspacePicker";
+import { parseDisplays, type Display } from "./displays";
 import { useVisiblePolling } from "./useVisiblePolling";
 import { initialHostState, projectHostState } from "./host-state";
 import { updateOverlayLayoutSelection } from "./layout-state";
@@ -282,6 +284,7 @@ function App() {
   const [widgetVisibility, setWidgetVisibility] = useState("all");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
+  const [displays, setDisplays] = useState<Display[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
     try {
       return restoreWorkspace(window.localStorage.getItem(workspaceStorageKey), workspacePresets[0][1]);
@@ -305,6 +308,7 @@ function App() {
     void loadConfig();
     void loadDefaultConfig();
     void loadWidgetCatalog();
+    void loadDisplays();
 
   }, []);
 
@@ -610,6 +614,11 @@ function App() {
     } catch (error) {
       setStatus(String(error));
     }
+  }
+
+  async function loadDisplays() {
+    try { setDisplays(parseDisplays(await invoke<unknown>("list_displays"))); }
+    catch (error) { setStatus(`Could not load connected displays: ${String(error)}`); }
   }
 
   async function loadWidgetCatalog() {
@@ -1075,6 +1084,7 @@ function App() {
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
+            <DisplayWorkspacePicker displays={displays} workspace={workspace} onChange={setWorkspace} />
             <SurfaceMap
               onEditStart={beginEdit}
               onEditEnd={endEdit}
