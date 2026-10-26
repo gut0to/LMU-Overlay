@@ -158,6 +158,15 @@ mod tests {
     }
 
     #[test]
+    fn malformed_and_oversized_replies_are_rejected() {
+        for reply in [vec![0xff], b"bad\nframe".to_vec(), vec![b'x'; 129], vec![b'x'; 256]] {
+            let (name, server) = serve(Some(reply), Duration::ZERO);
+            assert!(send_to(&name, host_protocol::Command::Status, Duration::from_secs(2)).is_err());
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
     fn real_pipe_round_trips_complete_before_client_handles_are_released() {
         for _ in 0..10 {
             let (name, server) = serve(Some(b"running".to_vec()), Duration::ZERO);
