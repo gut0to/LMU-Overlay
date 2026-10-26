@@ -3,6 +3,16 @@ use std::{io, time::{Duration, Instant}};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(3);
 
+#[cfg(windows)]
+mod windows;
+
+pub fn send(command: host_protocol::Command) -> io::Result<String> {
+    #[cfg(windows)]
+    { windows::send_to(host_protocol::PIPE_NAME, command, DEFAULT_TIMEOUT) }
+    #[cfg(not(windows))]
+    { let _ = command; Err(io::Error::new(io::ErrorKind::Unsupported, "host control requires Windows")) }
+}
+
 fn deadline(timeout: Duration) -> io::Result<Instant> {
     if timeout.is_zero() || timeout > Duration::from_secs(30) {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "host timeout must be between zero and 30 seconds"));

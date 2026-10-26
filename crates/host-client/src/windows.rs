@@ -101,3 +101,13 @@ fn write_command(pipe: &Handle, command: host_protocol::Command, deadline: Insta
     if count != bytes.len() { return Err(io::Error::new(io::ErrorKind::WriteZero, "partial host command write")); }
     Ok(())
 }
+
+pub(super) fn send_to(name: &str, command: host_protocol::Command, timeout: std::time::Duration) -> io::Result<String> {
+    use windows_sys::Win32::System::Pipes::{SetNamedPipeHandleState, PIPE_READMODE_MESSAGE};
+    let deadline = super::deadline(timeout)?;
+    let pipe = open_pipe(name, deadline)?;
+    let mode = PIPE_READMODE_MESSAGE;
+    if unsafe { SetNamedPipeHandleState(pipe.0, &mode, ptr::null(), ptr::null()) } == 0 { return Err(io::Error::last_os_error()); }
+    write_command(&pipe, command, deadline)?;
+    read_reply(&pipe, deadline)
+}
