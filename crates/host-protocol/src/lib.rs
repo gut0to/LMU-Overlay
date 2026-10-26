@@ -5,6 +5,7 @@ pub const MAX_FRAME_BYTES: usize = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Status,
+    Snapshot,
     Reload,
     Show,
     Hide,
@@ -17,8 +18,9 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Status,
+        Self::Snapshot,
         Self::Reload,
         Self::Show,
         Self::Hide,
@@ -37,6 +39,7 @@ impl Command {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Status => "status",
+            Self::Snapshot => "snapshot",
             Self::Reload => "reload",
             Self::Show => "show",
             Self::Hide => "hide",
@@ -85,8 +88,21 @@ pub fn decode_frame(bytes: &[u8]) -> Result<&str, FrameError> {
     Ok(text)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostSnapshot { pub running: bool, pub visible: bool, pub editing: bool }
+impl HostSnapshot {
+    pub fn wire(self) -> String { format!("state:{}:{}:{}", u8::from(self.running), u8::from(self.visible), u8::from(self.editing)) }
+    pub fn parse(value: &str) -> Option<Self> {
+        let parts: Vec<_> = value.split(':').collect();
+        if parts.len() != 4 || parts[0] != "state" { return None; }
+        let bit = |value| match value { "0" => Some(false), "1" => Some(true), _ => None };
+        Some(Self { running: bit(parts[1])?, visible: bit(parts[2])?, editing: bit(parts[3])? })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
+    Snapshot(HostSnapshot),
     Running,
     Stopped,
     Stopping,
@@ -110,6 +126,7 @@ impl Reply {
             "edit_on" => Self::EditOn,
             "edit_off" => Self::EditOff,
             "invalid" => Self::Invalid,
+            other if other.starts_with("state:") => Self::Snapshot(HostSnapshot::parse(other)?),
             other => Self::Error(
                 other
                     .strip_prefix("error:")
