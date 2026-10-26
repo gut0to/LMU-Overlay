@@ -1,3 +1,4 @@
+import { useVisiblePolling } from "./useVisiblePolling";
 import { initialHostState, projectHostState } from "./host-state";
 import { updateOverlayLayoutSelection } from "./layout-state";
 import type { LayoutClipboard } from "./layout-clipboard";
@@ -304,11 +305,7 @@ function App() {
     void loadConfig();
     void loadDefaultConfig();
     void loadWidgetCatalog();
-    void refreshOverlayStatus();
-    const id = window.setInterval(() => {
-      void refreshOverlayStatus();
-    }, 1500);
-    return () => window.clearInterval(id);
+
   }, []);
 
   useEffect(() => {
@@ -379,6 +376,8 @@ function App() {
   useDraftPersistence(config, path, lastSavedConfig.current,
     hydratedConfig.current && !replacingConfig && !recovery,
     draftStore.current, setRecoveryError);
+
+  useVisiblePolling(refreshOverlayStatus);
 
   async function refreshOverlayStatus(): Promise<boolean> {
     return statusRequest.current.run(async () => {
@@ -940,10 +939,11 @@ function App() {
           </div>
         </div>
         <div className="topbarRight">
-          <div className={`statusPill ${overlayRunning ? "live" : ""} ${overlayRunning && !overlayVisible ? "hiddenState" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
+          <div className={`statusPill ${overlayRunning ? "live" : ""} ${overlayRunning && !overlayVisible ? "hiddenState" : ""} ${hostState.state === "unreachable" || (!overlayRunning && statusNeedsAttention) ? "error" : ""}`} title={hostState.error ?? status} aria-live="polite">
             <span className="statusDot" />
-            {overlayRunning ? overlayVisible ? "Overlay live" : "Overlay hidden" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
+            {hostState.state === "checking" ? "Checking overlay host" : hostState.state === "unreachable" ? "Host not responding" : overlayRunning ? overlayVisible ? "Overlay live" : "Overlay hidden" : "Overlay stopped"}
           </div>
+          {hostState.error && <p className="runtimeNotice" role="status">{hostState.error}</p>}
           {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">
           <button className="iconButton" aria-label="Open config folder" title="Open config folder" onClick={openConfigFolder}>
@@ -956,7 +956,7 @@ function App() {
             <Play size={18} />
             Start overlay
           </button>
-          <button className="dangerButton" onClick={stopOverlay} disabled={!overlayRunning}>
+          <button className="dangerButton" onClick={stopOverlay} disabled={!overlayRunning && hostState.state !== "unreachable"}>
             <Square size={16} />
             Stop overlay
           </button>
