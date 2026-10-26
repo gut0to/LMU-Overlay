@@ -148,6 +148,16 @@ mod tests {
     }
 
     #[test]
+    fn a_silent_peer_times_out_and_pending_reads_are_drained_safely() {
+        let (name, server) = serve(None, Duration::from_millis(200));
+        let start = Instant::now();
+        let error = send_to(&name, host_protocol::Command::Status, Duration::from_millis(40)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(2));
+        server.join().unwrap();
+    }
+
+    #[test]
     fn real_pipe_round_trips_complete_before_client_handles_are_released() {
         for _ in 0..10 {
             let (name, server) = serve(Some(b"running".to_vec()), Duration::ZERO);
