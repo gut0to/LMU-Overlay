@@ -220,6 +220,19 @@ impl HotkeyBinding {
 mod tests {
     use super::*;
     #[test]
+    fn state_snapshots_round_trip_and_reject_non_boolean_or_extra_fields() {
+        for running in [false, true] { for visible in [false, true] { for editing in [false, true] {
+            let state = HostSnapshot { running, visible, editing };
+            assert_eq!(HostSnapshot::parse(&state.wire()), Some(state));
+            assert_eq!(Reply::parse(&state.wire()), Some(Reply::Snapshot(state)));
+            assert!(decode_frame(state.wire().as_bytes()).is_ok());
+        } } }
+        for invalid in ["state:1:1", "state:1:1:0:1", "state:true:1:0", "state:1:2:0", "state:1::0"] {
+            assert!(Reply::parse(invalid).is_none(), "{invalid}");
+        }
+    }
+
+    #[test]
     fn all_supported_function_keys_map_to_distinct_virtual_keys() {
         let keys: std::collections::BTreeSet<_> = (1..=12)
             .map(|number| {
