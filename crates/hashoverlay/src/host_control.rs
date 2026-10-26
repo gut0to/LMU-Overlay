@@ -233,76 +233,8 @@ mod windows_control {
     }
 
     pub fn send_command(command: &str) -> std::io::Result<String> {
-        if ControlCommand::parse(command).is_none() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "unsupported host command",
-            ));
-        }
-        use std::io::{Error, ErrorKind};
-        use windows_sys::Win32::{
-            Foundation::{GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
-            Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING},
-        };
-
-        let pipe = unsafe {
-            CreateFileW(
-                wide_null(PIPE_NAME).as_ptr(),
-                GENERIC_READ | GENERIC_WRITE,
-                0,
-                ptr::null_mut(),
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                ptr::null_mut(),
-            )
-        };
-        if pipe.is_null() || pipe == INVALID_HANDLE_VALUE {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                "host control pipe is unavailable",
-            ));
-        }
-        let command_result = (|| {
-            let bytes = command.as_bytes();
-            let mut written = 0_u32;
-            if unsafe {
-                WriteFile(
-                    pipe,
-                    bytes.as_ptr().cast(),
-                    bytes.len() as u32,
-                    &mut written,
-                    ptr::null_mut(),
-                )
-            } == 0
-            {
-                return Err(Error::last_os_error());
-            }
-            if written != bytes.len() as u32 {
-                return Err(Error::new(
-                    ErrorKind::WriteZero,
-                    "partial host command write",
-                ));
-            }
-            let mut buffer = [0_u8; BUFFER_SIZE as usize];
-            let mut read = 0_u32;
-            if unsafe {
-                ReadFile(
-                    pipe,
-                    buffer.as_mut_ptr().cast(),
-                    buffer.len() as u32,
-                    &mut read,
-                    ptr::null_mut(),
-                )
-            } == 0
-            {
-                return Err(Error::last_os_error());
-            }
-            host_protocol::decode_frame(&buffer[..read as usize])
-                .map(str::to_owned)
-                .map_err(|error| Error::new(ErrorKind::InvalidData, error))
-        })();
-        unsafe { CloseHandle(pipe) };
-        command_result
+        let command = ControlCommand::parse(command).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"))?;
+        host_client::send(command)
     }
 
     fn wide_null(value: &str) -> Vec<u16> {
