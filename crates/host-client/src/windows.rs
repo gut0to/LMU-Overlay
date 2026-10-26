@@ -167,6 +167,19 @@ mod tests {
     }
 
     #[test]
+    fn busy_pipes_share_the_same_deadline_and_missing_hosts_fail_promptly() {
+        let (name, server) = serve(None, Duration::from_millis(200));
+        let occupied = open_pipe(&name, Instant::now() + Duration::from_secs(2)).unwrap();
+        write_command(&occupied, host_protocol::Command::Status, Instant::now() + Duration::from_secs(2)).unwrap();
+        let start = Instant::now();
+        assert_eq!(send_to(&name, host_protocol::Command::Status, Duration::from_millis(40)).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert!(start.elapsed() < Duration::from_secs(2));
+        drop(occupied);
+        server.join().unwrap();
+        assert!(send_to(&name, host_protocol::Command::Status, Duration::from_secs(2)).is_err());
+    }
+
+    #[test]
     fn real_pipe_round_trips_complete_before_client_handles_are_released() {
         for _ in 0..10 {
             let (name, server) = serve(Some(b"running".to_vec()), Duration::ZERO);
