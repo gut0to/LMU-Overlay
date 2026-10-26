@@ -298,6 +298,7 @@ function App() {
   });
   const hydratedConfig = useRef(false);
   const statusRequest = useRef(new StatusRequest());
+  const hostStateGeneration = useRef(0);
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
@@ -386,10 +387,14 @@ function App() {
 
   useVisiblePolling(refreshOverlayStatus);
 
+  function invalidateHostState() { hostStateGeneration.current++; statusRequest.current.invalidate(); }
+
   async function refreshOverlayStatus(): Promise<boolean> {
+    const generation = hostStateGeneration.current;
     return statusRequest.current.run(async () => {
       try {
         const snapshot = projectHostState(await invoke<unknown>("host_state"));
+        if (generation !== hostStateGeneration.current) return snapshot.state === "running";
         setHostState(snapshot);
         const running = snapshot.state === "running";
         setOverlayRunning(running);
@@ -398,6 +403,7 @@ function App() {
         return running;
       } catch (error) {
         const snapshot = projectHostState({ state: "unreachable", error: String(error) });
+        if (generation !== hostStateGeneration.current) return false;
         setHostState(snapshot);
         setOverlayRunning(false);
         setOverlayEditMode(false);
@@ -598,6 +604,7 @@ function App() {
         return;
       }
       await invoke("start_overlay");
+      invalidateHostState();
       const running = await refreshOverlayStatus();
       if (!running) {
         setStatus("HashOverlay did not become ready. Close any older HashOverlay process and try Start overlay again.");
@@ -612,6 +619,7 @@ function App() {
   async function stopOverlay() {
     try {
       await invoke("stop_overlay");
+      invalidateHostState();
       await refreshOverlayStatus();
       setStatus("Overlay stop requested");
     } catch (error) {
@@ -755,7 +763,9 @@ function App() {
     try {
       const response = await invoke<string>("toggle_overlay_edit_mode");
       const enabled = response === "edit_on";
+      invalidateHostState();
       setOverlayEditMode(enabled);
+      void refreshOverlayStatus();
       setStatus(enabled ? "Overlay edit mode enabled" : "Overlay edit mode disabled");
     } catch (error) {
       setStatus(String(error));
@@ -765,7 +775,9 @@ function App() {
   async function toggleOverlayVisibility() {
     try {
       const visible = await invoke<boolean>("toggle_overlay_visibility");
+      invalidateHostState();
       setOverlayVisible(visible);
+      void refreshOverlayStatus();
       setStatus(visible ? "Overlay shown" : "Overlay hidden");
     } catch (error) {
       setStatus(String(error));

@@ -243,7 +243,7 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 
 #[tauri::command]
 async fn overlay_status() -> Result<bool, String> {
-    native_task(move || overlay_status_blocking()).await
+    native_task(overlay_status_blocking).await
 }
 
 fn overlay_status_blocking() -> Result<bool, String> {
@@ -252,7 +252,7 @@ fn overlay_status_blocking() -> Result<bool, String> {
 
 #[tauri::command]
 async fn toggle_overlay_edit_mode() -> Result<String, String> {
-    native_task(move || toggle_overlay_edit_mode_blocking()).await
+    native_task(toggle_overlay_edit_mode_blocking).await
 }
 
 fn toggle_overlay_edit_mode_blocking() -> Result<String, String> {
@@ -267,7 +267,7 @@ fn toggle_overlay_edit_mode_blocking() -> Result<String, String> {
 
 #[tauri::command]
 async fn overlay_edit_status() -> Result<bool, String> {
-    native_task(move || overlay_edit_status_blocking()).await
+    native_task(overlay_edit_status_blocking).await
 }
 
 fn overlay_edit_status_blocking() -> Result<bool, String> {
@@ -280,7 +280,7 @@ fn overlay_edit_status_blocking() -> Result<bool, String> {
 
 #[tauri::command]
 async fn toggle_overlay_visibility() -> Result<bool, String> {
-    native_task(move || toggle_overlay_visibility_blocking()).await
+    native_task(toggle_overlay_visibility_blocking).await
 }
 
 fn toggle_overlay_visibility_blocking() -> Result<bool, String> {
@@ -293,7 +293,7 @@ fn toggle_overlay_visibility_blocking() -> Result<bool, String> {
 
 #[tauri::command]
 async fn overlay_visibility_status() -> Result<bool, String> {
-    native_task(move || overlay_visibility_status_blocking()).await
+    native_task(overlay_visibility_status_blocking).await
 }
 
 fn overlay_visibility_status_blocking() -> Result<bool, String> {
@@ -325,10 +325,16 @@ async fn host_state() -> Result<HostStateResponse, String> {
 }
 
 fn query_host_state() -> Result<HostStateResponse, String> {
-    Ok(host_state_from_reply(send_host_command("snapshot"), host_is_running()))
+    Ok(host_state_from_reply(
+        send_host_command("snapshot"),
+        host_is_running(),
+    ))
 }
 
-fn host_state_from_reply(response: std::io::Result<String>, process_present: bool) -> HostStateResponse {
+fn host_state_from_reply(
+    response: std::io::Result<String>,
+    process_present: bool,
+) -> HostStateResponse {
     match response {
         Ok(reply) => match HostReply::parse(&reply) {
             Some(HostReply::Snapshot(snapshot)) => HostStateResponse {
@@ -551,12 +557,14 @@ mod save_feedback_tests {
         assert_eq!(stopped["visible"], false);
         let stalled = serde_json::to_value(host_state_from_reply(Err(absent()), true)).unwrap();
         assert_eq!(stalled["state"], "unreachable");
-        let live = serde_json::to_value(host_state_from_reply(Ok("state:1:0:1".into()), true)).unwrap();
+        let live =
+            serde_json::to_value(host_state_from_reply(Ok("state:1:0:1".into()), true)).unwrap();
         assert_eq!(live["state"], "running");
         assert_eq!(live["editing"], true);
         assert_eq!(live["visible"], false);
         assert!(live["error"].is_null());
-        let invalid = serde_json::to_value(host_state_from_reply(Ok("invalid".into()), true)).unwrap();
+        let invalid =
+            serde_json::to_value(host_state_from_reply(Ok("invalid".into()), true)).unwrap();
         assert_eq!(invalid["state"], "unreachable");
     }
 

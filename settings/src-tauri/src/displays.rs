@@ -123,7 +123,13 @@ mod tests {
     use super::*;
     #[test]
     fn display_json_contract_keeps_work_area_and_negative_origins() {
-        let display = display_from_edges("left".into(), [-1920, 0, 0, 1080], [-1920, 0, 0, 1040], false).unwrap();
+        let display = display_from_edges(
+            "left".into(),
+            [-1920, 0, 0, 1080],
+            [-1920, 0, 0, 1040],
+            false,
+        )
+        .unwrap();
         let json = serde_json::to_value(display).unwrap();
         assert_eq!(json["bounds"]["x"], -1920);
         assert_eq!(json["work_area"]["height"], 1040);

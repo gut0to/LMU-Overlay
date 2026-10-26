@@ -132,7 +132,8 @@ mod windows_control {
                     running: running.load(Ordering::Relaxed),
                     visible: visible.load(Ordering::Relaxed),
                     editing: edit_mode.load(Ordering::Relaxed),
-                }.wire(),
+                }
+                .wire(),
                 Some(ControlCommand::Reload) => request_reload(&reload_requests),
                 Some(ControlCommand::Show) => {
                     visible.store(true, Ordering::Relaxed);

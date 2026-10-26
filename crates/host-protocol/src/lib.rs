@@ -89,14 +89,35 @@ pub fn decode_frame(bytes: &[u8]) -> Result<&str, FrameError> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HostSnapshot { pub running: bool, pub visible: bool, pub editing: bool }
+pub struct HostSnapshot {
+    pub running: bool,
+    pub visible: bool,
+    pub editing: bool,
+}
 impl HostSnapshot {
-    pub fn wire(self) -> String { format!("state:{}:{}:{}", u8::from(self.running), u8::from(self.visible), u8::from(self.editing)) }
+    pub fn wire(self) -> String {
+        format!(
+            "state:{}:{}:{}",
+            u8::from(self.running),
+            u8::from(self.visible),
+            u8::from(self.editing)
+        )
+    }
     pub fn parse(value: &str) -> Option<Self> {
         let parts: Vec<_> = value.split(':').collect();
-        if parts.len() != 4 || parts[0] != "state" { return None; }
-        let bit = |value| match value { "0" => Some(false), "1" => Some(true), _ => None };
-        Some(Self { running: bit(parts[1])?, visible: bit(parts[2])?, editing: bit(parts[3])? })
+        if parts.len() != 4 || parts[0] != "state" {
+            return None;
+        }
+        let bit = |value| match value {
+            "0" => Some(false),
+            "1" => Some(true),
+            _ => None,
+        };
+        Some(Self {
+            running: bit(parts[1])?,
+            visible: bit(parts[2])?,
+            editing: bit(parts[3])?,
+        })
     }
 }
 
@@ -221,13 +242,27 @@ mod tests {
     use super::*;
     #[test]
     fn state_snapshots_round_trip_and_reject_non_boolean_or_extra_fields() {
-        for running in [false, true] { for visible in [false, true] { for editing in [false, true] {
-            let state = HostSnapshot { running, visible, editing };
-            assert_eq!(HostSnapshot::parse(&state.wire()), Some(state));
-            assert_eq!(Reply::parse(&state.wire()), Some(Reply::Snapshot(state)));
-            assert!(decode_frame(state.wire().as_bytes()).is_ok());
-        } } }
-        for invalid in ["state:1:1", "state:1:1:0:1", "state:true:1:0", "state:1:2:0", "state:1::0"] {
+        for running in [false, true] {
+            for visible in [false, true] {
+                for editing in [false, true] {
+                    let state = HostSnapshot {
+                        running,
+                        visible,
+                        editing,
+                    };
+                    assert_eq!(HostSnapshot::parse(&state.wire()), Some(state));
+                    assert_eq!(Reply::parse(&state.wire()), Some(Reply::Snapshot(state)));
+                    assert!(decode_frame(state.wire().as_bytes()).is_ok());
+                }
+            }
+        }
+        for invalid in [
+            "state:1:1",
+            "state:1:1:0:1",
+            "state:true:1:0",
+            "state:1:2:0",
+            "state:1::0",
+        ] {
             assert!(Reply::parse(invalid).is_none(), "{invalid}");
         }
     }
