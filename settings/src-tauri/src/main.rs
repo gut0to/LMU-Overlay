@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use host_protocol::{Command as HostCommand, Reply as HostReply, PIPE_NAME as HOST_PIPE_NAME};
+use host_protocol::{Command as HostCommand, Reply as HostReply};
 
 use overlay_renderer::{
     config::{default_config_text, OverlayConfig},
@@ -318,89 +318,9 @@ mod startup_status_tests {
     }
 }
 
-#[cfg(windows)]
 fn send_host_command(command: &str) -> std::io::Result<String> {
-    if HostCommand::parse(command).is_none() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "unsupported host command",
-        ));
-    }
-    use std::{io::Error, ptr};
-    use windows_sys::Win32::{
-        Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
-        Storage::FileSystem::{
-            CreateFileW, ReadFile, WriteFile, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING,
-        },
-    };
-
-    let pipe_name: Vec<u16> = HOST_PIPE_NAME
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let pipe = unsafe {
-        CreateFileW(
-            pipe_name.as_ptr(),
-            GENERIC_READ | GENERIC_WRITE,
-            0,
-            ptr::null_mut(),
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if pipe.is_null() || pipe == INVALID_HANDLE_VALUE {
-        return Err(Error::last_os_error());
-    }
-    let result = (|| {
-        let bytes = command.as_bytes();
-        let mut written = 0_u32;
-        if unsafe {
-            WriteFile(
-                pipe,
-                bytes.as_ptr().cast(),
-                bytes.len() as u32,
-                &mut written,
-                ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(Error::last_os_error());
-        }
-        if written != bytes.len() as u32 {
-            return Err(Error::new(
-                std::io::ErrorKind::WriteZero,
-                "partial host command write",
-            ));
-        }
-        let mut response = [0_u8; host_protocol::MAX_FRAME_BYTES];
-        let mut read = 0_u32;
-        if unsafe {
-            ReadFile(
-                pipe,
-                response.as_mut_ptr().cast(),
-                response.len() as u32,
-                &mut read,
-                ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(Error::last_os_error());
-        }
-        host_protocol::decode_frame(&response[..read as usize])
-            .map(str::to_owned)
-            .map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))
-    })();
-    unsafe { CloseHandle(pipe) };
-    result
-}
-
-#[cfg(not(windows))]
-fn send_host_command(_command: &str) -> std::io::Result<String> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "host control is only available on Windows",
-    ))
+    let command = HostCommand::parse(command).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"))?;
+    host_client::send(command)
 }
 
 fn host_is_running() -> bool {

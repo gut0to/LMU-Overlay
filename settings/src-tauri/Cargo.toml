@@ -9,6 +9,7 @@ repository = "https://github.com/gut0to/LMU-Overlay"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+host-client = { path = "../../crates/host-client" }
 host-protocol = { path = "../../crates/host-protocol" }
 overlay-renderer = { path = "../../crates/overlay-renderer" }
 serde = { version = "1", features = ["derive"] }
