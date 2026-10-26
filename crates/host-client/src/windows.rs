@@ -91,3 +91,13 @@ fn read_reply(pipe: &Handle, deadline: Instant) -> io::Result<String> {
     let count = operation.finish(succeeded, deadline)? as usize;
     host_protocol::decode_frame(&bytes[..count]).map(str::to_owned).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
+
+fn write_command(pipe: &Handle, command: host_protocol::Command, deadline: Instant) -> io::Result<()> {
+    use windows_sys::Win32::Storage::FileSystem::WriteFile;
+    let bytes = command.as_str().as_bytes();
+    let mut operation = Operation::new(pipe)?;
+    let succeeded = unsafe { WriteFile(pipe.0, bytes.as_ptr().cast(), bytes.len() as u32, ptr::null_mut(), &mut operation.overlapped) };
+    let count = operation.finish(succeeded, deadline)? as usize;
+    if count != bytes.len() { return Err(io::Error::new(io::ErrorKind::WriteZero, "partial host command write")); }
+    Ok(())
+}
