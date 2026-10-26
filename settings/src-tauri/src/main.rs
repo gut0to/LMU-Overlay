@@ -306,16 +306,30 @@ fn overlay_visibility_status_blocking() -> Result<bool, String> {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum HostState { Running, Stopped, Unreachable }
+enum HostState {
+    Running,
+    Stopped,
+    Unreachable,
+}
 #[derive(Debug, Serialize)]
-struct HostStateResponse { state: HostState, visible: bool, editing: bool, error: Option<String> }
+struct HostStateResponse {
+    state: HostState,
+    visible: bool,
+    editing: bool,
+    error: Option<String>,
+}
 
 #[tauri::command]
-async fn host_state() -> Result<HostStateResponse, String> { native_task(query_host_state).await }
+async fn host_state() -> Result<HostStateResponse, String> {
+    native_task(query_host_state).await
+}
 
 fn query_host_state() -> Result<HostStateResponse, String> {
-    let response = send_host_command("snapshot");
-    Ok(match response {
+    Ok(host_state_from_reply(send_host_command("snapshot"), host_is_running()))
+}
+
+fn host_state_from_reply(response: std::io::Result<String>, process_present: bool) -> HostStateResponse {
+    match response {
         Ok(reply) => match HostReply::parse(&reply) {
             Some(HostReply::Snapshot(snapshot)) => HostStateResponse {
                 state: if snapshot.running { HostState::Running } else { HostState::Stopped },
@@ -323,9 +337,9 @@ fn query_host_state() -> Result<HostStateResponse, String> {
             },
             _ => HostStateResponse { state: HostState::Unreachable, visible: false, editing: false, error: Some("Overlay host returned an unsupported state snapshot. Restart the updated overlay.".into()) },
         },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !host_is_running() => HostStateResponse { state: HostState::Stopped, visible: false, editing: false, error: None },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !process_present => HostStateResponse { state: HostState::Stopped, visible: false, editing: false, error: None },
         Err(error) => HostStateResponse { state: HostState::Unreachable, visible: false, editing: false, error: Some(format!("Could not read overlay state: {error}")) },
-    })
+    }
 }
 
 fn reload_overlay_config_after_save() -> Result<(), String> {
@@ -401,7 +415,9 @@ fn send_host_command(command: &str) -> std::io::Result<String> {
 }
 
 #[tauri::command]
-async fn list_displays() -> Result<Vec<displays::Display>, String> { native_task(displays::list).await }
+async fn list_displays() -> Result<Vec<displays::Display>, String> {
+    native_task(displays::list).await
+}
 
 fn host_is_running() -> bool {
     #[cfg(windows)]
@@ -525,6 +541,23 @@ mod save_feedback_tests {
             ..OverlayConfig::default()
         })
         .is_err());
+    }
+
+    #[test]
+    fn native_host_state_contract_distinguishes_absence_from_a_stalled_process() {
+        let absent = || std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let stopped = serde_json::to_value(host_state_from_reply(Err(absent()), false)).unwrap();
+        assert_eq!(stopped["state"], "stopped");
+        assert_eq!(stopped["visible"], false);
+        let stalled = serde_json::to_value(host_state_from_reply(Err(absent()), true)).unwrap();
+        assert_eq!(stalled["state"], "unreachable");
+        let live = serde_json::to_value(host_state_from_reply(Ok("state:1:0:1".into()), true)).unwrap();
+        assert_eq!(live["state"], "running");
+        assert_eq!(live["editing"], true);
+        assert_eq!(live["visible"], false);
+        assert!(live["error"].is_null());
+        let invalid = serde_json::to_value(host_state_from_reply(Ok("invalid".into()), true)).unwrap();
+        assert_eq!(invalid["state"], "unreachable");
     }
 
     #[test]
