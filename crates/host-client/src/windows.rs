@@ -63,3 +63,22 @@ impl<'a> Operation<'a> {
     }
 }
 impl Drop for Operation<'_> { fn drop(&mut self) { self.cancel(); } }
+
+fn open_pipe(name: &str, deadline: Instant) -> io::Result<Handle> {
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, GENERIC_WRITE, ERROR_PIPE_BUSY},
+        Storage::FileSystem::{CreateFileW, FILE_FLAG_OVERLAPPED, OPEN_EXISTING},
+        System::Pipes::WaitNamedPipeW,
+    };
+    if name.contains('\0') { return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid pipe name")); }
+    let wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+    loop {
+        if Instant::now() >= deadline { return Err(io::Error::new(io::ErrorKind::TimedOut, "overlay host pipe remained busy")); }
+        let raw = unsafe { CreateFileW(wide.as_ptr(), GENERIC_READ | GENERIC_WRITE, 0, ptr::null(), OPEN_EXISTING, FILE_FLAG_OVERLAPPED, ptr::null_mut()) };
+        if raw != INVALID_HANDLE_VALUE && !raw.is_null() { return Ok(Handle(raw)); }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(ERROR_PIPE_BUSY as i32) { return Err(error); }
+        let remaining = deadline.saturating_duration_since(Instant::now()).as_millis().clamp(1, 50) as u32;
+        unsafe { WaitNamedPipeW(wide.as_ptr(), remaining); }
+    }
+}
