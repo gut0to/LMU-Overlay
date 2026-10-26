@@ -48,3 +48,23 @@ pub fn list() -> Result<Vec<Display>, String> {
 
 #[cfg(not(windows))]
 pub fn list() -> Result<Vec<Display>, String> { Err("Display discovery requires Windows".into()) }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn rectangles_preserve_negative_origins_and_taskbar_insets() {
+        let display = display_from_edges(r"\\.\DISPLAY2".into(), [-1920, -120, 0, 960], [-1920, -120, 0, 920], false).unwrap();
+        assert_eq!(display.name, "DISPLAY2");
+        assert_eq!(display.bounds.width, 1920);
+        assert_eq!(display.bounds.y, -120);
+        assert_eq!(display.work_area.height, 1040);
+    }
+    #[test]
+    fn invalid_or_overflowed_monitor_rectangles_are_not_emitted() {
+        assert!(DisplayRect::from_edges([0, 0, 0, 100]).is_none());
+        assert!(DisplayRect::from_edges([i32::MIN, 0, i32::MAX, 100]).is_none());
+        let display = display_from_edges("display".into(), [0, 0, 1920, 1080], [0, 0, 0, 0], true).unwrap();
+        assert_eq!(display.work_area, display.bounds);
+    }
+}
