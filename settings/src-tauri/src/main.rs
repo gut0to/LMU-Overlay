@@ -41,7 +41,10 @@ fn load_config() -> Result<ConfigResponse, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-async fn save_config(config: OverlayConfig, expected_revision: String) -> Result<ConfigResponse, String> {
+async fn save_config(
+    config: OverlayConfig,
+    expected_revision: String,
+) -> Result<ConfigResponse, String> {
     native_task(move || save_config_blocking(config, expected_revision)).await
 }
 
@@ -101,7 +104,10 @@ async fn import_config(text: String, expected_revision: String) -> Result<Config
     native_task(move || import_config_blocking(text, expected_revision)).await
 }
 
-fn import_config_blocking(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
+fn import_config_blocking(
+    text: String,
+    expected_revision: String,
+) -> Result<ConfigResponse, String> {
     let mut config = preview_import(text)?;
     let path = overlay_config_path();
     config
@@ -137,7 +143,11 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 
 #[tauri::command]
 async fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
-    native_task(move || { let processes = app.state::<OverlayProcesses>(); start_overlay_blocking(app.clone(), processes) }).await
+    native_task(move || {
+        let processes = app.state::<OverlayProcesses>();
+        start_overlay_blocking(app.clone(), processes)
+    })
+    .await
 }
 
 fn start_overlay_blocking(
@@ -293,6 +303,30 @@ fn overlay_visibility_status_blocking() -> Result<bool, String> {
         .ok_or_else(|| format!("host returned '{response}'"))
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum HostState { Running, Stopped, Unreachable }
+#[derive(Debug, Serialize)]
+struct HostStateResponse { state: HostState, visible: bool, editing: bool, error: Option<String> }
+
+#[tauri::command]
+async fn host_state() -> Result<HostStateResponse, String> { native_task(query_host_state).await }
+
+fn query_host_state() -> Result<HostStateResponse, String> {
+    let response = send_host_command("snapshot");
+    Ok(match response {
+        Ok(reply) => match HostReply::parse(&reply) {
+            Some(HostReply::Snapshot(snapshot)) => HostStateResponse {
+                state: if snapshot.running { HostState::Running } else { HostState::Stopped },
+                visible: snapshot.running && snapshot.visible, editing: snapshot.running && snapshot.editing, error: None,
+            },
+            _ => HostStateResponse { state: HostState::Unreachable, visible: false, editing: false, error: Some("Overlay host returned an unsupported state snapshot. Restart the updated overlay.".into()) },
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !host_is_running() => HostStateResponse { state: HostState::Stopped, visible: false, editing: false, error: None },
+        Err(error) => HostStateResponse { state: HostState::Unreachable, visible: false, editing: false, error: Some(format!("Could not read overlay state: {error}")) },
+    })
+}
+
 fn reload_overlay_config_after_save() -> Result<(), String> {
     if !host_control_is_ready() {
         if host_is_running() {
@@ -359,7 +393,9 @@ mod startup_status_tests {
 }
 
 fn send_host_command(command: &str) -> std::io::Result<String> {
-    let command = HostCommand::parse(command).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"))?;
+    let command = HostCommand::parse(command).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command")
+    })?;
     host_client::send(command)
 }
 
@@ -596,6 +632,7 @@ fn main() {
             start_overlay,
             stop_overlay,
             overlay_status,
+            host_state,
             toggle_overlay_edit_mode,
             overlay_edit_status,
             toggle_overlay_visibility,
@@ -666,6 +703,10 @@ mod ipc_tests {
     }
 }
 
-async fn native_task<T: Send + 'static>(task: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(task).await.map_err(|error| format!("Native operation failed: {error}"))?
+async fn native_task<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("Native operation failed: {error}"))?
 }
