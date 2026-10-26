@@ -1,3 +1,4 @@
+mod displays;
 use std::{
     fs,
     path::PathBuf,
@@ -6,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use host_protocol::{Command as HostCommand, Reply as HostReply, PIPE_NAME as HOST_PIPE_NAME};
+use host_protocol::{Command as HostCommand, Reply as HostReply};
 
 use overlay_renderer::{
     config::{default_config_text, OverlayConfig},
@@ -41,7 +42,14 @@ fn load_config() -> Result<ConfigResponse, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn save_config(
+async fn save_config(
+    config: OverlayConfig,
+    expected_revision: String,
+) -> Result<ConfigResponse, String> {
+    native_task(move || save_config_blocking(config, expected_revision)).await
+}
+
+fn save_config_blocking(
     mut config: OverlayConfig,
     expected_revision: String,
 ) -> Result<ConfigResponse, String> {
@@ -93,7 +101,14 @@ fn preview_import(text: String) -> Result<OverlayConfig, String> {
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
+async fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
+    native_task(move || import_config_blocking(text, expected_revision)).await
+}
+
+fn import_config_blocking(
+    text: String,
+    expected_revision: String,
+) -> Result<ConfigResponse, String> {
     let mut config = preview_import(text)?;
     let path = overlay_config_path();
     config
@@ -103,7 +118,11 @@ fn import_config(text: String, expected_revision: String) -> Result<ConfigRespon
 }
 
 #[tauri::command(rename_all = "snake_case")]
-fn reset_config(expected_revision: String) -> Result<ConfigResponse, String> {
+async fn reset_config(expected_revision: String) -> Result<ConfigResponse, String> {
+    native_task(move || reset_config_blocking(expected_revision)).await
+}
+
+fn reset_config_blocking(expected_revision: String) -> Result<ConfigResponse, String> {
     let path = overlay_config_path();
     reset_config_at(&path, parse_revision(&expected_revision)?)?;
     finish_saved_config(path, reload_overlay_config_after_save())
@@ -124,7 +143,15 @@ fn widget_catalog() -> Vec<WidgetDefinition> {
 }
 
 #[tauri::command]
-fn start_overlay(
+async fn start_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    native_task(move || {
+        let processes = app.state::<OverlayProcesses>();
+        start_overlay_blocking(app.clone(), processes)
+    })
+    .await
+}
+
+fn start_overlay_blocking(
     app: tauri::AppHandle,
     processes: tauri::State<'_, OverlayProcesses>,
 ) -> Result<(), String> {
@@ -175,7 +202,11 @@ fn start_overlay(
 }
 
 #[tauri::command]
-fn stop_overlay(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
+async fn stop_overlay(app: tauri::AppHandle) -> Result<(), String> {
+    native_task(move || stop_overlay_blocking(app.state::<OverlayProcesses>())).await
+}
+
+fn stop_overlay_blocking(processes: tauri::State<'_, OverlayProcesses>) -> Result<(), String> {
     let graceful = send_host_command("stop")
         .is_ok_and(|response| HostReply::parse(&response) == Some(HostReply::Stopping));
     if graceful {
@@ -211,12 +242,20 @@ fn stop_running_overlays(running: &mut Vec<Child>) {
 }
 
 #[tauri::command]
-fn overlay_status() -> Result<bool, String> {
+async fn overlay_status() -> Result<bool, String> {
+    native_task(overlay_status_blocking).await
+}
+
+fn overlay_status_blocking() -> Result<bool, String> {
     Ok(host_control_is_ready())
 }
 
 #[tauri::command]
-fn toggle_overlay_edit_mode() -> Result<String, String> {
+async fn toggle_overlay_edit_mode() -> Result<String, String> {
+    native_task(toggle_overlay_edit_mode_blocking).await
+}
+
+fn toggle_overlay_edit_mode_blocking() -> Result<String, String> {
     let response = send_host_command("edit")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     if response == "edit_on" || response == "edit_off" {
@@ -227,7 +266,11 @@ fn toggle_overlay_edit_mode() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn overlay_edit_status() -> Result<bool, String> {
+async fn overlay_edit_status() -> Result<bool, String> {
+    native_task(overlay_edit_status_blocking).await
+}
+
+fn overlay_edit_status_blocking() -> Result<bool, String> {
     let response = send_host_command("edit_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     HostReply::parse(&response)
@@ -236,7 +279,11 @@ fn overlay_edit_status() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn toggle_overlay_visibility() -> Result<bool, String> {
+async fn toggle_overlay_visibility() -> Result<bool, String> {
+    native_task(toggle_overlay_visibility_blocking).await
+}
+
+fn toggle_overlay_visibility_blocking() -> Result<bool, String> {
     let response = send_host_command("toggle_visibility")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     HostReply::parse(&response)
@@ -245,12 +292,60 @@ fn toggle_overlay_visibility() -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn overlay_visibility_status() -> Result<bool, String> {
+async fn overlay_visibility_status() -> Result<bool, String> {
+    native_task(overlay_visibility_status_blocking).await
+}
+
+fn overlay_visibility_status_blocking() -> Result<bool, String> {
     let response = send_host_command("visibility_status")
         .map_err(|error| format!("Could not reach overlay host: {error}"))?;
     HostReply::parse(&response)
         .and_then(|reply| reply.visibility())
         .ok_or_else(|| format!("host returned '{response}'"))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum HostState {
+    Running,
+    Stopped,
+    Unreachable,
+}
+#[derive(Debug, Serialize)]
+struct HostStateResponse {
+    state: HostState,
+    visible: bool,
+    editing: bool,
+    error: Option<String>,
+}
+
+#[tauri::command]
+async fn host_state() -> Result<HostStateResponse, String> {
+    native_task(query_host_state).await
+}
+
+fn query_host_state() -> Result<HostStateResponse, String> {
+    Ok(host_state_from_reply(
+        send_host_command("snapshot"),
+        host_is_running(),
+    ))
+}
+
+fn host_state_from_reply(
+    response: std::io::Result<String>,
+    process_present: bool,
+) -> HostStateResponse {
+    match response {
+        Ok(reply) => match HostReply::parse(&reply) {
+            Some(HostReply::Snapshot(snapshot)) => HostStateResponse {
+                state: if snapshot.running { HostState::Running } else { HostState::Stopped },
+                visible: snapshot.running && snapshot.visible, editing: snapshot.running && snapshot.editing, error: None,
+            },
+            _ => HostStateResponse { state: HostState::Unreachable, visible: false, editing: false, error: Some("Overlay host returned an unsupported state snapshot. Restart the updated overlay.".into()) },
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && !process_present => HostStateResponse { state: HostState::Stopped, visible: false, editing: false, error: None },
+        Err(error) => HostStateResponse { state: HostState::Unreachable, visible: false, editing: false, error: Some(format!("Could not read overlay state: {error}")) },
+    }
 }
 
 fn reload_overlay_config_after_save() -> Result<(), String> {
@@ -318,89 +413,16 @@ mod startup_status_tests {
     }
 }
 
-#[cfg(windows)]
 fn send_host_command(command: &str) -> std::io::Result<String> {
-    if HostCommand::parse(command).is_none() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "unsupported host command",
-        ));
-    }
-    use std::{io::Error, ptr};
-    use windows_sys::Win32::{
-        Foundation::{CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE},
-        Storage::FileSystem::{
-            CreateFileW, ReadFile, WriteFile, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING,
-        },
-    };
-
-    let pipe_name: Vec<u16> = HOST_PIPE_NAME
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let pipe = unsafe {
-        CreateFileW(
-            pipe_name.as_ptr(),
-            GENERIC_READ | GENERIC_WRITE,
-            0,
-            ptr::null_mut(),
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            ptr::null_mut(),
-        )
-    };
-    if pipe.is_null() || pipe == INVALID_HANDLE_VALUE {
-        return Err(Error::last_os_error());
-    }
-    let result = (|| {
-        let bytes = command.as_bytes();
-        let mut written = 0_u32;
-        if unsafe {
-            WriteFile(
-                pipe,
-                bytes.as_ptr().cast(),
-                bytes.len() as u32,
-                &mut written,
-                ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(Error::last_os_error());
-        }
-        if written != bytes.len() as u32 {
-            return Err(Error::new(
-                std::io::ErrorKind::WriteZero,
-                "partial host command write",
-            ));
-        }
-        let mut response = [0_u8; host_protocol::MAX_FRAME_BYTES];
-        let mut read = 0_u32;
-        if unsafe {
-            ReadFile(
-                pipe,
-                response.as_mut_ptr().cast(),
-                response.len() as u32,
-                &mut read,
-                ptr::null_mut(),
-            )
-        } == 0
-        {
-            return Err(Error::last_os_error());
-        }
-        host_protocol::decode_frame(&response[..read as usize])
-            .map(str::to_owned)
-            .map_err(|error| Error::new(std::io::ErrorKind::InvalidData, error))
-    })();
-    unsafe { CloseHandle(pipe) };
-    result
+    let command = HostCommand::parse(command).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command")
+    })?;
+    host_client::send(command)
 }
 
-#[cfg(not(windows))]
-fn send_host_command(_command: &str) -> std::io::Result<String> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "host control is only available on Windows",
-    ))
+#[tauri::command]
+async fn list_displays() -> Result<Vec<displays::Display>, String> {
+    native_task(displays::list).await
 }
 
 fn host_is_running() -> bool {
@@ -528,6 +550,25 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn native_host_state_contract_distinguishes_absence_from_a_stalled_process() {
+        let absent = || std::io::Error::new(std::io::ErrorKind::NotFound, "missing");
+        let stopped = serde_json::to_value(host_state_from_reply(Err(absent()), false)).unwrap();
+        assert_eq!(stopped["state"], "stopped");
+        assert_eq!(stopped["visible"], false);
+        let stalled = serde_json::to_value(host_state_from_reply(Err(absent()), true)).unwrap();
+        assert_eq!(stalled["state"], "unreachable");
+        let live =
+            serde_json::to_value(host_state_from_reply(Ok("state:1:0:1".into()), true)).unwrap();
+        assert_eq!(live["state"], "running");
+        assert_eq!(live["editing"], true);
+        assert_eq!(live["visible"], false);
+        assert!(live["error"].is_null());
+        let invalid =
+            serde_json::to_value(host_state_from_reply(Ok("invalid".into()), true)).unwrap();
+        assert_eq!(invalid["state"], "unreachable");
+    }
+
+    #[test]
     fn snapshot_read_errors_never_become_a_valid_zero_revision() {
         let missing = std::env::temp_dir().join(format!(
             "hashoverlay-missing-snapshot-{}.toml",
@@ -633,9 +674,11 @@ fn main() {
             preview_import,
             reset_config,
             widget_catalog,
+            list_displays,
             start_overlay,
             stop_overlay,
             overlay_status,
+            host_state,
             toggle_overlay_edit_mode,
             overlay_edit_status,
             toggle_overlay_visibility,
@@ -704,4 +747,12 @@ mod ipc_tests {
             assert!(!error.contains("missing required key"), "{cmd}: {error}");
         }
     }
+}
+
+async fn native_task<T: Send + 'static>(
+    task: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("Native operation failed: {error}"))?
 }

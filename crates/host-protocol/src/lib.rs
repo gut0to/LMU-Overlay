@@ -5,6 +5,7 @@ pub const MAX_FRAME_BYTES: usize = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     Status,
+    Snapshot,
     Reload,
     Show,
     Hide,
@@ -17,8 +18,9 @@ pub enum Command {
 }
 
 impl Command {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Status,
+        Self::Snapshot,
         Self::Reload,
         Self::Show,
         Self::Hide,
@@ -37,6 +39,7 @@ impl Command {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Status => "status",
+            Self::Snapshot => "snapshot",
             Self::Reload => "reload",
             Self::Show => "show",
             Self::Hide => "hide",
@@ -85,8 +88,42 @@ pub fn decode_frame(bytes: &[u8]) -> Result<&str, FrameError> {
     Ok(text)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostSnapshot {
+    pub running: bool,
+    pub visible: bool,
+    pub editing: bool,
+}
+impl HostSnapshot {
+    pub fn wire(self) -> String {
+        format!(
+            "state:{}:{}:{}",
+            u8::from(self.running),
+            u8::from(self.visible),
+            u8::from(self.editing)
+        )
+    }
+    pub fn parse(value: &str) -> Option<Self> {
+        let parts: Vec<_> = value.split(':').collect();
+        if parts.len() != 4 || parts[0] != "state" {
+            return None;
+        }
+        let bit = |value| match value {
+            "0" => Some(false),
+            "1" => Some(true),
+            _ => None,
+        };
+        Some(Self {
+            running: bit(parts[1])?,
+            visible: bit(parts[2])?,
+            editing: bit(parts[3])?,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reply {
+    Snapshot(HostSnapshot),
     Running,
     Stopped,
     Stopping,
@@ -110,6 +147,7 @@ impl Reply {
             "edit_on" => Self::EditOn,
             "edit_off" => Self::EditOff,
             "invalid" => Self::Invalid,
+            other if other.starts_with("state:") => Self::Snapshot(HostSnapshot::parse(other)?),
             other => Self::Error(
                 other
                     .strip_prefix("error:")
@@ -202,6 +240,33 @@ impl HotkeyBinding {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn state_snapshots_round_trip_and_reject_non_boolean_or_extra_fields() {
+        for running in [false, true] {
+            for visible in [false, true] {
+                for editing in [false, true] {
+                    let state = HostSnapshot {
+                        running,
+                        visible,
+                        editing,
+                    };
+                    assert_eq!(HostSnapshot::parse(&state.wire()), Some(state));
+                    assert_eq!(Reply::parse(&state.wire()), Some(Reply::Snapshot(state)));
+                    assert!(decode_frame(state.wire().as_bytes()).is_ok());
+                }
+            }
+        }
+        for invalid in [
+            "state:1:1",
+            "state:1:1:0:1",
+            "state:true:1:0",
+            "state:1:2:0",
+            "state:1::0",
+        ] {
+            assert!(Reply::parse(invalid).is_none(), "{invalid}");
+        }
+    }
+
     #[test]
     fn all_supported_function_keys_map_to_distinct_virtual_keys() {
         let keys: std::collections::BTreeSet<_> = (1..=12)

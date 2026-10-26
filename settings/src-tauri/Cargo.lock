@@ -1223,6 +1223,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 name = "hashoverlay-settings"
 version = "1.0.5"
 dependencies = [
+ "host-client",
  "host-protocol",
  "overlay-renderer",
  "serde",
@@ -1250,6 +1251,14 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "host-client"
+version = "1.0.5"
+dependencies = [
+ "host-protocol",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "host-protocol"

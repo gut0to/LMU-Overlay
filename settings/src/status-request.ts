@@ -2,9 +2,17 @@
 export class StatusRequest {
   private active: Promise<boolean> | null = null;
 
+  invalidate(): void {
+    this.active = null;
+  }
+
   run(fetch: () => Promise<boolean>): Promise<boolean> {
     if (this.active) return this.active;
-    const request = Promise.resolve().then(fetch).finally(() => { this.active = null; });
+    const request = Promise.resolve()
+      .then(fetch)
+      .finally(() => {
+        if (this.active === request) this.active = null;
+      });
     this.active = request;
     return request;
   }

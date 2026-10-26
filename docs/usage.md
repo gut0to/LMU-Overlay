@@ -213,3 +213,35 @@ native limits. **Fit window to widgets** resizes only the selected surface to it
 visible content, without moving its screen origin or its widgets. Widget edits
 belong to their selected surface and leave other surfaces' inherited templates
 unchanged.
+
+## Host Readiness and Connection Failures
+
+Settings now reads running, visibility and edit flags in one host request. The
+status distinguishes **Overlay stopped** from **Host not responding**, so a stale
+window cannot keep presenting old visibility or edit state as live. A failed
+status check does not overwrite the separate save/import result message.
+
+Client requests use a three-second transaction budget. If the host does not
+respond, Settings reports the failure and remains usable; restart the host and
+retry Save if the configuration was stored but could not be applied live. Polling
+pauses while Settings is hidden and resumes when it becomes visible. Start and
+Stop also refresh status when their operation completes.
+
+An older running host may not support state snapshots. Restart the updated overlay
+when Settings reports that compatibility error. A client connected to the host
+server without sending any command can still stall that server; client timeouts
+do not repair the server's synchronous accept/read loop.
+
+## Use a Connected Windows Display
+
+The layout editor lists connected Windows displays, including their primary flag,
+physical desktop bounds and taskbar-free work area. Choose a display to set the
+editor workspace. **Use work area, excluding taskbars** changes the usable bounds;
+negative screen origins remain valid for monitors to the left or above primary.
+
+Choosing a display does not move your overlays. Use **Fit selected surface to
+workspace** to place only the selected window inside it. **Refresh connected
+displays** detects monitor changes and keeps the existing workspace if a monitor
+was removed. Workspace presets and manual dimensions remain available if Windows
+discovery fails. Supported overlay dimensions are 280–1200 by 140–800 pixels;
+the editor workspace can span a larger monitor or desktop.

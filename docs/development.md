@@ -111,3 +111,21 @@ The native Settings tests cover the full u64 revision token range at the JSON
 interface, invalid tokens, import migration, payload limits and validation errors.
 Native commands and packaged frontend must ship together because revision tokens
 are strings throughout the current Settings command interface.
+
+## Host Client and Display Regression Checks
+
+```powershell
+cargo test -p host-client
+cargo test -p host-protocol
+cargo test --manifest-path settings/src-tauri/Cargo.toml
+cd settings
+npm test
+```
+
+Windows client tests create isolated named pipes for successful replies, silent
+peers, busy instances, malformed UTF-8 and oversized messages. They verify deadline
+failure and cancellation cleanup without a running LMU session. Frontend hook tests
+use fake timers to cover sequential polling, visibility changes and unmount cleanup.
+Monitor conversion tests cover negative origins, work-area insets, overflow and
+invalid native payloads. Native display enumeration and changing real monitor/DPI
+arrangements remain manual desktop checks.

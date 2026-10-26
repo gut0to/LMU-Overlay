@@ -1,3 +1,8 @@
+import { fitWindowToWorkspace } from "./display-placement";
+import { DisplayWorkspacePicker } from "./DisplayWorkspacePicker";
+import { parseDisplays, type Display } from "./displays";
+import { useVisiblePolling } from "./useVisiblePolling";
+import { initialHostState, projectHostState } from "./host-state";
 import { updateOverlayLayoutSelection } from "./layout-state";
 import type { LayoutClipboard } from "./layout-clipboard";
 import { layoutNudge } from "./layout-shortcuts";
@@ -259,6 +264,7 @@ function App() {
   const [status, setStatus] = useState("Loading config");
   const [saving, setSaving] = useState(false);
   const [replacingConfig, setReplacingConfig] = useState(false);
+  const [hostState, setHostState] = useState(initialHostState);
   const [overlayRunning, setOverlayRunning] = useState(false);
   const [overlayEditMode, setOverlayEditMode] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
@@ -279,6 +285,9 @@ function App() {
   const [widgetVisibility, setWidgetVisibility] = useState("all");
   const [widgetCategory, setWidgetCategory] = useState("All");
   const [activeOverlayId, setActiveOverlayId] = useState("main");
+  const [loadingDisplays, setLoadingDisplays] = useState(false);
+  const [displayError, setDisplayError] = useState<string | null>(null);
+  const [displays, setDisplays] = useState<Display[]>([]);
   const [workspace, setWorkspace] = useState<WorkspaceSize>(() => {
     try {
       return restoreWorkspace(window.localStorage.getItem(workspaceStorageKey), workspacePresets[0][1]);
@@ -289,6 +298,7 @@ function App() {
   });
   const hydratedConfig = useRef(false);
   const statusRequest = useRef(new StatusRequest());
+  const hostStateGeneration = useRef(0);
   const lastSavedConfig = useRef("");
   const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
@@ -302,11 +312,8 @@ function App() {
     void loadConfig();
     void loadDefaultConfig();
     void loadWidgetCatalog();
-    void refreshOverlayStatus();
-    const id = window.setInterval(() => {
-      void refreshOverlayStatus();
-    }, 1500);
-    return () => window.clearInterval(id);
+    void loadDisplays();
+
   }, []);
 
   useEffect(() => {
@@ -378,22 +385,29 @@ function App() {
     hydratedConfig.current && !replacingConfig && !recovery,
     draftStore.current, setRecoveryError);
 
+  useVisiblePolling(refreshOverlayStatus);
+
+  function invalidateHostState() { hostStateGeneration.current++; statusRequest.current.invalidate(); }
+
   async function refreshOverlayStatus(): Promise<boolean> {
+    const generation = hostStateGeneration.current;
     return statusRequest.current.run(async () => {
       try {
-        const running = await invoke<boolean>("overlay_status");
+        const snapshot = projectHostState(await invoke<unknown>("host_state"));
+        if (generation !== hostStateGeneration.current) return snapshot.state === "running";
+        setHostState(snapshot);
+        const running = snapshot.state === "running";
         setOverlayRunning(running);
-        if (running) {
-          const editing = await invoke<boolean>("overlay_edit_status");
-          setOverlayEditMode(editing);
-          setOverlayVisible(await invoke<boolean>("overlay_visibility_status"));
-        } else {
-          setOverlayEditMode(false);
-          setOverlayVisible(false);
-        }
+        setOverlayEditMode(snapshot.editing);
+        setOverlayVisible(snapshot.visible);
         return running;
       } catch (error) {
-        setStatus(String(error));
+        const snapshot = projectHostState({ state: "unreachable", error: String(error) });
+        if (generation !== hostStateGeneration.current) return false;
+        setHostState(snapshot);
+        setOverlayRunning(false);
+        setOverlayEditMode(false);
+        setOverlayVisible(false);
         return false;
       }
     });
@@ -590,6 +604,7 @@ function App() {
         return;
       }
       await invoke("start_overlay");
+      invalidateHostState();
       const running = await refreshOverlayStatus();
       if (!running) {
         setStatus("HashOverlay did not become ready. Close any older HashOverlay process and try Start overlay again.");
@@ -604,11 +619,20 @@ function App() {
   async function stopOverlay() {
     try {
       await invoke("stop_overlay");
+      invalidateHostState();
       await refreshOverlayStatus();
       setStatus("Overlay stop requested");
     } catch (error) {
       setStatus(String(error));
     }
+  }
+
+  async function loadDisplays() {
+    setLoadingDisplays(true);
+    setDisplayError(null);
+    try { setDisplays(parseDisplays(await invoke<unknown>("list_displays"))); }
+    catch (error) { setDisplayError(`Could not load connected displays: ${String(error)}. Use a workspace preset or enter its size manually.`); }
+    finally { setLoadingDisplays(false); }
   }
 
   async function loadWidgetCatalog() {
@@ -739,7 +763,9 @@ function App() {
     try {
       const response = await invoke<string>("toggle_overlay_edit_mode");
       const enabled = response === "edit_on";
+      invalidateHostState();
       setOverlayEditMode(enabled);
+      void refreshOverlayStatus();
       setStatus(enabled ? "Overlay edit mode enabled" : "Overlay edit mode disabled");
     } catch (error) {
       setStatus(String(error));
@@ -749,7 +775,9 @@ function App() {
   async function toggleOverlayVisibility() {
     try {
       const visible = await invoke<boolean>("toggle_overlay_visibility");
+      invalidateHostState();
       setOverlayVisible(visible);
+      void refreshOverlayStatus();
       setStatus(visible ? "Overlay shown" : "Overlay hidden");
     } catch (error) {
       setStatus(String(error));
@@ -938,10 +966,11 @@ function App() {
           </div>
         </div>
         <div className="topbarRight">
-          <div className={`statusPill ${overlayRunning ? "live" : ""} ${overlayRunning && !overlayVisible ? "hiddenState" : ""} ${!overlayRunning && statusNeedsAttention ? "error" : ""}`} title={status} aria-live="polite">
+          <div className={`statusPill ${overlayRunning ? "live" : ""} ${overlayRunning && !overlayVisible ? "hiddenState" : ""} ${hostState.state === "unreachable" || (!overlayRunning && statusNeedsAttention) ? "error" : ""}`} title={hostState.error ?? status} aria-live="polite">
             <span className="statusDot" />
-            {overlayRunning ? overlayVisible ? "Overlay live" : "Overlay hidden" : statusNeedsAttention ? "Start needs attention" : "Overlay stopped"}
+            {hostState.state === "checking" ? "Checking overlay host" : hostState.state === "unreachable" ? "Host not responding" : overlayRunning ? overlayVisible ? "Overlay live" : "Overlay hidden" : "Overlay stopped"}
           </div>
+          {hostState.error && <p className="runtimeNotice" role="status">{hostState.error}</p>}
           {!overlayRunning && statusNeedsAttention && <p className="runtimeNotice" role="alert">{status}</p>}
           <div className="actions">
           <button className="iconButton" aria-label="Open config folder" title="Open config folder" onClick={openConfigFolder}>
@@ -954,7 +983,7 @@ function App() {
             <Play size={18} />
             Start overlay
           </button>
-          <button className="dangerButton" onClick={stopOverlay} disabled={!overlayRunning}>
+          <button className="dangerButton" onClick={stopOverlay} disabled={!overlayRunning && hostState.state !== "unreachable"}>
             <Square size={16} />
             Stop overlay
           </button>
@@ -1073,6 +1102,10 @@ function App() {
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
+            <DisplayWorkspacePicker onFitSelected={() => {
+              setConfig((current) => current ? { ...current, overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId ? { ...overlay, window: fitWindowToWorkspace(overlay.window, workspace) } : overlay) } : current);
+              setStatus("Selected surface fitted to the editor workspace");
+            }} loading={loadingDisplays} error={displayError} onRefresh={() => void loadDisplays()} displays={displays} workspace={workspace} onChange={setWorkspace} />
             <SurfaceMap
               onEditStart={beginEdit}
               onEditEnd={endEdit}
@@ -1120,8 +1153,8 @@ function App() {
                 <NumberField label="Screen X" value={(activeOverlayConfig ?? config).window.x} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "x", value)} />
                 <NumberField label="Screen Y" value={(activeOverlayConfig ?? config).window.y} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "y", value)} />
               </div>
-              <NumberField label="Width" value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
-              <NumberField label="Height" value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
+              <NumberField label="Width" min={280} max={1200} value={(activeOverlayConfig ?? config).window.width} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "width", value)} />
+              <NumberField label="Height" min={140} max={800} value={(activeOverlayConfig ?? config).window.height} onChange={(value) => setOverlayWindow(config, setConfig, activeOverlayId, "height", value)} />
               <RangeField label="Scale" min={0.65} max={1.75} step={0.05} value={config.style.scale} onChange={(value) => setStyle(config, setConfig, "scale", value)} />
               <RangeField label="Opacity" min={32} max={255} step={1} value={config.style.opacity} onChange={(value) => setStyle(config, setConfig, "opacity", value)} />
             </Section>
@@ -1227,9 +1260,9 @@ function App() {
 
         {showPanel(activePage, "Dashboard", "Performance") && <Section icon={<Gauge />} title="Performance">
           <Segmented value={config.performance.mode} options={performanceModes} onChange={(value) => setPerformance(config, setConfig, value)} />
-          <NumberField label="Render FPS" value={config.window.refresh_hz} onChange={(value) => setPerformanceWindow(config, setConfig, "refresh_hz", value)} />
-          <NumberField label="Sample ms" value={config.window.sample_ms} onChange={(value) => setPerformanceWindow(config, setConfig, "sample_ms", value)} />
-          <NumberField label="History samples" value={config.window.history_samples} onChange={(value) => setPerformanceWindow(config, setConfig, "history_samples", value)} />
+          <NumberField label="Render FPS" min={15} max={144} value={config.window.refresh_hz} onChange={(value) => setPerformanceWindow(config, setConfig, "refresh_hz", value)} />
+          <NumberField label="Sample ms" min={5} max={250} value={config.window.sample_ms} onChange={(value) => setPerformanceWindow(config, setConfig, "sample_ms", value)} />
+          <NumberField label="History samples" min={16} max={900} value={config.window.history_samples} onChange={(value) => setPerformanceWindow(config, setConfig, "history_samples", value)} />
           <RangeField label="Line thickness" min={1} max={8} step={1} value={config.style.line_thickness} onChange={(value) => setStyle(config, setConfig, "line_thickness", value)} />
         </Section>}
 
@@ -1987,11 +2020,11 @@ function WidgetLayoutFields(props: {
   );
 }
 
-function NumberField(props: { label: string; value: number; onChange: (value: number) => void }) {
+function NumberField(props: { label: string; value: number; onChange: (value: number) => void; min?: number; max?: number }) {
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input type="number" step="any" value={props.value} onChange={(event) => {
+      <input type="number" step="any" min={props.min} max={props.max} value={props.value} onChange={(event) => {
         const value = event.target.valueAsNumber;
         if (Number.isFinite(value)) props.onChange(value);
       }} />

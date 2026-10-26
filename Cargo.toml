@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/host-protocol",
+  "crates/host-client",
   "crates/hashoverlay",
   "crates/lap-engine",
   "crates/lmu-telemetry",
