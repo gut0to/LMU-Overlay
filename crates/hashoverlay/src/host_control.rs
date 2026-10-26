@@ -128,6 +128,11 @@ mod windows_control {
                         "stopped".to_string()
                     }
                 }
+                Some(ControlCommand::Snapshot) => host_protocol::HostSnapshot {
+                    running: running.load(Ordering::Relaxed),
+                    visible: visible.load(Ordering::Relaxed),
+                    editing: edit_mode.load(Ordering::Relaxed),
+                }.wire(),
                 Some(ControlCommand::Reload) => request_reload(&reload_requests),
                 Some(ControlCommand::Show) => {
                     visible.store(true, Ordering::Relaxed);
@@ -233,7 +238,9 @@ mod windows_control {
     }
 
     pub fn send_command(command: &str) -> std::io::Result<String> {
-        let command = ControlCommand::parse(command).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command"))?;
+        let command = ControlCommand::parse(command).ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "unsupported host command")
+        })?;
         host_client::send(command)
     }
 
