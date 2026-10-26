@@ -1,3 +1,4 @@
+import { fitWindowToWorkspace } from "./display-placement";
 import { DisplayWorkspacePicker } from "./DisplayWorkspacePicker";
 import { parseDisplays, type Display } from "./displays";
 import { useVisiblePolling } from "./useVisiblePolling";
@@ -1089,7 +1090,10 @@ function App() {
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
-            <DisplayWorkspacePicker loading={loadingDisplays} error={displayError} onRefresh={() => void loadDisplays()} displays={displays} workspace={workspace} onChange={setWorkspace} />
+            <DisplayWorkspacePicker onFitSelected={() => {
+              setConfig((current) => current ? { ...current, overlays: current.overlays.map((overlay) => overlay.id === activeOverlayId ? { ...overlay, window: fitWindowToWorkspace(overlay.window, workspace) } : overlay) } : current);
+              setStatus("Selected surface fitted to the editor workspace");
+            }} loading={loadingDisplays} error={displayError} onRefresh={() => void loadDisplays()} displays={displays} workspace={workspace} onChange={setWorkspace} />
             <SurfaceMap
               onEditStart={beginEdit}
               onEditEnd={endEdit}
