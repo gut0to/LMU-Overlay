@@ -1,3 +1,4 @@
+mod backups;
 mod displays;
 use std::{
     fs,
@@ -109,12 +110,22 @@ fn import_config_blocking(
     text: String,
     expected_revision: String,
 ) -> Result<ConfigResponse, String> {
-    let mut config = preview_import(text)?;
     let path = overlay_config_path();
-    config
-        .save_if_revision(&path, parse_revision(&expected_revision)?)
-        .map_err(|error| error.to_string())?;
+    import_config_at(&path, text, parse_revision(&expected_revision)?)?;
     finish_saved_config(path, reload_overlay_config_after_save())
+}
+
+fn import_config_at(
+    path: &std::path::Path,
+    text: String,
+    expected_revision: u64,
+) -> Result<(), String> {
+    let mut config = preview_import(text)?;
+    create_backup_at(path, expected_revision)?;
+    config
+        .save_if_revision(path, expected_revision)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -131,10 +142,40 @@ fn reset_config_blocking(expected_revision: String) -> Result<ConfigResponse, St
 fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(), String> {
     let mut config: OverlayConfig =
         toml::from_str(default_config_text()).map_err(|error| error.to_string())?;
+    create_backup_at(path, expected_revision)?;
     config
         .save_if_revision(path, expected_revision)
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn list_config_backups() -> Result<Vec<backups::BackupInfo>, String> {
+    native_task(|| backups::list(&overlay_config_path())).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn create_config_backup(expected_revision: String) -> Result<backups::BackupInfo, String> {
+    native_task(move || {
+        create_backup_at(&overlay_config_path(), parse_revision(&expected_revision)?)
+    })
+    .await
+}
+
+fn create_backup_at(
+    path: &std::path::Path,
+    expected_revision: u64,
+) -> Result<backups::BackupInfo, String> {
+    let current = OverlayConfig::revision(path).map_err(|error| error.to_string())?;
+    if current != expected_revision {
+        return Err("Configuration changed before backup. Reload it and retry.".into());
+    }
+    backups::create(path)
+}
+
+#[tauri::command]
+async fn read_config_backup(id: String) -> Result<String, String> {
+    native_task(move || backups::read(&overlay_config_path(), &id)).await
 }
 
 #[tauri::command]
@@ -485,6 +526,45 @@ fn finish_saved_config(
 #[cfg(test)]
 mod save_feedback_tests {
     use super::*;
+    fn cleanup_backups(path: &std::path::Path) {
+        for backup in backups::list(path).unwrap() {
+            fs::remove_file(path.with_extension("backups").join(backup.id)).unwrap();
+        }
+        if path.with_extension("backups").exists() {
+            fs::remove_dir(path.with_extension("backups")).unwrap();
+        }
+    }
+
+    #[test]
+    fn destructive_import_requires_a_current_revision_and_a_successful_backup() {
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-import-backup-{}.toml",
+            std::process::id()
+        ));
+        let mut config = OverlayConfig::default();
+        config.save(&path).unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+        let revision = OverlayConfig::revision(&path).unwrap();
+        assert!(import_config_at(&path, "not TOML".into(), revision).is_err());
+        assert!(backups::list(&path).unwrap().is_empty());
+        assert!(import_config_at(&path, original.clone(), revision.wrapping_add(1)).is_err());
+        assert!(backups::list(&path).unwrap().is_empty());
+        fs::write(path.with_extension("backups"), "blocked storage").unwrap();
+        assert!(import_config_at(&path, original.clone(), revision).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        fs::remove_file(path.with_extension("backups")).unwrap();
+        import_config_at(
+            &path,
+            "config_version = 7\n[window]\nx = 77\n".into(),
+            revision,
+        )
+        .unwrap();
+        let saved = backups::list(&path).unwrap();
+        assert_eq!(backups::read(&path, &saved[0].id).unwrap(), original);
+        assert_eq!(OverlayConfig::load(&path).unwrap().window.x, 77);
+        cleanup_backups(&path);
+        fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn reset_preserves_external_edits_and_accepts_the_latest_revision() {
@@ -506,7 +586,8 @@ mod save_feedback_tests {
             OverlayConfig::load(&path).unwrap().window.x,
             OverlayConfig::default().window.x
         );
-        fs::remove_file(path).unwrap();
+        fs::remove_file(&path).unwrap();
+        cleanup_backups(&path);
     }
 
     #[test]
@@ -674,6 +755,9 @@ fn main() {
             preview_import,
             reset_config,
             widget_catalog,
+            list_config_backups,
+            create_config_backup,
+            read_config_backup,
             list_displays,
             start_overlay,
             stop_overlay,
@@ -701,6 +785,37 @@ fn main() {
 mod ipc_tests {
     use super::*;
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+
+    #[test]
+    fn backup_read_ipc_rejects_unsafe_identifiers_before_filesystem_access() {
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![read_config_backup])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let error = get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "read_config_backup".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(
+                    serde_json::json!({ "id": "../hashoverlay.toml" }),
+                ),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.into(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("Invalid configuration backup identifier"),
+            "{error}"
+        );
+    }
 
     #[test]
     fn frontend_revision_arguments_reach_save_and_import_validation() {

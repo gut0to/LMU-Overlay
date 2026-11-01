@@ -245,3 +245,35 @@ displays** detects monitor changes and keeps the existing workspace if a monitor
 was removed. Workspace presets and manual dimensions remain available if Windows
 discovery fails. Supported overlay dimensions are 280–1200 by 140–800 pixels;
 the editor workspace can span a larger monitor or desktop.
+
+## Configuration Backups
+
+In **Advanced → Configuration Backups**, choose **Back up saved settings** to keep
+a copy of the configuration currently on disk. Unsaved editor changes are excluded.
+The five newest backups are retained beside the config in `hashoverlay.backups/`.
+This is a managed local folder; export TOML elsewhere for long-term backups.
+
+**Review backup** loads its text into the import editor without changing the saved
+configuration. Choose **Preview import**, inspect the changed fields and then
+**Apply reviewed import**. Importing and resetting automatically back up the current
+saved configuration first. If the file changed externally or the backup cannot be
+written, the destructive operation stops and leaves the active file untouched.
+Existing migration `.bak` files retain their original contents.
+
+## Manual Saving and Pending Changes
+
+In **Advanced → Saving Changes**, turn off **Save changes automatically** to review
+edits before writing them. The choice is kept for future sessions when browser
+storage is available. A header notice identifies manual mode. Save or Ctrl+S applies
+the pending setup. Explicit preset, import and reset actions still persist their
+changes. Draft recovery remains active in manual mode.
+
+Expand the pending-change summary to compare up to 20 fields with the last loaded
+or saved setup. **Discard pending changes** returns to that baseline as an undoable
+edit; Undo restores the discarded values. This does not reload external file edits.
+Reload the config when another process changed it. With autosave enabled, Undo
+behaves like any other edit and will save again after the debounce period.
+
+Automatic saving waits until a drag, resize or held-arrow gesture ends, so a pause
+inside the gesture does not persist an intermediate layout. Recovery review keeps
+autosave paused until an explicit save, independently of the manual-mode preference.

@@ -129,3 +129,17 @@ use fake timers to cover sequential polling, visibility changes and unmount clea
 Monitor conversion tests cover negative origins, work-area insets, overflow and
 invalid native payloads. Native display enumeration and changing real monitor/DPI
 arrangements remain manual desktop checks.
+
+## Backup and Save-Control Regression Checks
+
+Native Settings tests cover exact saved bytes, retention, path traversal, unpublished
+files, blocked destinations, oversized configurations and import revision conflicts.
+Renderer tests verify that repeated migration attempts preserve the first migration
+backup. Run `cargo test --manifest-path settings/src-tauri/Cargo.toml` and
+`cargo test -p overlay-renderer config::tests` after changing persistence behavior.
+
+`npm test` covers backup list ownership with the real React hook, malformed metadata,
+manual-save preferences and fake-timer autosave behavior. Desktop checks should cover
+creating a backup, changing settings, reviewing the backup, previewing its import and
+applying it, plus changing save mode and undoing a discarded edit. Backups are local
+recovery conveniences and do not replace exported user backups.

@@ -1,3 +1,7 @@
+import { useAutosave } from "./useAutosave";
+import { restoreSavePreferences, SAVE_PREFERENCES_KEY } from "./save-preferences";
+import { ConfigBackups } from "./ConfigBackups";
+import { useConfigBackups } from "./useConfigBackups";
 import { fitWindowToWorkspace } from "./display-placement";
 import { DisplayWorkspacePicker } from "./DisplayWorkspacePicker";
 import { parseDisplays, type Display } from "./displays";
@@ -249,15 +253,29 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   });
 }
 
+function loadConfigBackups() { return invoke<unknown>("list_config_backups"); }
+
 function validateImportText(text: string) { return invoke<OverlayConfig>("preview_import", { text }); }
 
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
+  const backupList = useConfigBackups(path, loadConfigBackups);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const revision = useRef("0");
   const draftStore = useRef(new DraftStore(() => window.localStorage));
   const recoveryChecked = useRef(false);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
+  const [savePreferences, setSavePreferences] = useState(() => {
+    try { return restoreSavePreferences(window.localStorage.getItem(SAVE_PREFERENCES_KEY)); }
+    catch { return restoreSavePreferences(null); }
+  });
+  const [savePreferenceError, setSavePreferenceError] = useState<string | null>(null);
+  useEffect(() => {
+    try { window.localStorage.setItem(SAVE_PREFERENCES_KEY, JSON.stringify(savePreferences)); setSavePreferenceError(null); }
+    catch { setSavePreferenceError("Could not keep the save preference. Your choice still applies until Settings closes."); }
+  }, [savePreferences]);
   const [pauseAutosave, setPauseAutosave] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const configTasks = useRef(new ConfigTasks());
@@ -300,7 +318,6 @@ function App() {
   const statusRequest = useRef(new StatusRequest());
   const hostStateGeneration = useRef(0);
   const lastSavedConfig = useRef("");
-  const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
   const reloadWarning = useRef<string | null>(null);
   const configPath = useRef(path);
@@ -322,19 +339,9 @@ function App() {
     }
   }, [config, activeOverlayId]);
 
-  useEffect(() => {
-    if (!config || !hydratedConfig.current || saving || recovery || pauseAutosave) return;
-    const serialized = JSON.stringify(config);
-    if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
-    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      void persistConfig(config, "Changes saved");
-      saveTimer.current = null;
-    }, 850);
-    return () => {
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    };
-  }, [config, saving, recovery, pauseAutosave]);
+  const cancelAutosave = useAutosave(config, lastSavedConfig.current, failedSave.current,
+    hydratedConfig.current && !saving && !replacingConfig && !recovery && !pauseAutosave && savePreferences.autosave && !editingGesture,
+    (value) => persistConfig(value, "Changes saved"));
 
   useEffect(() => {
     const saveShortcut = (event: KeyboardEvent) => {
@@ -418,10 +425,7 @@ function App() {
       && !window.confirm("You have unsaved changes. Reloading will discard them. Continue?")) {
       return;
     }
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     await configTasks.current.run(async () => {
       setSaving(true);
       setReplacingConfig(true);
@@ -467,10 +471,7 @@ function App() {
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     return configTasks.current.run(async () => {
       if (successStatus === "Changes saved" && JSON.stringify(nextConfig) === lastSavedConfig.current) return true;
       setSaving(true);
@@ -501,6 +502,14 @@ function App() {
     });
   }
 
+  function discardPendingChanges() {
+    if (!lastSavedConfig.current || !window.confirm("Discard pending editor changes and return to the last loaded or saved setup? Undo can restore these edits.")) return;
+    cancelAutosave();
+    setConfig(JSON.parse(lastSavedConfig.current));
+    failedSave.current = null;
+    setStatus("Pending changes discarded. Undo restores them.");
+  }
+
   async function saveConfig(): Promise<boolean> {
     return currentConfig.current ? persistConfig(currentConfig.current) : false;
   }
@@ -512,6 +521,33 @@ function App() {
     } catch (error) {
       setStatus(String(error));
     }
+  }
+
+  async function createSavedBackup() {
+    await configTasks.current.run(async () => {
+      setBackupBusy(true);
+      setBackupError(null);
+      try {
+        await invoke("create_config_backup", { expected_revision: revision.current });
+        await backupList.refresh();
+        setStatus("Saved configuration backed up");
+      } catch (error) { setBackupError(String(error)); }
+      finally { setBackupBusy(false); }
+    });
+  }
+
+  async function reviewBackup(id: string) {
+    if (configText.trim() && !window.confirm("Replace the TOML editor text with this backup? Saved settings will not change.")) return;
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      const text = await invoke<string>("read_config_backup", { id });
+      importPreview.clear();
+      setConfigText(text);
+      setActivePage("Advanced");
+      setStatus("Backup loaded into the TOML editor. Preview import to review its changes before applying.");
+    } catch (error) { setBackupError(String(error)); }
+    finally { setBackupBusy(false); }
   }
 
   async function exportConfigText() {
@@ -534,10 +570,7 @@ function App() {
       && !window.confirm("Importing will replace your pending changes. Continue?")) {
       return;
     }
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     await configTasks.current.run(async () => {
       setSaving(true);
       setReplacingConfig(true);
@@ -553,6 +586,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config imported", response.reload_warning).message);
+        setBackupError(null);
+        void backupList.refresh();
         importPreview.clear();
         failedSave.current = null;
         setPauseAutosave(false);
@@ -566,13 +601,10 @@ function App() {
   }
 
   async function resetConfig() {
-    if (!window.confirm("Reset all settings to defaults? This cannot be undone.")) {
+    if (!window.confirm("Reset all settings to defaults? A backup of the saved configuration will be created first.")) {
       return;
     }
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     await configTasks.current.run(async () => {
       setSaving(true);
       setReplacingConfig(true);
@@ -585,6 +617,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config reset", response.reload_warning).message);
+        setBackupError(null);
+        void backupList.refresh();
         failedSave.current = null;
         setPauseAutosave(false);
       } catch (error) {
@@ -908,6 +942,12 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const pendingChanges = useMemo(() => {
+    if (!config || !lastSavedConfig.current) return { total: 0, items: [] };
+    try { return configurationChanges(JSON.parse(lastSavedConfig.current), config, 20); }
+    catch { return { total: 0, items: [] }; }
+  }, [config, saving, path]);
+
   const importChanges = useMemo(() => config && importPreview.config
     ? configurationChanges(config, normalizeUiConfig(importPreview.config)) : null,
     [config, importPreview.config]);
@@ -1007,6 +1047,7 @@ function App() {
           </div>
         </div>
 
+      {!savePreferences.autosave && <p className="recoveryWarning saveModeNotice" role="status">Manual saving is on. Choose Save to apply pending edits.</p>}
       {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
       {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
 
@@ -1098,7 +1139,7 @@ function App() {
         ))}
       </nav>
 
-      <fieldset className="grid settingsFields" disabled={replacingConfig} aria-label="Overlay configuration">
+      <fieldset className="grid settingsFields" disabled={replacingConfig || backupBusy} aria-label="Overlay configuration">
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>
@@ -1407,6 +1448,26 @@ function App() {
               </div>
             ))}
           </div>
+        </Section>}
+
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
+          <label className="toggle"><input type="checkbox" checked={savePreferences.autosave} onChange={(event) => setSavePreferences({ version: 1, autosave: event.target.checked })} /><span>Save changes automatically</span></label>
+          <p className="previewHint">{savePreferences.autosave ? "Edits save after a short pause. Turn this off to review changes before saving." : "Manual saving: edits stay in the editor until Save. Explicit preset, import and reset actions still apply their changes."}</p>
+          <div className="buttonRow">
+            <button className="primaryButton" disabled={saving || pendingChanges.total === 0} onClick={() => void saveConfig()}>Save pending changes</button>
+            <button className="secondaryButton" disabled={saving || editingGesture || pendingChanges.total === 0} onClick={discardPendingChanges}>Discard pending changes</button>
+          </div>
+          <details className="pendingChanges">
+            <summary>{pendingChanges.total === 0 ? "No pending changes" : `${pendingChanges.total} pending changes`}</summary>
+            <ul>{pendingChanges.items.map((change) => <li key={change.path}><strong>{change.path}</strong><span>{formatChangeValue(change.before)} → {formatChangeValue(change.after)}</span></li>)}</ul>
+            {pendingChanges.total > pendingChanges.items.length && <p className="previewHint">Showing the first {pendingChanges.items.length} changes.</p>}
+          </details>
+          {savePreferenceError && <p className="inlineError" role="status">{savePreferenceError}</p>}
+        </Section>}
+
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Configuration Backups">
+          <ConfigBackups items={backupList.items} loading={backupList.loading} busy={saving || backupBusy} error={backupError ?? backupList.error}
+            onCreate={() => void createSavedBackup()} onRefresh={() => { setBackupError(null); void backupList.refresh(); }} onReview={(id) => void reviewBackup(id)} />
         </Section>}
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Import and Export">
