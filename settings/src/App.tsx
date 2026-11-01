@@ -1,3 +1,4 @@
+import { restoreSavePreferences, SAVE_PREFERENCES_KEY } from "./save-preferences";
 import { ConfigBackups } from "./ConfigBackups";
 import { useConfigBackups } from "./useConfigBackups";
 import { fitWindowToWorkspace } from "./display-placement";
@@ -265,6 +266,15 @@ function App() {
   const draftStore = useRef(new DraftStore(() => window.localStorage));
   const recoveryChecked = useRef(false);
   const [recovery, setRecovery] = useState<RecoveryDraft | null>(null);
+  const [savePreferences, setSavePreferences] = useState(() => {
+    try { return restoreSavePreferences(window.localStorage.getItem(SAVE_PREFERENCES_KEY)); }
+    catch { return restoreSavePreferences(null); }
+  });
+  const [savePreferenceError, setSavePreferenceError] = useState<string | null>(null);
+  useEffect(() => {
+    try { window.localStorage.setItem(SAVE_PREFERENCES_KEY, JSON.stringify(savePreferences)); setSavePreferenceError(null); }
+    catch { setSavePreferenceError("Could not keep the save preference. Your choice still applies until Settings closes."); }
+  }, [savePreferences]);
   const [pauseAutosave, setPauseAutosave] = useState(false);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const configTasks = useRef(new ConfigTasks());
@@ -330,7 +340,7 @@ function App() {
   }, [config, activeOverlayId]);
 
   useEffect(() => {
-    if (!config || !hydratedConfig.current || saving || recovery || pauseAutosave) return;
+    if (!config || !hydratedConfig.current || saving || recovery || pauseAutosave || !savePreferences.autosave) return;
     const serialized = JSON.stringify(config);
     if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
@@ -341,7 +351,7 @@ function App() {
     return () => {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     };
-  }, [config, saving, recovery, pauseAutosave]);
+  }, [config, saving, recovery, pauseAutosave, savePreferences.autosave]);
 
   useEffect(() => {
     const saveShortcut = (event: KeyboardEvent) => {
@@ -1045,6 +1055,7 @@ function App() {
           </div>
         </div>
 
+      {!savePreferences.autosave && <p className="recoveryWarning" role="status">Manual saving is on. Choose Save to apply pending edits.</p>}
       {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
       {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
 
@@ -1445,6 +1456,12 @@ function App() {
               </div>
             ))}
           </div>
+        </Section>}
+
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
+          <label className="toggle"><input type="checkbox" checked={savePreferences.autosave} onChange={(event) => setSavePreferences({ version: 1, autosave: event.target.checked })} /><span>Save changes automatically</span></label>
+          <p className="previewHint">{savePreferences.autosave ? "Edits save after a short pause. Turn this off to review changes before saving." : "Manual saving: edits stay in the editor until Save. Explicit preset, import and reset actions still apply their changes."}</p>
+          {savePreferenceError && <p className="inlineError" role="status">{savePreferenceError}</p>}
         </Section>}
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Configuration Backups">
