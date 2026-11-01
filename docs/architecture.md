@@ -202,3 +202,25 @@ that native payload and converts it into editor-only workspace state. Refreshing
 displays never silently relocates overlays. Moving a selected surface is a separate
 configuration edit. Frontend window normalization follows native limits so accepted
 editor values do not shrink or change rate unexpectedly at the next save.
+
+## Saved Backups and Editor Save Ownership
+
+`backups.rs` owns bounded UTF-8 file reads, generated backup identifiers, exclusive
+pending files, synced publication and retention of the five newest published copies.
+The backup directory is derived from the fixed configuration path; frontend callers
+supply a validated identifier rather than an arbitrary filesystem path. Reads and
+lists do not write the active configuration. Backups preserve original TOML bytes,
+including comments; restoration uses the normal validated import path.
+
+Import and reset validate their candidate and expected revision, create a backup,
+then retain the existing optimistic revision check at the final write. A failed
+backup blocks replacement. This is not a cross-process transaction lock: another
+writer can still race between independent filesystem operations. A successful backup
+may remain after a later write fails, which preserves useful recovery data.
+
+`useConfigBackups` owns list requests for the currently loaded configuration.
+`save-preferences.ts` keeps editor-only manual-save state outside the runtime schema.
+`useAutosave` owns one cancelable debounce timer and does not schedule while gestures,
+replacement, recovery review or manual mode own the editor. Save failures retain their
+existing retry suppression. Discard uses history edits rather than replacing history,
+so Undo remains available. Pending summaries compare against the saved baseline.
