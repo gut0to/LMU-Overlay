@@ -7,11 +7,18 @@ import { useAutosave } from "../src/useAutosave.ts";
 test("autosave debounces current edits and respects gestures, manual mode, failures and cancel", (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const writes = [];
-  const save = async (value) => { writes.push(value); };
+  const save = async (value) => {
+    writes.push(value);
+  };
   let cancel, renderer;
-  function Editor({ x, enabled = true, failed = null }) { cancel = useAutosave({ x }, '{"x":0}', failed, enabled, save, 100); return null; }
+  function Editor({ x, enabled = true, failed = null }) {
+    cancel = useAutosave({ x }, '{"x":0}', failed, enabled, save, 100);
+    return null;
+  }
   try {
-    act(() => { renderer = create(React.createElement(Editor, { x: 0 })); });
+    act(() => {
+      renderer = create(React.createElement(Editor, { x: 0 }));
+    });
     act(() => t.mock.timers.tick(100));
     assert.equal(writes.length, 0);
     act(() => renderer.update(React.createElement(Editor, { x: 1 })));
@@ -21,10 +28,14 @@ test("autosave debounces current edits and respects gestures, manual mode, failu
     assert.equal(writes.length, 0);
     act(() => t.mock.timers.tick(1));
     assert.deepEqual(writes, [{ x: 2 }]);
-    act(() => renderer.update(React.createElement(Editor, { x: 3, enabled: false })));
+    act(() =>
+      renderer.update(React.createElement(Editor, { x: 3, enabled: false })),
+    );
     act(() => t.mock.timers.tick(1000));
     assert.equal(writes.length, 1);
-    act(() => renderer.update(React.createElement(Editor, { x: 3, failed: '{"x":3}' })));
+    act(() =>
+      renderer.update(React.createElement(Editor, { x: 3, failed: '{"x":3}' })),
+    );
     act(() => t.mock.timers.tick(1000));
     assert.equal(writes.length, 1);
     act(() => renderer.update(React.createElement(Editor, { x: 4 })));
@@ -32,8 +43,11 @@ test("autosave debounces current edits and respects gestures, manual mode, failu
     act(() => t.mock.timers.tick(1000));
     assert.equal(writes.length, 1);
     act(() => renderer.update(React.createElement(Editor, { x: 5 })));
-    act(() => renderer.unmount()); renderer = null;
+    act(() => renderer.unmount());
+    renderer = null;
     act(() => t.mock.timers.tick(1000));
     assert.equal(writes.length, 1);
-  } finally { if (renderer) act(() => renderer.unmount()); }
+  } finally {
+    if (renderer) act(() => renderer.unmount());
+  }
 });

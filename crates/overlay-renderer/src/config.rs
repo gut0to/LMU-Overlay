@@ -497,14 +497,24 @@ fn migrate_v6_to_v7(config: &mut OverlayConfig) {
 
 fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<()> {
     let backup_path = path.with_extension(format!("toml.v{version}.bak"));
-    let mut file = match fs::OpenOptions::new().write(true).create_new(true).open(&backup_path) {
+    let mut file = match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&backup_path)
+    {
         Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists && backup_path.is_file() => return Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists && backup_path.is_file() => {
+            return Ok(())
+        }
         Err(error) => return Err(error),
     };
-    let result = file.write_all(text.as_bytes()).and_then(|_| file.sync_all());
+    let result = file
+        .write_all(text.as_bytes())
+        .and_then(|_| file.sync_all());
     drop(file);
-    if result.is_err() { let _ = fs::remove_file(backup_path); }
+    if result.is_err() {
+        let _ = fs::remove_file(backup_path);
+    }
     result
 }
 
@@ -2146,7 +2156,10 @@ mod tests {
 
     #[test]
     fn repeated_migration_backup_attempts_preserve_the_original_bytes() {
-        let path = std::env::temp_dir().join(format!("hashoverlay-migration-preserve-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-migration-preserve-{}.toml",
+            std::process::id()
+        ));
         let backup = path.with_extension("toml.v3.bak");
         write_migration_backup(&path, 3, "original source").unwrap();
         write_migration_backup(&path, 3, "later retry").unwrap();

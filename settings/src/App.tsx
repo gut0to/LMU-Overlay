@@ -504,6 +504,7 @@ function App() {
 
   function discardPendingChanges() {
     if (!lastSavedConfig.current || !window.confirm("Discard pending editor changes and return to the last loaded or saved setup? Undo can restore these edits.")) return;
+    cancelAutosave();
     setConfig(JSON.parse(lastSavedConfig.current));
     failedSave.current = null;
     setStatus("Pending changes discarded. Undo restores them.");
@@ -1046,7 +1047,7 @@ function App() {
           </div>
         </div>
 
-      {!savePreferences.autosave && <p className="recoveryWarning" role="status">Manual saving is on. Choose Save to apply pending edits.</p>}
+      {!savePreferences.autosave && <p className="recoveryWarning saveModeNotice" role="status">Manual saving is on. Choose Save to apply pending edits.</p>}
       {pauseAutosave && <p className="recoveryWarning" role="status">Recovered draft: automatic saving is paused. Review your settings, then choose Save to apply them.</p>}
       {recoveryError && <p className="recoveryWarning" role="status">{recoveryError}</p>}
 
@@ -1138,7 +1139,7 @@ function App() {
         ))}
       </nav>
 
-      <fieldset className="grid settingsFields" disabled={replacingConfig} aria-label="Overlay configuration">
+      <fieldset className="grid settingsFields" disabled={replacingConfig || backupBusy} aria-label="Overlay configuration">
         {showPanel(activePage, "Dashboard", "Layout") && <section className="layoutStudio">
           <Section icon={<Activity />} title="Live Preview">
             <p className="previewHint">Select a surface on the screen map, drag its window to place it, then arrange its widgets below.</p>

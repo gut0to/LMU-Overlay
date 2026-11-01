@@ -788,14 +788,33 @@ mod ipc_tests {
 
     #[test]
     fn backup_read_ipc_rejects_unsafe_identifiers_before_filesystem_access() {
-        let app = mock_builder().invoke_handler(tauri::generate_handler![read_config_backup]).build(mock_context(noop_assets())).unwrap();
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
-        let error = get_ipc_response(&webview, tauri::webview::InvokeRequest {
-            cmd: "read_config_backup".into(), callback: tauri::ipc::CallbackFn(0), error: tauri::ipc::CallbackFn(1),
-            url: "http://tauri.localhost".parse().unwrap(), body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "id": "../hashoverlay.toml" })),
-            headers: Default::default(), invoke_key: INVOKE_KEY.into(),
-        }).unwrap_err().to_string();
-        assert!(error.contains("Invalid configuration backup identifier"), "{error}");
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![read_config_backup])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let error = get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "read_config_backup".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(
+                    serde_json::json!({ "id": "../hashoverlay.toml" }),
+                ),
+                headers: Default::default(),
+                invoke_key: INVOKE_KEY.into(),
+            },
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("Invalid configuration backup identifier"),
+            "{error}"
+        );
     }
 
     #[test]

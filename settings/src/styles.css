@@ -1453,3 +1453,5 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .pendingChanges ul { display: grid; gap: 8px; max-height: 260px; overflow: auto; list-style: none; padding: 0; }
 .pendingChanges li { display: grid; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .pendingChanges strong { color: var(--ink); font-weight: 500; }
+
+.saveModeNotice { border-color: var(--blue); }

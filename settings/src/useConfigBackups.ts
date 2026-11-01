@@ -15,13 +15,22 @@ export function useConfigBackups(owner: string, load: () => Promise<unknown>) {
     setError(null);
     try {
       const result = parseBackups(await load());
-      if (id === request.current && owner === currentOwner.current) setItems(result);
+      if (id === request.current && owner === currentOwner.current)
+        setItems(result);
     } catch (error) {
-      if (id === request.current && owner === currentOwner.current) setError(String(error));
+      if (id === request.current && owner === currentOwner.current)
+        setError(String(error));
     } finally {
-      if (id === request.current && owner === currentOwner.current) setLoading(false);
+      if (id === request.current && owner === currentOwner.current)
+        setLoading(false);
     }
   }, [owner, load]);
-  useEffect(() => { setItems([]); void refresh(); return () => { request.current++; }; }, [refresh]);
+  useEffect(() => {
+    setItems([]);
+    void refresh();
+    return () => {
+      request.current++;
+    };
+  }, [refresh]);
   return { items, loading, error, refresh };
 }

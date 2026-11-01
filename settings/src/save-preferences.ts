@@ -6,6 +6,10 @@ export function restoreSavePreferences(raw: string | null): SavePreferences {
   if (!raw) return defaults;
   try {
     const value = JSON.parse(raw);
-    return value && value.version === 1 && typeof value.autosave === "boolean" ? { version: 1, autosave: value.autosave } : defaults;
-  } catch { return defaults; }
+    return value && value.version === 1 && typeof value.autosave === "boolean"
+      ? { version: 1, autosave: value.autosave }
+      : defaults;
+  } catch {
+    return defaults;
+  }
 }
