@@ -1,3 +1,4 @@
+import { useAutosave } from "./useAutosave";
 import { restoreSavePreferences, SAVE_PREFERENCES_KEY } from "./save-preferences";
 import { ConfigBackups } from "./ConfigBackups";
 import { useConfigBackups } from "./useConfigBackups";
@@ -317,7 +318,6 @@ function App() {
   const statusRequest = useRef(new StatusRequest());
   const hostStateGeneration = useRef(0);
   const lastSavedConfig = useRef("");
-  const saveTimer = useRef<number | null>(null);
   const failedSave = useRef<string | null>(null);
   const reloadWarning = useRef<string | null>(null);
   const configPath = useRef(path);
@@ -339,19 +339,9 @@ function App() {
     }
   }, [config, activeOverlayId]);
 
-  useEffect(() => {
-    if (!config || !hydratedConfig.current || saving || recovery || pauseAutosave || !savePreferences.autosave) return;
-    const serialized = JSON.stringify(config);
-    if (serialized === lastSavedConfig.current || serialized === failedSave.current) return;
-    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      void persistConfig(config, "Changes saved");
-      saveTimer.current = null;
-    }, 850);
-    return () => {
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    };
-  }, [config, saving, recovery, pauseAutosave, savePreferences.autosave]);
+  const cancelAutosave = useAutosave(config, lastSavedConfig.current, failedSave.current,
+    hydratedConfig.current && !saving && !replacingConfig && !recovery && !pauseAutosave && savePreferences.autosave && !editingGesture,
+    (value) => persistConfig(value, "Changes saved"));
 
   useEffect(() => {
     const saveShortcut = (event: KeyboardEvent) => {
@@ -435,10 +425,7 @@ function App() {
       && !window.confirm("You have unsaved changes. Reloading will discard them. Continue?")) {
       return;
     }
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     await configTasks.current.run(async () => {
       setSaving(true);
       setReplacingConfig(true);
@@ -484,10 +471,7 @@ function App() {
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     return configTasks.current.run(async () => {
       if (successStatus === "Changes saved" && JSON.stringify(nextConfig) === lastSavedConfig.current) return true;
       setSaving(true);
@@ -585,10 +569,7 @@ function App() {
       && !window.confirm("Importing will replace your pending changes. Continue?")) {
       return;
     }
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     await configTasks.current.run(async () => {
       setSaving(true);
       setReplacingConfig(true);
@@ -622,10 +603,7 @@ function App() {
     if (!window.confirm("Reset all settings to defaults? A backup of the saved configuration will be created first.")) {
       return;
     }
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+    cancelAutosave();
     await configTasks.current.run(async () => {
       setSaving(true);
       setReplacingConfig(true);
