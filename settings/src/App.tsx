@@ -518,6 +518,13 @@ function App() {
     });
   }
 
+  function discardPendingChanges() {
+    if (!lastSavedConfig.current || !window.confirm("Discard pending editor changes and return to the last loaded or saved setup? Undo can restore these edits.")) return;
+    setConfig(JSON.parse(lastSavedConfig.current));
+    failedSave.current = null;
+    setStatus("Pending changes discarded. Undo restores them.");
+  }
+
   async function saveConfig(): Promise<boolean> {
     return currentConfig.current ? persistConfig(currentConfig.current) : false;
   }
@@ -1467,6 +1474,10 @@ function App() {
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
           <label className="toggle"><input type="checkbox" checked={savePreferences.autosave} onChange={(event) => setSavePreferences({ version: 1, autosave: event.target.checked })} /><span>Save changes automatically</span></label>
           <p className="previewHint">{savePreferences.autosave ? "Edits save after a short pause. Turn this off to review changes before saving." : "Manual saving: edits stay in the editor until Save. Explicit preset, import and reset actions still apply their changes."}</p>
+          <div className="buttonRow">
+            <button className="primaryButton" disabled={saving || pendingChanges.total === 0} onClick={() => void saveConfig()}>Save pending changes</button>
+            <button className="secondaryButton" disabled={saving || editingGesture || pendingChanges.total === 0} onClick={discardPendingChanges}>Discard pending changes</button>
+          </div>
           <details className="pendingChanges">
             <summary>{pendingChanges.total === 0 ? "No pending changes" : `${pendingChanges.total} pending changes`}</summary>
             <ul>{pendingChanges.items.map((change) => <li key={change.path}><strong>{change.path}</strong><span>{formatChangeValue(change.before)} → {formatChangeValue(change.after)}</span></li>)}</ul>
