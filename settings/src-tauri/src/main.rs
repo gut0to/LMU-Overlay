@@ -139,6 +139,27 @@ fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(),
 }
 
 #[tauri::command]
+async fn list_config_backups() -> Result<Vec<backups::BackupInfo>, String> {
+    native_task(|| backups::list(&overlay_config_path())).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn create_config_backup(expected_revision: String) -> Result<backups::BackupInfo, String> {
+    native_task(move || create_backup_at(&overlay_config_path(), parse_revision(&expected_revision)?)).await
+}
+
+fn create_backup_at(path: &std::path::Path, expected_revision: u64) -> Result<backups::BackupInfo, String> {
+    let current = OverlayConfig::revision(path).map_err(|error| error.to_string())?;
+    if current != expected_revision { return Err("Configuration changed before backup. Reload it and retry.".into()); }
+    backups::create(path)
+}
+
+#[tauri::command]
+async fn read_config_backup(id: String) -> Result<String, String> {
+    native_task(move || backups::read(&overlay_config_path(), &id)).await
+}
+
+#[tauri::command]
 fn widget_catalog() -> Vec<WidgetDefinition> {
     overlay_widget_catalog().to_vec()
 }
@@ -675,6 +696,9 @@ fn main() {
             preview_import,
             reset_config,
             widget_catalog,
+            list_config_backups,
+            create_config_backup,
+            read_config_backup,
             list_displays,
             start_overlay,
             stop_overlay,
