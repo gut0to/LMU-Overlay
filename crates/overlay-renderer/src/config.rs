@@ -2145,6 +2145,16 @@ mod tests {
     }
 
     #[test]
+    fn repeated_migration_backup_attempts_preserve_the_original_bytes() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-migration-preserve-{}.toml", std::process::id()));
+        let backup = path.with_extension("toml.v3.bak");
+        write_migration_backup(&path, 3, "original source").unwrap();
+        write_migration_backup(&path, 3, "later retry").unwrap();
+        assert_eq!(fs::read_to_string(&backup).unwrap(), "original source");
+        fs::remove_file(backup).unwrap();
+    }
+
+    #[test]
     fn default_creation_is_idempotent_and_keeps_existing_bytes() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-create-default-{}.toml",
