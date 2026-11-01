@@ -497,7 +497,15 @@ fn migrate_v6_to_v7(config: &mut OverlayConfig) {
 
 fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<()> {
     let backup_path = path.with_extension(format!("toml.v{version}.bak"));
-    fs::write(backup_path, text)
+    let mut file = match fs::OpenOptions::new().write(true).create_new(true).open(&backup_path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists && backup_path.is_file() => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let result = file.write_all(text.as_bytes()).and_then(|_| file.sync_all());
+    drop(file);
+    if result.is_err() { let _ = fs::remove_file(backup_path); }
+    result
 }
 
 fn atomic_write(path: &Path, text: String) -> io::Result<()> {
