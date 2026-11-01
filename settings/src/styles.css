@@ -1438,3 +1438,11 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .widgetToolsGroup[open] > .secondaryButton { margin: 10px 0; }
 
 .displayWorkspacePicker { display: grid; gap: 10px; margin-bottom: 16px; min-width: 0; }
+
+.configBackups { display: grid; gap: 12px; min-width: 0; }
+.backupList { display: grid; gap: 10px; list-style: none; margin: 0; padding: 0; }
+.backupList li { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.backupList li span { min-width: 0; overflow-wrap: anywhere; }
+.backupList strong { display: block; font-size: 12px; }
+.backupList small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+@media (max-width: 1000px) { .backupList li { align-items: flex-start; flex-direction: column; } }
