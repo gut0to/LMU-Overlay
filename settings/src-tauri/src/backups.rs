@@ -105,6 +105,19 @@ mod tests {
     }
 
     #[test]
+    fn failed_or_oversized_backups_preserve_the_active_configuration() {
+        let fixture = Fixture::new();
+        fs::write(folder(&fixture.config), "blocked destination").unwrap();
+        let before = fs::read(&fixture.config).unwrap();
+        assert!(create(&fixture.config).is_err());
+        assert_eq!(fs::read(&fixture.config).unwrap(), before);
+        fs::remove_file(folder(&fixture.config)).unwrap();
+        fs::write(&fixture.config, vec![b'x'; MAX_BACKUP_BYTES as usize + 1]).unwrap();
+        assert!(create(&fixture.config).is_err());
+        assert!(!folder(&fixture.config).exists());
+    }
+
+    #[test]
     fn backup_round_trips_exact_saved_bytes_and_retains_only_the_newest_five() {
         let fixture = Fixture::new();
         assert!(list(&fixture.config).unwrap().is_empty());
