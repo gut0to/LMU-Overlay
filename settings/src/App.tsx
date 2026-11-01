@@ -1,3 +1,5 @@
+import { ConfigBackups } from "./ConfigBackups";
+import { useConfigBackups } from "./useConfigBackups";
 import { fitWindowToWorkspace } from "./display-placement";
 import { DisplayWorkspacePicker } from "./DisplayWorkspacePicker";
 import { parseDisplays, type Display } from "./displays";
@@ -249,11 +251,16 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   });
 }
 
+function loadConfigBackups() { return invoke<unknown>("list_config_backups"); }
+
 function validateImportText(text: string) { return invoke<OverlayConfig>("preview_import", { text }); }
 
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
   const [path, setPath] = useState("");
+  const backupList = useConfigBackups(path, loadConfigBackups);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
   const revision = useRef("0");
   const draftStore = useRef(new DraftStore(() => window.localStorage));
   const recoveryChecked = useRef(false);
@@ -512,6 +519,19 @@ function App() {
     } catch (error) {
       setStatus(String(error));
     }
+  }
+
+  async function createSavedBackup() {
+    await configTasks.current.run(async () => {
+      setBackupBusy(true);
+      setBackupError(null);
+      try {
+        await invoke("create_config_backup", { expected_revision: revision.current });
+        await backupList.refresh();
+        setStatus("Saved configuration backed up");
+      } catch (error) { setBackupError(String(error)); }
+      finally { setBackupBusy(false); }
+    });
   }
 
   async function exportConfigText() {
@@ -1407,6 +1427,11 @@ function App() {
               </div>
             ))}
           </div>
+        </Section>}
+
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Configuration Backups">
+          <ConfigBackups items={backupList.items} loading={backupList.loading} busy={saving || backupBusy} error={backupError ?? backupList.error}
+            onCreate={() => void createSavedBackup()} onRefresh={() => { setBackupError(null); void backupList.refresh(); }} onReview={() => setStatus("Backup selected; open review from the import editor")} />
         </Section>}
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Import and Export">
