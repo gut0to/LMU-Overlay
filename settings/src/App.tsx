@@ -587,6 +587,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config imported", response.reload_warning).message);
+        setBackupError(null);
+        void backupList.refresh();
         importPreview.clear();
         failedSave.current = null;
         setPauseAutosave(false);
@@ -600,7 +602,7 @@ function App() {
   }
 
   async function resetConfig() {
-    if (!window.confirm("Reset all settings to defaults? This cannot be undone.")) {
+    if (!window.confirm("Reset all settings to defaults? A backup of the saved configuration will be created first.")) {
       return;
     }
     if (saveTimer.current !== null) {
@@ -619,6 +621,8 @@ function App() {
         revision.current = response.revision;
         reloadWarning.current = response.reload_warning ?? null;
         setStatus(saveFeedback("Config reset", response.reload_warning).message);
+        setBackupError(null);
+        void backupList.refresh();
         failedSave.current = null;
         setPauseAutosave(false);
       } catch (error) {
