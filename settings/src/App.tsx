@@ -534,6 +534,20 @@ function App() {
     });
   }
 
+  async function reviewBackup(id: string) {
+    if (configText.trim() && !window.confirm("Replace the TOML editor text with this backup? Saved settings will not change.")) return;
+    setBackupBusy(true);
+    setBackupError(null);
+    try {
+      const text = await invoke<string>("read_config_backup", { id });
+      importPreview.clear();
+      setConfigText(text);
+      setActivePage("Advanced");
+      setStatus("Backup loaded into the TOML editor. Preview import to review its changes before applying.");
+    } catch (error) { setBackupError(String(error)); }
+    finally { setBackupBusy(false); }
+  }
+
   async function exportConfigText() {
     if (!config) {
       return;
@@ -1431,7 +1445,7 @@ function App() {
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Configuration Backups">
           <ConfigBackups items={backupList.items} loading={backupList.loading} busy={saving || backupBusy} error={backupError ?? backupList.error}
-            onCreate={() => void createSavedBackup()} onRefresh={() => { setBackupError(null); void backupList.refresh(); }} onReview={() => setStatus("Backup selected; open review from the import editor")} />
+            onCreate={() => void createSavedBackup()} onRefresh={() => { setBackupError(null); void backupList.refresh(); }} onReview={(id) => void reviewBackup(id)} />
         </Section>}
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Import and Export">
