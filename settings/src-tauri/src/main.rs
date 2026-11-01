@@ -517,6 +517,29 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn destructive_import_requires_a_current_revision_and_a_successful_backup() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-import-backup-{}.toml", std::process::id()));
+        let mut config = OverlayConfig::default();
+        config.save(&path).unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+        let revision = OverlayConfig::revision(&path).unwrap();
+        assert!(import_config_at(&path, "not TOML".into(), revision).is_err());
+        assert!(backups::list(&path).unwrap().is_empty());
+        assert!(import_config_at(&path, original.clone(), revision.wrapping_add(1)).is_err());
+        assert!(backups::list(&path).unwrap().is_empty());
+        fs::write(path.with_extension("backups"), "blocked storage").unwrap();
+        assert!(import_config_at(&path, original.clone(), revision).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        fs::remove_file(path.with_extension("backups")).unwrap();
+        import_config_at(&path, "config_version = 7\n[window]\nx = 77\n".into(), revision).unwrap();
+        let saved = backups::list(&path).unwrap();
+        assert_eq!(backups::read(&path, &saved[0].id).unwrap(), original);
+        assert_eq!(OverlayConfig::load(&path).unwrap().window.x, 77);
+        cleanup_backups(&path);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn reset_preserves_external_edits_and_accepts_the_latest_revision() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-reset-conflict-{}.toml",
