@@ -956,6 +956,12 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const pendingChanges = useMemo(() => {
+    if (!config || !lastSavedConfig.current) return { total: 0, items: [] };
+    try { return configurationChanges(JSON.parse(lastSavedConfig.current), config, 20); }
+    catch { return { total: 0, items: [] }; }
+  }, [config, saving, path]);
+
   const importChanges = useMemo(() => config && importPreview.config
     ? configurationChanges(config, normalizeUiConfig(importPreview.config)) : null,
     [config, importPreview.config]);
@@ -1461,6 +1467,11 @@ function App() {
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
           <label className="toggle"><input type="checkbox" checked={savePreferences.autosave} onChange={(event) => setSavePreferences({ version: 1, autosave: event.target.checked })} /><span>Save changes automatically</span></label>
           <p className="previewHint">{savePreferences.autosave ? "Edits save after a short pause. Turn this off to review changes before saving." : "Manual saving: edits stay in the editor until Save. Explicit preset, import and reset actions still apply their changes."}</p>
+          <details className="pendingChanges">
+            <summary>{pendingChanges.total === 0 ? "No pending changes" : `${pendingChanges.total} pending changes`}</summary>
+            <ul>{pendingChanges.items.map((change) => <li key={change.path}><strong>{change.path}</strong><span>{formatChangeValue(change.before)} → {formatChangeValue(change.after)}</span></li>)}</ul>
+            {pendingChanges.total > pendingChanges.items.length && <p className="previewHint">Showing the first {pendingChanges.items.length} changes.</p>}
+          </details>
           {savePreferenceError && <p className="inlineError" role="status">{savePreferenceError}</p>}
         </Section>}
 

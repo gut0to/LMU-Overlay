@@ -1446,3 +1446,10 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .backupList strong { display: block; font-size: 12px; }
 .backupList small { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
 @media (max-width: 1000px) { .backupList li { align-items: flex-start; flex-direction: column; } }
+
+.pendingChanges { min-width: 0; font-size: 12px; color: var(--muted); }
+.pendingChanges summary { cursor: pointer; padding: 6px 0; color: var(--blue); }
+.pendingChanges summary:focus-visible { outline: 2px solid var(--violet); outline-offset: 3px; }
+.pendingChanges ul { display: grid; gap: 8px; max-height: 260px; overflow: auto; list-style: none; padding: 0; }
+.pendingChanges li { display: grid; gap: 4px; padding-bottom: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.pendingChanges strong { color: var(--ink); font-weight: 500; }
