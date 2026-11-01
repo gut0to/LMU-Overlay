@@ -71,3 +71,42 @@ fn read_bounded(path: &Path) -> io::Result<String> {
     if bytes.len() as u64 > MAX_BACKUP_BYTES { return Err(io::Error::new(io::ErrorKind::InvalidData, "configuration exceeds the 4 MiB backup limit")); }
     String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Fixture { root: PathBuf, config: PathBuf }
+    impl Fixture {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!("hashoverlay-backup-test-{}-{}", std::process::id(), NEXT_BACKUP.fetch_add(1, Ordering::Relaxed)));
+            fs::create_dir(&root).unwrap();
+            let config = root.join("settings.toml");
+            fs::write(&config, "config_version = 7\n").unwrap();
+            Self { root, config }
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            assert_eq!(self.root.parent(), Some(std::env::temp_dir().as_path()));
+            assert!(self.root.file_name().unwrap().to_string_lossy().starts_with("hashoverlay-backup-test-"));
+            fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+    #[test]
+    fn backup_round_trips_exact_saved_bytes_and_retains_only_the_newest_five() {
+        let fixture = Fixture::new();
+        assert!(list(&fixture.config).unwrap().is_empty());
+        let first = create(&fixture.config).unwrap();
+        assert_eq!(read(&fixture.config, &first.id).unwrap(), "config_version = 7\n");
+        for index in 0..6 {
+            fs::write(&fixture.config, format!("# saved {index}\n")).unwrap();
+            create(&fixture.config).unwrap();
+        }
+        let backups = list(&fixture.config).unwrap();
+        assert_eq!(backups.len(), BACKUP_LIMIT);
+        assert!(!folder(&fixture.config).join(first.id).exists());
+        assert_eq!(read(&fixture.config, &backups[0].id).unwrap(), "# saved 5\n");
+        assert_eq!(fs::read_to_string(&fixture.config).unwrap(), "# saved 5\n");
+        assert_eq!(fs::read_dir(folder(&fixture.config)).unwrap().count(), BACKUP_LIMIT);
+    }
+}
