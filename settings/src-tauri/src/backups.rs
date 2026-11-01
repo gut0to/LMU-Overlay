@@ -1,7 +1,29 @@
 use std::{fs, io::{self, Read}, path::{Path, PathBuf}};
+use std::{io::Write, sync::atomic::{AtomicU64, Ordering}, time::{SystemTime, UNIX_EPOCH}};
+use serde::Serialize;
 
 pub const MAX_BACKUP_BYTES: u64 = 4 * 1024 * 1024;
 pub const BACKUP_LIMIT: usize = 5;
+static NEXT_BACKUP: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BackupInfo { pub id: String, pub modified_ms: u64, pub size_bytes: u64 }
+
+pub fn create(config: &Path) -> Result<BackupInfo, String> {
+    let text = read_bounded(config).map_err(|error| format!("Could not back up the saved configuration: {error}"))?;
+    let root = folder(config);
+    fs::create_dir_all(&root).map_err(|error| error.to_string())?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?;
+    let id = format!("{:039}-{:010}-{:020}.toml", now.as_nanos(), std::process::id(), NEXT_BACKUP.fetch_add(1, Ordering::Relaxed));
+    let target = root.join(&id);
+    let temporary = target.with_extension("pending");
+    let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary).map_err(|error| error.to_string())?;
+    let written = file.write_all(text.as_bytes()).and_then(|_| file.sync_all());
+    drop(file);
+    let result = written.and_then(|_| fs::rename(&temporary, &target));
+    if let Err(error) = result { let _ = fs::remove_file(&temporary); return Err(format!("Could not publish configuration backup: {error}")); }
+    Ok(BackupInfo { id, modified_ms: now.as_millis().min(u128::from(u64::MAX)) as u64, size_bytes: text.len() as u64 })
+}
 
 fn folder(config: &Path) -> PathBuf { config.with_extension("backups") }
 
