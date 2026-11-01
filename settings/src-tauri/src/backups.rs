@@ -22,7 +22,15 @@ pub fn create(config: &Path) -> Result<BackupInfo, String> {
     drop(file);
     let result = written.and_then(|_| fs::rename(&temporary, &target));
     if let Err(error) = result { let _ = fs::remove_file(&temporary); return Err(format!("Could not publish configuration backup: {error}")); }
+    prune(config)?;
     Ok(BackupInfo { id, modified_ms: now.as_millis().min(u128::from(u64::MAX)) as u64, size_bytes: text.len() as u64 })
+}
+
+fn prune(config: &Path) -> Result<(), String> {
+    for backup in list(config)?.into_iter().skip(BACKUP_LIMIT) {
+        fs::remove_file(folder(config).join(backup.id)).map_err(|error| format!("Backup created, but old backup cleanup failed: {error}"))?;
+    }
+    Ok(())
 }
 
 fn folder(config: &Path) -> PathBuf { config.with_extension("backups") }
