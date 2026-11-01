@@ -27,6 +27,25 @@ pub fn create(config: &Path) -> Result<BackupInfo, String> {
 
 fn folder(config: &Path) -> PathBuf { config.with_extension("backups") }
 
+pub fn list(config: &Path) -> Result<Vec<BackupInfo>, String> {
+    let entries = match fs::read_dir(folder(config)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("Could not list configuration backups: {error}")),
+    };
+    let mut backups = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if !valid_id(&id) || !entry.file_type().map_err(|error| error.to_string())?.is_file() { continue; }
+        let metadata = entry.metadata().map_err(|error| error.to_string())?;
+        let modified_ms = metadata.modified().ok().and_then(|time| time.duration_since(UNIX_EPOCH).ok()).map(|duration| duration.as_millis().min(u128::from(u64::MAX)) as u64).unwrap_or(0);
+        backups.push(BackupInfo { id, modified_ms, size_bytes: metadata.len() });
+    }
+    backups.sort_by(|left, right| right.id.cmp(&left.id));
+    Ok(backups)
+}
+
 fn valid_id(id: &str) -> bool {
     let Some(stem) = id.strip_suffix(".toml") else { return false; };
     !stem.is_empty() && stem.len() <= 96 && stem.as_bytes()[0].is_ascii_digit()
