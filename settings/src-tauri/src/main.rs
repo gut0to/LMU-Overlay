@@ -1,3 +1,4 @@
+mod backups;
 mod displays;
 use std::{
     fs,
