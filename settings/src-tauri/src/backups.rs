@@ -93,6 +93,18 @@ mod tests {
         }
     }
     #[test]
+    fn backup_identifiers_cannot_escape_the_configuration_backup_directory() {
+        let fixture = Fixture::new();
+        for id in ["../settings.toml", "..\\settings.toml", "C:/settings.toml", "1/2.toml", "1.toml:stream", "", ".toml"] {
+            assert!(read(&fixture.config, id).is_err(), "{id}");
+        }
+        fs::create_dir(folder(&fixture.config)).unwrap();
+        fs::write(folder(&fixture.config).join("notes.txt"), "ignored").unwrap();
+        fs::write(folder(&fixture.config).join("1.pending"), "unfinished").unwrap();
+        assert!(list(&fixture.config).unwrap().is_empty());
+    }
+
+    #[test]
     fn backup_round_trips_exact_saved_bytes_and_retains_only_the_newest_five() {
         let fixture = Fixture::new();
         assert!(list(&fixture.config).unwrap().is_empty());
