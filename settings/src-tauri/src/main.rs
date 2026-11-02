@@ -557,6 +557,30 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn scoped_import_persists_the_reviewed_editor_base_and_keeps_a_restore_point() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-scoped-import-{}.toml", std::process::id()));
+        let mut saved = OverlayConfig::default();
+        saved.save(&path).unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+        let revision = OverlayConfig::revision(&path).unwrap();
+        let mut editor = saved.clone();
+        editor.window.x = 42;
+        assert!(scoped_import_at(&path, editor.clone(), original.clone(), import_scope::ImportScope::Appearance, revision.wrapping_add(1)).is_err());
+        assert!(backups::list(&path).unwrap().is_empty());
+        let mut imported = saved;
+        imported.style.opacity = 100;
+        imported.window.x = 900;
+        let text = toml::to_string_pretty(&imported).unwrap();
+        scoped_import_at(&path, editor, text, import_scope::ImportScope::Appearance, revision).unwrap();
+        let result = OverlayConfig::load(&path).unwrap();
+        assert_eq!(result.style.opacity, 100);
+        assert_eq!(result.window.x, 42);
+        assert_eq!(backups::read(&path, &backups::list(&path).unwrap()[0].id).unwrap(), original);
+        cleanup_backups(&path);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn destructive_import_requires_a_current_revision_and_a_successful_backup() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-import-backup-{}.toml",
