@@ -17,6 +17,7 @@ pub fn merge(base: &OverlayConfig, imported: OverlayConfig, scope: ImportScope) 
             }
         }
         ImportScope::Timing => { result.timing = imported.timing; result.coaching = imported.coaching; }
+        ImportScope::Hotkeys => result.hotkeys = imported.hotkeys,
         _ => {}
     }
     result.validate_for_save().map_err(|error| error.to_string())?;
