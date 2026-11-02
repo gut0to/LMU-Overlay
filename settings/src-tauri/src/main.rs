@@ -1,7 +1,7 @@
-mod inspection;
 mod backups;
 mod displays;
 mod import_scope;
+mod inspection;
 use std::{
     fs,
     path::PathBuf,
@@ -884,6 +884,21 @@ fn main() {
 mod ipc_tests {
     use super::*;
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+
+    #[test]
+    fn scoped_preview_ipc_preserves_editor_geometry_when_importing_appearance() {
+        let app = mock_builder().invoke_handler(tauri::generate_handler![preview_scoped_import]).build(mock_context(noop_assets())).unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+        let mut base = OverlayConfig::default();
+        base.window.x = 42;
+        let response = get_ipc_response(&webview, tauri::webview::InvokeRequest {
+            cmd: "preview_scoped_import".into(), callback: tauri::ipc::CallbackFn(0), error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(), body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "base": base, "text": "config_version = 7\n[style]\nopacity = 100\n[window]\nx = 900", "scope": "appearance" })),
+            headers: Default::default(), invoke_key: INVOKE_KEY.into(),
+        }).unwrap().deserialize::<OverlayConfig>().unwrap();
+        assert_eq!(response.window.x, 42);
+        assert_eq!(response.style.opacity, 100);
+    }
 
     #[test]
     fn scoped_preview_ipc_rejects_unrecognized_scopes() {
