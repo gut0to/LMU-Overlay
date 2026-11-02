@@ -1,3 +1,5 @@
+import { useConfigInspection, type ConfigInspection } from "./useConfigInspection";
+import { compareConfiguration } from "./config-conflicts";
 import { importScopes, isImportScope, type ImportScope } from "./import-scopes";
 import { importRequestKey, readImportRequest } from "./import-request";
 import { useAutosave } from "./useAutosave";
@@ -255,6 +257,8 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   });
 }
 
+function inspectSavedFile() { return invoke<ConfigInspection>("inspect_saved_config"); }
+
 function loadConfigBackups() { return invoke<unknown>("list_config_backups"); }
 
 function validateImportText(source: string) { return invoke<OverlayConfig>("preview_scoped_import", readImportRequest(source)); }
@@ -326,6 +330,8 @@ function App() {
   const reloadWarning = useRef<string | null>(null);
   const configPath = useRef(path);
   configPath.current = path;
+  const inspectionKey = JSON.stringify({ path, config, baseline: lastSavedConfig.current });
+  const diskInspection = useConfigInspection(inspectionKey, inspectSavedFile);
   const currentConfig = useRef(config);
   currentConfig.current = config;
 
@@ -1453,6 +1459,13 @@ function App() {
               </div>
             ))}
           </div>
+        </Section>}
+
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Copy />} title="Compare Saved File">
+          <p className="previewHint">Read the current file without saving, updating the editor revision or contacting the overlay. Refresh after external changes.</p>
+          <button className="secondaryButton" disabled={saving || diskInspection.pending} onClick={() => void diskInspection.inspect()}>{diskInspection.pending ? "Reading saved file…" : "Compare editor with saved file"}</button>
+          {diskInspection.error && <p className="inlineError" role="alert">{diskInspection.error}</p>}
+          {diskInspection.result && <p className="previewHint" role="status">Saved file read successfully. Comparison is based on this snapshot.</p>}
         </Section>}
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
