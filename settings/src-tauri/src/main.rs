@@ -102,6 +102,11 @@ fn preview_import(text: String) -> Result<OverlayConfig, String> {
     OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn preview_scoped_import(base: OverlayConfig, text: String, scope: import_scope::ImportScope) -> Result<OverlayConfig, String> {
+    native_task(move || import_scope::merge(&base, preview_import(text)?, scope)).await
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
     native_task(move || import_config_blocking(text, expected_revision)).await
@@ -754,6 +759,7 @@ fn main() {
             export_config,
             import_config,
             preview_import,
+            preview_scoped_import,
             reset_config,
             widget_catalog,
             list_config_backups,
