@@ -887,8 +887,13 @@ mod ipc_tests {
 
     #[test]
     fn scoped_preview_ipc_preserves_editor_geometry_when_importing_appearance() {
-        let app = mock_builder().invoke_handler(tauri::generate_handler![preview_scoped_import]).build(mock_context(noop_assets())).unwrap();
-        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![preview_scoped_import])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
         let mut base = OverlayConfig::default();
         base.window.x = 42;
         let response = get_ipc_response(&webview, tauri::webview::InvokeRequest {

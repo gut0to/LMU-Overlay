@@ -37,7 +37,10 @@ mod tests {
     use std::fs;
     #[test]
     fn formatting_only_edits_change_the_revision_even_when_normalized_values_match() {
-        let path = std::env::temp_dir().join(format!("hashoverlay-inspect-comments-{}.toml", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-inspect-comments-{}.toml",
+            std::process::id()
+        ));
         fs::write(&path, "config_version = 7\n").unwrap();
         let before = read(&path).unwrap();
         fs::write(&path, "# external comment\nconfig_version = 7\n").unwrap();

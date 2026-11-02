@@ -1473,14 +1473,19 @@ function App() {
           <button className="secondaryButton" disabled={saving || replacingConfig} onClick={() => void loadConfig()}>Reload saved file</button>
           <p className="previewHint">Comparison never accepts a newer revision or retries a failed save. Reloading uses the existing discard confirmation when editor changes are pending.</p>
           {diskInspection.error && <p className="inlineError" role="alert">{diskInspection.error}</p>}
+          {diskInspection.result && <p role="status">{diskInspection.result.revision === revision.current ? "Saved revision matches the editor baseline." : "The saved file revision changed externally. Reload before saving, even when setting values match."}</p>}
           {diskInspection.result && <button className="secondaryButton" onClick={async () => {
-            const copied = await copyGeometryToClipboard(diskInspection.result!.text);
+            const snapshot = diskInspection.result;
+            if (!snapshot) return;
+            const copied = await copyGeometryToClipboard(snapshot.text);
             setStatus(copied ? "Saved TOML copied without changing editor settings" : "Could not copy saved TOML. Load it into the import editor to copy manually.");
           }}>Copy saved TOML</button>}
           {diskInspection.result && <button className="secondaryButton" onClick={() => {
             if (configText.trim() && !window.confirm("Replace the TOML editor text with the inspected saved file? Configuration edits will remain unchanged.")) return;
             importPreview.clear();
-            setConfigText(diskInspection.result!.text);
+            const snapshot = diskInspection.result;
+            if (!snapshot) return;
+            setConfigText(snapshot.text);
             setImportScope("full");
             setStatus("Saved TOML loaded for import review. Preview it before applying. Reload first if the saved revision changed externally.");
           }}>Review saved TOML as import</button>}
