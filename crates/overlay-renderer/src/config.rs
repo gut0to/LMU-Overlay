@@ -119,6 +119,9 @@ impl OverlayConfig {
         Ok(config_revision(&bytes))
     }
 
+    /// Revision of the exact UTF-8 bytes read for a coherent, read-only snapshot.
+    pub fn text_revision(text: &str) -> u64 { config_revision(text.as_bytes()) }
+
     pub fn save_if_revision(
         &mut self,
         path: impl AsRef<Path>,
