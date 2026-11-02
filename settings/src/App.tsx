@@ -548,6 +548,7 @@ function App() {
       const text = await invoke<string>("read_config_backup", { id });
       importPreview.clear();
       setConfigText(text);
+      setImportScope("full");
       setActivePage("Advanced");
       setStatus("Backup loaded into the TOML editor. Preview import to review its changes before applying.");
     } catch (error) { setBackupError(String(error)); }
@@ -1512,6 +1513,7 @@ function App() {
           {importPreview.pending && <p className="previewHint" role="status">Checking TOML and preparing the import preview…</p>}
           {importPreview.error && <p id="importError" className="inlineError" role="alert">{importPreview.error}</p>}
           {importChanges && <section className="importReview" aria-label="Import changes">
+            <p className="previewHint">Scope: {importScopes.find(([scope]) => scope === importScope)?.[1]}. Changing the editor, source text or scope requires a new preview.</p>
             <p role="status">{importChanges.total === 0 ? "This import matches the current settings." : `${importChanges.total} fields will change. Review them before applying.`}</p>
             {importChanges.items.length > 0 && <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Changed configuration fields"><table>
               <thead><tr><th scope="col">Setting</th><th scope="col">Current</th><th scope="col">Imported</th></tr></thead>
@@ -1519,7 +1521,7 @@ function App() {
             </table></div>}
             {importChanges.total > importChanges.items.length && <p>Showing the first {importChanges.items.length} changes of {importChanges.total}.</p>}
           </section>}
-          <p id="importHint" className="previewHint">Preview the TOML to review changes. Applying replaces all current settings, including surfaces and saved presets. Export first to keep a backup.</p>
+          <p id="importHint" className="previewHint">Preview the TOML to review changes in the selected scope. Applying saves the reviewed result, including pending editor edits. Full imports replace all sections; other scopes preserve unrelated settings. Export first to keep a backup.</p>
         </Section>}
       </fieldset>
 
