@@ -1,11 +1,12 @@
 import type { WindowConfig } from "./types";
-import type { WorkspaceSize } from "./workspace";
+import { restoreWorkspace, type WorkspaceSize } from "./workspace.ts";
 import { normalizeWindowField } from "./window-values.ts";
 
 export function fitWindowToWorkspace(
   window: WindowConfig,
   workspace: WorkspaceSize,
 ): WindowConfig {
+  workspace = restoreWorkspace(JSON.stringify(workspace), { width: 1920, height: 1080, originX: 0, originY: 0 });
   const width = Math.min(
     workspace.width,
     normalizeWindowField("width", window.width),

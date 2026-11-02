@@ -224,3 +224,28 @@ may remain after a later write fails, which preserves useful recovery data.
 replacement, recovery review or manual mode own the editor. Save failures retain their
 existing retry suppression. Discard uses history edits rather than replacing history,
 so Undo remains available. Pending summaries compare against the saved baseline.
+
+## Scoped Imports and Read-Only Inspection
+
+`import_scope.rs` merges one validated source with the editor snapshot at an explicit
+native enum interface. Appearance includes units and per-widget styles; timing includes
+coaching; surfaces include geometry and membership while retaining rate fields from
+matching existing layers or the editor window for new layers. The final merged config
+is validated and normalized. Preview and apply share this merge; apply also retains
+backup creation and optimistic revision checks.
+
+`import-request.ts` binds review ownership to TOML, scope and the complete editor base.
+This prevents an old preview from authorizing a new scope or discarding newer edits.
+The editor base includes pending edits, which are persisted when the reviewed import
+is explicitly applied. Full-file import remains available for older native callers.
+
+`inspection.rs` reads at most one byte beyond its 4 MiB limit. It derives configuration,
+exact TOML and the decimal revision token from one byte snapshot, with in-memory schema
+migration only. `OverlayConfig::text_revision` uses the same hash as file revision checks.
+Inspection neither writes migration backups nor contacts the host.
+
+`config-conflicts.ts` compares baseline-to-editor and baseline-to-disk changes, matching
+paths including ancestors for deletion/edit conflicts. This is a review aid, not a
+semantic merge engine: arrays use positional indexes. `useConfigInspection` owns async
+results by editor and baseline; the UI never updates the expected write revision from
+inspection. Only the existing explicit reload/replacement flows accept a newer baseline.

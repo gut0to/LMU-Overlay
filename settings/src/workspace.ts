@@ -16,8 +16,8 @@ export function restoreWorkspace(saved: string | null, defaults: WorkspaceSize):
     return {
       width: Math.max(320, Math.min(16384, integer("width"))),
       height: Math.max(240, Math.min(8640, integer("height"))),
-      originX: integer("originX"),
-      originY: integer("originY"),
+      originX: Math.max(-2147483648, Math.min(2147483647, integer("originX"))),
+      originY: Math.max(-2147483648, Math.min(2147483647, integer("originY"))),
     };
   } catch {
     return { ...defaults };

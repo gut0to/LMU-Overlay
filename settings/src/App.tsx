@@ -1,3 +1,7 @@
+import { useConfigInspection, type ConfigInspection } from "./useConfigInspection";
+import { compareConfiguration } from "./config-conflicts";
+import { importScopes, isImportScope, type ImportScope } from "./import-scopes";
+import { importRequestKey, readImportRequest } from "./import-request";
 import { useAutosave } from "./useAutosave";
 import { restoreSavePreferences, SAVE_PREFERENCES_KEY } from "./save-preferences";
 import { ConfigBackups } from "./ConfigBackups";
@@ -253,9 +257,11 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
   });
 }
 
+function inspectSavedFile() { return invoke<ConfigInspection>("inspect_saved_config"); }
+
 function loadConfigBackups() { return invoke<unknown>("list_config_backups"); }
 
-function validateImportText(text: string) { return invoke<OverlayConfig>("preview_import", { text }); }
+function validateImportText(source: string) { return invoke<OverlayConfig>("preview_scoped_import", readImportRequest(source)); }
 
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
@@ -295,7 +301,9 @@ function App() {
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
-  const importPreview = useImportPreview(configText, validateImportText);
+  const [importScope, setImportScope] = useState<ImportScope>("full");
+  const importSource = useMemo(() => importRequestKey(config, configText, importScope), [config, configText, importScope]);
+  const importPreview = useImportPreview(importSource, validateImportText);
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
@@ -322,6 +330,8 @@ function App() {
   const reloadWarning = useRef<string | null>(null);
   const configPath = useRef(path);
   configPath.current = path;
+  const inspectionKey = JSON.stringify({ path, config, baseline: lastSavedConfig.current });
+  const diskInspection = useConfigInspection(inspectionKey, inspectSavedFile);
   const currentConfig = useRef(config);
   currentConfig.current = config;
 
@@ -544,6 +554,7 @@ function App() {
       const text = await invoke<string>("read_config_backup", { id });
       importPreview.clear();
       setConfigText(text);
+      setImportScope("full");
       setActivePage("Advanced");
       setStatus("Backup loaded into the TOML editor. Preview import to review its changes before applying.");
     } catch (error) { setBackupError(String(error)); }
@@ -565,9 +576,9 @@ function App() {
 
   async function importConfigText() {
     if (!importPreview.config || importPreview.pending) { setStatus("Preview the current TOML before importing."); return; }
-    const reviewedText = configText;
+    const reviewedRequest = readImportRequest(importSource);
     if (config && JSON.stringify(config) !== lastSavedConfig.current
-      && !window.confirm("Importing will replace your pending changes. Continue?")) {
+      && !window.confirm("Apply the reviewed import result, including pending editor changes? A backup of saved settings will be created first.")) {
       return;
     }
     cancelAutosave();
@@ -575,8 +586,8 @@ function App() {
       setSaving(true);
       setReplacingConfig(true);
       try {
-        const response = await invoke<LoadResponse>("import_config", {
-          text: reviewedText,
+        const response = await invoke<LoadResponse>("import_config_scoped", {
+          ...reviewedRequest,
           expected_revision: revision.current,
         });
         const normalized = normalizeUiConfig(response.config);
@@ -942,6 +953,12 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const diskComparison = useMemo(() => {
+    if (!config || !diskInspection.result || !lastSavedConfig.current) return null;
+    try { return compareConfiguration(JSON.parse(lastSavedConfig.current), config, normalizeUiConfig(diskInspection.result.config)); }
+    catch { return null; }
+  }, [config, diskInspection.result]);
+
   const pendingChanges = useMemo(() => {
     if (!config || !lastSavedConfig.current) return { total: 0, items: [] };
     try { return configurationChanges(JSON.parse(lastSavedConfig.current), config, 20); }
@@ -1154,7 +1171,7 @@ function App() {
               selected={activeOverlayId}
               onSelect={setActiveOverlayId}
               workspace={workspace}
-              onWorkspaceChange={setWorkspace}
+              onWorkspaceChange={(next) => setWorkspace(restoreWorkspace(JSON.stringify(next), workspacePresets[0][1]))}
               onFitToWorkspace={fitOverlaysToWorkspace}
               onCenterSelected={() => alignOverlay(activeOverlayId, "center")}
               onResetWorkspace={resetWorkspacePreference}
@@ -1450,6 +1467,39 @@ function App() {
           </div>
         </Section>}
 
+        {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Copy />} title="Compare Saved File">
+          <p className="previewHint">Read the current file without saving, updating the editor revision or contacting the overlay. Refresh after external changes.</p>
+          <button className="secondaryButton" disabled={saving || diskInspection.pending} onClick={() => void diskInspection.inspect()}>{diskInspection.pending ? "Reading saved file…" : "Compare editor with saved file"}</button>
+          <button className="secondaryButton" disabled={saving || replacingConfig} onClick={() => void loadConfig()}>Reload saved file</button>
+          <p className="previewHint">Comparison never accepts a newer revision or retries a failed save. Reloading uses the existing discard confirmation when editor changes are pending.</p>
+          {diskInspection.error && <p className="inlineError" role="alert">{diskInspection.error}</p>}
+          {diskInspection.result && <p role="status">{diskInspection.result.revision === revision.current ? "Saved revision matches the editor baseline." : "The saved file revision changed externally. Reload before saving, even when setting values match."}</p>}
+          {diskInspection.result && <button className="secondaryButton" onClick={async () => {
+            const snapshot = diskInspection.result;
+            if (!snapshot) return;
+            const copied = await copyGeometryToClipboard(snapshot.text);
+            setStatus(copied ? "Saved TOML copied without changing editor settings" : "Could not copy saved TOML. Load it into the import editor to copy manually.");
+          }}>Copy saved TOML</button>}
+          {diskInspection.result && <button className="secondaryButton" onClick={() => {
+            if (configText.trim() && !window.confirm("Replace the TOML editor text with the inspected saved file? Configuration edits will remain unchanged.")) return;
+            importPreview.clear();
+            const snapshot = diskInspection.result;
+            if (!snapshot) return;
+            setConfigText(snapshot.text);
+            setImportScope("full");
+            setStatus("Saved TOML loaded for import review. Preview it before applying. Reload first if the saved revision changed externally.");
+          }}>Review saved TOML as import</button>}
+          {diskComparison && <div className="importReview">
+            <p role="status">{diskComparison.localCount} editor changes; {diskComparison.externalCount} external changes; {diskComparison.conflictCount} potentially conflicting paths.</p>
+            {diskComparison.conflicts.length > 0 && <details><summary>Review overlapping changes</summary><ul className="conflictPaths">{diskComparison.conflicts.map((conflict) => <li key={conflict.path}><strong>{conflict.path}</strong><span>Editor: {formatChangeValue(conflict.editor)}</span><span>Saved: {formatChangeValue(conflict.saved)}</span></li>)}</ul></details>}
+            <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Editor versus saved file"><table>
+              <thead><tr><th scope="col">Setting</th><th scope="col">Editor</th><th scope="col">Saved file</th></tr></thead>
+              <tbody>{diskComparison.differences.items.map((change) => <tr key={change.path}><th scope="row">{change.path}</th><td>{formatChangeValue(change.before)}</td><td>{formatChangeValue(change.after)}</td></tr>)}</tbody>
+            </table></div>
+            <p>{diskComparison.differences.total === 0 ? "The saved file matches the editor." : `Showing ${diskComparison.differences.items.length} of ${diskComparison.differences.total} differences.`}</p>
+          </div>}
+        </Section>}
+
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
           <label className="toggle"><input type="checkbox" checked={savePreferences.autosave} onChange={(event) => setSavePreferences({ version: 1, autosave: event.target.checked })} /><span>Save changes automatically</span></label>
           <p className="previewHint">{savePreferences.autosave ? "Edits save after a short pause. Turn this off to review changes before saving." : "Manual saving: edits stay in the editor until Save. Explicit preset, import and reset actions still apply their changes."}</p>
@@ -1495,6 +1545,12 @@ function App() {
               Reset all
             </button>
           </div>
+          <label className="referenceField">Import scope
+            <select value={importScope} disabled={saving} onChange={(event) => { if (isImportScope(event.target.value)) setImportScope(event.target.value); }}>
+              {importScopes.map(([scope, label]) => <option key={scope} value={scope}>{label}</option>)}
+            </select>
+          </label>
+          <p className="previewHint">{importScopes.find(([scope]) => scope === importScope)?.[2]}</p>
           <label className="field stack">
             <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
             <textarea aria-invalid={Boolean(importPreview.error)} aria-describedby={importPreview.error ? "importError importHint" : "importHint"} aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
@@ -1502,6 +1558,7 @@ function App() {
           {importPreview.pending && <p className="previewHint" role="status">Checking TOML and preparing the import preview…</p>}
           {importPreview.error && <p id="importError" className="inlineError" role="alert">{importPreview.error}</p>}
           {importChanges && <section className="importReview" aria-label="Import changes">
+            <p className="previewHint">Scope: {importScopes.find(([scope]) => scope === importScope)?.[1]}. Changing the editor, source text or scope requires a new preview.</p>
             <p role="status">{importChanges.total === 0 ? "This import matches the current settings." : `${importChanges.total} fields will change. Review them before applying.`}</p>
             {importChanges.items.length > 0 && <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Changed configuration fields"><table>
               <thead><tr><th scope="col">Setting</th><th scope="col">Current</th><th scope="col">Imported</th></tr></thead>
@@ -1509,7 +1566,7 @@ function App() {
             </table></div>}
             {importChanges.total > importChanges.items.length && <p>Showing the first {importChanges.items.length} changes of {importChanges.total}.</p>}
           </section>}
-          <p id="importHint" className="previewHint">Preview the TOML to review changes. Applying replaces all current settings, including surfaces and saved presets. Export first to keep a backup.</p>
+          <p id="importHint" className="previewHint">Preview the TOML to review changes in the selected scope. Applying saves the reviewed result, including pending editor edits. Full imports replace all sections; other scopes preserve unrelated settings. Export first to keep a backup.</p>
         </Section>}
       </fieldset>
 

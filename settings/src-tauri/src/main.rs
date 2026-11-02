@@ -1,5 +1,7 @@
 mod backups;
 mod displays;
+mod import_scope;
+mod inspection;
 use std::{
     fs,
     path::PathBuf,
@@ -101,6 +103,15 @@ fn preview_import(text: String) -> Result<OverlayConfig, String> {
     OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn preview_scoped_import(
+    base: OverlayConfig,
+    text: String,
+    scope: import_scope::ImportScope,
+) -> Result<OverlayConfig, String> {
+    native_task(move || import_scope::merge(&base, preview_import(text)?, scope)).await
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn import_config(text: String, expected_revision: String) -> Result<ConfigResponse, String> {
     native_task(move || import_config_blocking(text, expected_revision)).await
@@ -113,6 +124,42 @@ fn import_config_blocking(
     let path = overlay_config_path();
     import_config_at(&path, text, parse_revision(&expected_revision)?)?;
     finish_saved_config(path, reload_overlay_config_after_save())
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn import_config_scoped(
+    base: OverlayConfig,
+    text: String,
+    scope: import_scope::ImportScope,
+    expected_revision: String,
+) -> Result<ConfigResponse, String> {
+    native_task(move || {
+        let path = overlay_config_path();
+        scoped_import_at(
+            &path,
+            base,
+            text,
+            scope,
+            parse_revision(&expected_revision)?,
+        )?;
+        finish_saved_config(path, reload_overlay_config_after_save())
+    })
+    .await
+}
+
+fn scoped_import_at(
+    path: &std::path::Path,
+    base: OverlayConfig,
+    text: String,
+    scope: import_scope::ImportScope,
+    expected_revision: u64,
+) -> Result<(), String> {
+    let mut merged = import_scope::merge(&base, preview_import(text)?, scope)?;
+    create_backup_at(path, expected_revision)?;
+    merged
+        .save_if_revision(path, expected_revision)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn import_config_at(
@@ -147,6 +194,11 @@ fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(),
         .save_if_revision(path, expected_revision)
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn inspect_saved_config() -> Result<inspection::SavedFile, String> {
+    native_task(|| inspection::read(&overlay_config_path())).await
 }
 
 #[tauri::command]
@@ -536,6 +588,50 @@ mod save_feedback_tests {
     }
 
     #[test]
+    fn scoped_import_persists_the_reviewed_editor_base_and_keeps_a_restore_point() {
+        let path = std::env::temp_dir().join(format!(
+            "hashoverlay-scoped-import-{}.toml",
+            std::process::id()
+        ));
+        let mut saved = OverlayConfig::default();
+        saved.save(&path).unwrap();
+        let original = fs::read_to_string(&path).unwrap();
+        let revision = OverlayConfig::revision(&path).unwrap();
+        let mut editor = saved.clone();
+        editor.window.x = 42;
+        assert!(scoped_import_at(
+            &path,
+            editor.clone(),
+            original.clone(),
+            import_scope::ImportScope::Appearance,
+            revision.wrapping_add(1)
+        )
+        .is_err());
+        assert!(backups::list(&path).unwrap().is_empty());
+        let mut imported = saved;
+        imported.style.opacity = 100;
+        imported.window.x = 900;
+        let text = toml::to_string_pretty(&imported).unwrap();
+        scoped_import_at(
+            &path,
+            editor,
+            text,
+            import_scope::ImportScope::Appearance,
+            revision,
+        )
+        .unwrap();
+        let result = OverlayConfig::load(&path).unwrap();
+        assert_eq!(result.style.opacity, 100);
+        assert_eq!(result.window.x, 42);
+        assert_eq!(
+            backups::read(&path, &backups::list(&path).unwrap()[0].id).unwrap(),
+            original
+        );
+        cleanup_backups(&path);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn destructive_import_requires_a_current_revision_and_a_successful_backup() {
         let path = std::env::temp_dir().join(format!(
             "hashoverlay-import-backup-{}.toml",
@@ -752,10 +848,13 @@ fn main() {
             validate_config,
             export_config,
             import_config,
+            import_config_scoped,
             preview_import,
+            preview_scoped_import,
             reset_config,
             widget_catalog,
             list_config_backups,
+            inspect_saved_config,
             create_config_backup,
             read_config_backup,
             list_displays,
@@ -785,6 +884,43 @@ fn main() {
 mod ipc_tests {
     use super::*;
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
+
+    #[test]
+    fn scoped_preview_ipc_preserves_editor_geometry_when_importing_appearance() {
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![preview_scoped_import])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let mut base = OverlayConfig::default();
+        base.window.x = 42;
+        let response = get_ipc_response(&webview, tauri::webview::InvokeRequest {
+            cmd: "preview_scoped_import".into(), callback: tauri::ipc::CallbackFn(0), error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(), body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "base": base, "text": "config_version = 7\n[style]\nopacity = 100\n[window]\nx = 900", "scope": "appearance" })),
+            headers: Default::default(), invoke_key: INVOKE_KEY.into(),
+        }).unwrap().deserialize::<OverlayConfig>().unwrap();
+        assert_eq!(response.window.x, 42);
+        assert_eq!(response.style.opacity, 100);
+    }
+
+    #[test]
+    fn scoped_preview_ipc_rejects_unrecognized_scopes() {
+        let app = mock_builder()
+            .invoke_handler(tauri::generate_handler![preview_scoped_import])
+            .build(mock_context(noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let error = get_ipc_response(&webview, tauri::webview::InvokeRequest {
+            cmd: "preview_scoped_import".into(), callback: tauri::ipc::CallbackFn(0), error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(), body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "base": OverlayConfig::default(), "text": "config_version = 7", "scope": "all_except_hotkeys" })),
+            headers: Default::default(), invoke_key: INVOKE_KEY.into(),
+        }).unwrap_err().to_string();
+        assert!(error.contains("unknown variant"), "{error}");
+    }
 
     #[test]
     fn backup_read_ipc_rejects_unsafe_identifiers_before_filesystem_access() {
