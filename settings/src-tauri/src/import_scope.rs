@@ -16,6 +16,7 @@ pub fn merge(base: &OverlayConfig, imported: OverlayConfig, scope: ImportScope) 
                 if let Some(source) = imported.extra_widgets.get(id) { widget.style = source.style.clone(); }
             }
         }
+        ImportScope::Timing => { result.timing = imported.timing; result.coaching = imported.coaching; }
         _ => {}
     }
     result.validate_for_save().map_err(|error| error.to_string())?;
