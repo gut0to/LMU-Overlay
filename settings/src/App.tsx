@@ -1,3 +1,5 @@
+import { importScopes, isImportScope, type ImportScope } from "./import-scopes";
+import { importRequestKey, readImportRequest } from "./import-request";
 import { useAutosave } from "./useAutosave";
 import { restoreSavePreferences, SAVE_PREFERENCES_KEY } from "./save-preferences";
 import { ConfigBackups } from "./ConfigBackups";
@@ -255,7 +257,7 @@ function normalizeUiConfig(raw: OverlayConfig): OverlayConfig {
 
 function loadConfigBackups() { return invoke<unknown>("list_config_backups"); }
 
-function validateImportText(text: string) { return invoke<OverlayConfig>("preview_import", { text }); }
+function validateImportText(source: string) { return invoke<OverlayConfig>("preview_scoped_import", readImportRequest(source)); }
 
 function App() {
   const { config, setConfig, replaceConfig, acknowledgeConfig, undo, redo, beginEdit, endEdit, canUndo, canRedo, editingGesture } = useConfigHistory<OverlayConfig>();
@@ -295,7 +297,9 @@ function App() {
   const [activePage, setActivePage] = useState<Page>("Dashboard");
   const [defaultConfigState, setDefaultConfigState] = useState<OverlayConfig | null>(null);
   const [configText, setConfigText] = useState("");
-  const importPreview = useImportPreview(configText, validateImportText);
+  const [importScope, setImportScope] = useState<ImportScope>("full");
+  const importSource = useMemo(() => importRequestKey(config, configText, importScope), [config, configText, importScope]);
+  const importPreview = useImportPreview(importSource, validateImportText);
   const [widgetCatalog, setWidgetCatalog] = useState<WidgetDefinition[]>([]);
   const [presetSearch, setPresetSearch] = useState("");
   const [widgetSearch, setWidgetSearch] = useState("");
