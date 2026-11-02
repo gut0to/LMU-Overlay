@@ -121,6 +121,21 @@ fn import_config_blocking(
     finish_saved_config(path, reload_overlay_config_after_save())
 }
 
+#[tauri::command(rename_all = "snake_case")]
+async fn import_config_scoped(base: OverlayConfig, text: String, scope: import_scope::ImportScope, expected_revision: String) -> Result<ConfigResponse, String> {
+    native_task(move || {
+        let path = overlay_config_path();
+        scoped_import_at(&path, base, text, scope, parse_revision(&expected_revision)?)?;
+        finish_saved_config(path, reload_overlay_config_after_save())
+    }).await
+}
+
+fn scoped_import_at(path: &std::path::Path, base: OverlayConfig, text: String, scope: import_scope::ImportScope, expected_revision: u64) -> Result<(), String> {
+    let mut merged = import_scope::merge(&base, preview_import(text)?, scope)?;
+    create_backup_at(path, expected_revision)?;
+    merged.save_if_revision(path, expected_revision).map(|_| ()).map_err(|error| error.to_string())
+}
+
 fn import_config_at(
     path: &std::path::Path,
     text: String,
@@ -758,6 +773,7 @@ fn main() {
             validate_config,
             export_config,
             import_config,
+            import_config_scoped,
             preview_import,
             preview_scoped_import,
             reset_config,
