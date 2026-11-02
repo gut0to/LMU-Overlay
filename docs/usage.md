@@ -277,3 +277,36 @@ behaves like any other edit and will save again after the debounce period.
 Automatic saving waits until a drag, resize or held-arrow gesture ends, so a pause
 inside the gesture does not persist an intermediate layout. Recovery review keeps
 autosave paused until an explicit save, independently of the manual-mode preference.
+
+## Import Only the Settings You Need
+
+In **Advanced → Import and Export**, choose an import scope before previewing TOML:
+
+- **Entire configuration** replaces all sections.
+- **Appearance and units** copies the theme, units and per-widget styles.
+- **Timing and coaching** copies reference timing and coaching preferences.
+- **Hotkeys** copies only global keyboard bindings.
+- **Saved presets** replaces built-in and custom preset definitions, keeping the active setup.
+- **Surface layout and visibility** copies surfaces, geometry and widget membership,
+  preserving appearance, options, performance mode and existing sampling rates.
+
+Use a valid configuration file as the source. Preview shows the final result against
+the current editor. Changing TOML, scope or editor settings invalidates the review.
+Applying a scoped import also saves any pending editor changes preserved in that
+result; inspect them first. Revision checks and automatic saved-file backups remain
+in effect. Reviewing a backup starts with the full-configuration scope.
+
+## Compare External Configuration Changes
+
+Use **Advanced → Compare Saved File** after a save reports an external-file conflict.
+The inspection reads the saved TOML without rewriting it, reloading the host,
+changing your editor or accepting its revision. It lists local edits, changes made
+on disk since the editor baseline, and paths changed differently on both sides.
+Parent deletions can conflict with nested changes. Array positions are compared by
+index, so reordered surfaces or presets may require closer inspection.
+
+The view is a snapshot. Refresh after another process edits the file; changing the
+editor hides obsolete comparison results. **Reload saved file** uses the normal
+pending-change confirmation. Copy the saved TOML or review it through scoped import
+without applying it automatically. Reload first when you need to accept an external
+revision before saving. There is no force-overwrite or automatic merge action.
