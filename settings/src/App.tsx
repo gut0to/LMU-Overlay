@@ -1470,6 +1470,8 @@ function App() {
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Copy />} title="Compare Saved File">
           <p className="previewHint">Read the current file without saving, updating the editor revision or contacting the overlay. Refresh after external changes.</p>
           <button className="secondaryButton" disabled={saving || diskInspection.pending} onClick={() => void diskInspection.inspect()}>{diskInspection.pending ? "Reading saved file…" : "Compare editor with saved file"}</button>
+          <button className="secondaryButton" disabled={saving || replacingConfig} onClick={() => void loadConfig()}>Reload saved file</button>
+          <p className="previewHint">Comparison never accepts a newer revision or retries a failed save. Reloading uses the existing discard confirmation when editor changes are pending.</p>
           {diskInspection.error && <p className="inlineError" role="alert">{diskInspection.error}</p>}
           {diskComparison && <div className="importReview">
             <p role="status">{diskComparison.localCount} editor changes; {diskComparison.externalCount} external changes; {diskComparison.conflictCount} potentially conflicting paths.</p>
