@@ -51,6 +51,16 @@ mod tests {
         OverlayConfig::from_import_text(overlay_renderer::config::default_config_text()).unwrap()
     }
     #[test]
+    fn unknown_scopes_and_invalid_merged_bindings_are_rejected() {
+        assert!(serde_json::from_str::<ImportScope>("\"appearance_and_everything\"").is_err());
+        let base = baseline();
+        let mut invalid = base.clone();
+        invalid.hotkeys.edit_mode = invalid.hotkeys.toggle_overlay.clone();
+        assert!(merge(&base, invalid.clone(), ImportScope::Hotkeys).is_err());
+        assert!(merge(&base, invalid, ImportScope::Full).is_err());
+    }
+
+    #[test]
     fn scoped_imports_preserve_unrelated_editor_settings() {
         let base = baseline();
         let mut candidate = base.clone();
