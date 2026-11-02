@@ -834,6 +834,18 @@ mod ipc_tests {
     use tauri::test::{get_ipc_response, mock_builder, mock_context, noop_assets, INVOKE_KEY};
 
     #[test]
+    fn scoped_preview_ipc_rejects_unrecognized_scopes() {
+        let app = mock_builder().invoke_handler(tauri::generate_handler![preview_scoped_import]).build(mock_context(noop_assets())).unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
+        let error = get_ipc_response(&webview, tauri::webview::InvokeRequest {
+            cmd: "preview_scoped_import".into(), callback: tauri::ipc::CallbackFn(0), error: tauri::ipc::CallbackFn(1),
+            url: "http://tauri.localhost".parse().unwrap(), body: tauri::ipc::InvokeBody::Json(serde_json::json!({ "base": OverlayConfig::default(), "text": "config_version = 7", "scope": "all_except_hotkeys" })),
+            headers: Default::default(), invoke_key: INVOKE_KEY.into(),
+        }).unwrap_err().to_string();
+        assert!(error.contains("unknown variant"), "{error}");
+    }
+
+    #[test]
     fn backup_read_ipc_rejects_unsafe_identifiers_before_filesystem_access() {
         let app = mock_builder()
             .invoke_handler(tauri::generate_handler![read_config_backup])
