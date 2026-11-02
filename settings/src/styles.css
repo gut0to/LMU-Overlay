@@ -1455,3 +1455,7 @@ input:disabled, textarea:disabled { opacity: 0.55; cursor: not-allowed; }
 .pendingChanges strong { color: var(--ink); font-weight: 500; }
 
 .saveModeNotice { border-color: var(--blue); }
+
+.conflictPaths { display: grid; gap: 10px; padding-left: 16px; max-height: 240px; overflow: auto; }
+.conflictPaths li { display: grid; gap: 4px; overflow-wrap: anywhere; font-size: 12px; }
+.conflictPaths strong { color: var(--amber); }

@@ -953,6 +953,12 @@ function App() {
     }
   }, [availableLayoutEntries, selectedLayout]);
 
+  const diskComparison = useMemo(() => {
+    if (!config || !diskInspection.result || !lastSavedConfig.current) return null;
+    try { return compareConfiguration(JSON.parse(lastSavedConfig.current), config, normalizeUiConfig(diskInspection.result.config)); }
+    catch { return null; }
+  }, [config, diskInspection.result]);
+
   const pendingChanges = useMemo(() => {
     if (!config || !lastSavedConfig.current) return { total: 0, items: [] };
     try { return configurationChanges(JSON.parse(lastSavedConfig.current), config, 20); }
@@ -1465,7 +1471,15 @@ function App() {
           <p className="previewHint">Read the current file without saving, updating the editor revision or contacting the overlay. Refresh after external changes.</p>
           <button className="secondaryButton" disabled={saving || diskInspection.pending} onClick={() => void diskInspection.inspect()}>{diskInspection.pending ? "Reading saved file…" : "Compare editor with saved file"}</button>
           {diskInspection.error && <p className="inlineError" role="alert">{diskInspection.error}</p>}
-          {diskInspection.result && <p className="previewHint" role="status">Saved file read successfully. Comparison is based on this snapshot.</p>}
+          {diskComparison && <div className="importReview">
+            <p role="status">{diskComparison.localCount} editor changes; {diskComparison.externalCount} external changes; {diskComparison.conflictCount} potentially conflicting paths.</p>
+            {diskComparison.conflicts.length > 0 && <details><summary>Review overlapping changes</summary><ul className="conflictPaths">{diskComparison.conflicts.map((conflict) => <li key={conflict.path}><strong>{conflict.path}</strong><span>Editor: {formatChangeValue(conflict.editor)}</span><span>Saved: {formatChangeValue(conflict.saved)}</span></li>)}</ul></details>}
+            <div className="importChangesScroll" tabIndex={0} role="region" aria-label="Editor versus saved file"><table>
+              <thead><tr><th scope="col">Setting</th><th scope="col">Editor</th><th scope="col">Saved file</th></tr></thead>
+              <tbody>{diskComparison.differences.items.map((change) => <tr key={change.path}><th scope="row">{change.path}</th><td>{formatChangeValue(change.before)}</td><td>{formatChangeValue(change.after)}</td></tr>)}</tbody>
+            </table></div>
+            <p>{diskComparison.differences.total === 0 ? "The saved file matches the editor." : `Showing ${diskComparison.differences.items.length} of ${diskComparison.differences.total} differences.`}</p>
+          </div>}
         </Section>}
 
         {showPanel(activePage, "Advanced", "Advanced") && <Section icon={<Save />} title="Saving Changes">
