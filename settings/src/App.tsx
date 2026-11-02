@@ -569,9 +569,9 @@ function App() {
 
   async function importConfigText() {
     if (!importPreview.config || importPreview.pending) { setStatus("Preview the current TOML before importing."); return; }
-    const reviewedText = configText;
+    const reviewedRequest = readImportRequest(importSource);
     if (config && JSON.stringify(config) !== lastSavedConfig.current
-      && !window.confirm("Importing will replace your pending changes. Continue?")) {
+      && !window.confirm("Apply the reviewed import result, including pending editor changes? A backup of saved settings will be created first.")) {
       return;
     }
     cancelAutosave();
@@ -579,8 +579,8 @@ function App() {
       setSaving(true);
       setReplacingConfig(true);
       try {
-        const response = await invoke<LoadResponse>("import_config", {
-          text: reviewedText,
+        const response = await invoke<LoadResponse>("import_config_scoped", {
+          ...reviewedRequest,
           expected_revision: revision.current,
         });
         const normalized = normalizeUiConfig(response.config);
