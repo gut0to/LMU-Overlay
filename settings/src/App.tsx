@@ -1477,6 +1477,13 @@ function App() {
             const copied = await copyGeometryToClipboard(diskInspection.result!.text);
             setStatus(copied ? "Saved TOML copied without changing editor settings" : "Could not copy saved TOML. Load it into the import editor to copy manually.");
           }}>Copy saved TOML</button>}
+          {diskInspection.result && <button className="secondaryButton" onClick={() => {
+            if (configText.trim() && !window.confirm("Replace the TOML editor text with the inspected saved file? Configuration edits will remain unchanged.")) return;
+            importPreview.clear();
+            setConfigText(diskInspection.result!.text);
+            setImportScope("full");
+            setStatus("Saved TOML loaded for import review. Preview it before applying. Reload first if the saved revision changed externally.");
+          }}>Review saved TOML as import</button>}
           {diskComparison && <div className="importReview">
             <p role="status">{diskComparison.localCount} editor changes; {diskComparison.externalCount} external changes; {diskComparison.conflictCount} potentially conflicting paths.</p>
             {diskComparison.conflicts.length > 0 && <details><summary>Review overlapping changes</summary><ul className="conflictPaths">{diskComparison.conflicts.map((conflict) => <li key={conflict.path}><strong>{conflict.path}</strong><span>Editor: {formatChangeValue(conflict.editor)}</span><span>Saved: {formatChangeValue(conflict.saved)}</span></li>)}</ul></details>}
