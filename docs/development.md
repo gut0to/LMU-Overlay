@@ -143,3 +143,16 @@ manual-save preferences and fake-timer autosave behavior. Desktop checks should 
 creating a backup, changing settings, reviewing the backup, previewing its import and
 applying it, plus changing save mode and undoing a discarded edit. Backups are local
 recovery conveniences and do not replace exported user backups.
+
+## Scoped Import and External Change Review Regressions
+
+Native tests verify preservation of unrelated sections, surface sampling rates,
+invalid scopes, final hotkey validation, stale revisions, saved restore points and
+Tauri IPC argument handling. Inspection tests verify legacy migration without disk
+writes and rejection of malformed, future or oversized saved files.
+
+Frontend tests cover review fingerprints (text, scope and editor base), overlapping
+change paths, parent deletions, equal final values and stale inspection responses in
+the real React hook. Workspace tests also bound signed native screen coordinates.
+For desktop verification, change a TOML file externally while Settings has pending
+manual edits, compare both versions, then test explicit reload and scoped import.
