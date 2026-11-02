@@ -14,3 +14,33 @@ pub fn read(path: &Path) -> Result<SavedFile, String> {
     let config = OverlayConfig::from_import_text(&text).map_err(|error| error.to_string())?;
     Ok(SavedFile { path: path.display().to_string(), revision, config, text })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    #[test]
+    fn inspection_migrates_in_memory_without_rewriting_legacy_files_or_creating_backups() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-inspect-legacy-{}.toml", std::process::id()));
+        let original = "# user comment\nconfig_version = 3\n[window]\nx = -1920\n";
+        fs::write(&path, original).unwrap();
+        let snapshot = read(&path).unwrap();
+        assert_eq!(snapshot.text, original);
+        assert_eq!(snapshot.revision, OverlayConfig::revision(&path).unwrap().to_string());
+        assert_eq!(snapshot.config.window.x, -1920);
+        assert!(snapshot.config.config_version > 3);
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
+        assert!(!path.with_extension("toml.v3.bak").exists());
+        fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn malformed_future_and_oversized_saved_files_are_reported_without_replacement() {
+        let path = std::env::temp_dir().join(format!("hashoverlay-inspect-invalid-{}.toml", std::process::id()));
+        for text in ["invalid TOML".to_string(), "config_version = 99999".into(), "#".repeat(4 * 1024 * 1024 + 1)] {
+            fs::write(&path, &text).unwrap();
+            assert!(read(&path).is_err());
+            assert_eq!(fs::read_to_string(&path).unwrap(), text);
+        }
+        fs::remove_file(path).unwrap();
+    }
+}
