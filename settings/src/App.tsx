@@ -1473,6 +1473,10 @@ function App() {
           <button className="secondaryButton" disabled={saving || replacingConfig} onClick={() => void loadConfig()}>Reload saved file</button>
           <p className="previewHint">Comparison never accepts a newer revision or retries a failed save. Reloading uses the existing discard confirmation when editor changes are pending.</p>
           {diskInspection.error && <p className="inlineError" role="alert">{diskInspection.error}</p>}
+          {diskInspection.result && <button className="secondaryButton" onClick={async () => {
+            const copied = await copyGeometryToClipboard(diskInspection.result!.text);
+            setStatus(copied ? "Saved TOML copied without changing editor settings" : "Could not copy saved TOML. Load it into the import editor to copy manually.");
+          }}>Copy saved TOML</button>}
           {diskComparison && <div className="importReview">
             <p role="status">{diskComparison.localCount} editor changes; {diskComparison.externalCount} external changes; {diskComparison.conflictCount} potentially conflicting paths.</p>
             {diskComparison.conflicts.length > 0 && <details><summary>Review overlapping changes</summary><ul className="conflictPaths">{diskComparison.conflicts.map((conflict) => <li key={conflict.path}><strong>{conflict.path}</strong><span>Editor: {formatChangeValue(conflict.editor)}</span><span>Saved: {formatChangeValue(conflict.saved)}</span></li>)}</ul></details>}
