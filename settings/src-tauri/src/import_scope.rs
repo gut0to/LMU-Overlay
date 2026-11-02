@@ -43,3 +43,57 @@ fn geometry(base: &overlay_renderer::config::WindowConfig, source: &overlay_rend
     result.x = source.x; result.y = source.y; result.width = source.width; result.height = source.height;
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn baseline() -> OverlayConfig {
+        OverlayConfig::from_import_text(overlay_renderer::config::default_config_text()).unwrap()
+    }
+    #[test]
+    fn scoped_imports_preserve_unrelated_editor_settings() {
+        let base = baseline();
+        let mut candidate = base.clone();
+        candidate.style.opacity = 100;
+        candidate.units.speed = "mph".into();
+        candidate.timing.mini_sectors = 80;
+        candidate.hotkeys.toggle_overlay = "Ctrl+F8".into();
+        candidate.presets.custom.push(overlay_renderer::config::CustomPresetConfig::default());
+        candidate.window.x = 900;
+        let appearance = merge(&base, candidate.clone(), ImportScope::Appearance).unwrap();
+        assert_eq!(appearance.style.opacity, 100);
+        assert_eq!(appearance.units.speed, "mph");
+        assert_eq!(appearance.window, base.window);
+        assert_eq!(appearance.hotkeys, base.hotkeys);
+        assert_eq!(appearance.timing, base.timing);
+        let timing = merge(&base, candidate.clone(), ImportScope::Timing).unwrap();
+        assert_eq!(timing.timing.mini_sectors, 80);
+        assert_eq!(timing.style, base.style);
+        let hotkeys = merge(&base, candidate.clone(), ImportScope::Hotkeys).unwrap();
+        assert_eq!(hotkeys.hotkeys.toggle_overlay, "Ctrl+F8");
+        assert_eq!(hotkeys.presets, base.presets);
+        let presets = merge(&base, candidate, ImportScope::Presets).unwrap();
+        assert_eq!(presets.presets.custom.len(), 1);
+        assert_eq!(presets.window, base.window);
+        assert_eq!(base.presets.custom.len(), 0);
+    }
+    #[test]
+    fn surface_imports_preserve_custom_sampling_and_widget_style() {
+        let mut base = baseline();
+        base.performance.mode = "custom".into();
+        base.window.sample_ms = 37;
+        base.overlays[0].window.sample_ms = 41;
+        let mut candidate = base.clone();
+        candidate.window.x = -1920;
+        candidate.overlays[0].window.x = -1800;
+        candidate.overlays[0].window.sample_ms = 5;
+        candidate.style.opacity = 50;
+        let result = merge(&base, candidate, ImportScope::Surfaces).unwrap();
+        assert_eq!(result.window.x, -1920);
+        assert_eq!(result.window.sample_ms, 37);
+        assert_eq!(result.overlays[0].window.x, -1800);
+        assert_eq!(result.overlays[0].window.sample_ms, 41);
+        assert_eq!(result.style, base.style);
+        assert_eq!(result.presets, base.presets);
+    }
+}
