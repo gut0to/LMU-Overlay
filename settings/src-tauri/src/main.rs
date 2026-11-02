@@ -197,6 +197,11 @@ fn reset_config_at(path: &std::path::Path, expected_revision: u64) -> Result<(),
 }
 
 #[tauri::command]
+async fn inspect_saved_config() -> Result<inspection::SavedFile, String> {
+    native_task(|| inspection::read(&overlay_config_path())).await
+}
+
+#[tauri::command]
 async fn list_config_backups() -> Result<Vec<backups::BackupInfo>, String> {
     native_task(|| backups::list(&overlay_config_path())).await
 }
@@ -849,6 +854,7 @@ fn main() {
             reset_config,
             widget_catalog,
             list_config_backups,
+            inspect_saved_config,
             create_config_backup,
             read_config_backup,
             list_displays,
