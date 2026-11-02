@@ -1499,6 +1499,12 @@ function App() {
               Reset all
             </button>
           </div>
+          <label className="referenceField">Import scope
+            <select value={importScope} disabled={saving} onChange={(event) => { if (isImportScope(event.target.value)) setImportScope(event.target.value); }}>
+              {importScopes.map(([scope, label]) => <option key={scope} value={scope}>{label}</option>)}
+            </select>
+          </label>
+          <p className="previewHint">{importScopes.find(([scope]) => scope === importScope)?.[2]}</p>
           <label className="field stack">
             <span className="textAreaLabel">Config TOML <small>{configText.length.toLocaleString()} characters</small></span>
             <textarea aria-invalid={Boolean(importPreview.error)} aria-describedby={importPreview.error ? "importError importHint" : "importHint"} aria-label="Configuration TOML" autoCapitalize="off" autoCorrect="off" value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} placeholder="Export a configuration or paste TOML here before importing." />
