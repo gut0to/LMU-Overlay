@@ -1171,7 +1171,7 @@ function App() {
               selected={activeOverlayId}
               onSelect={setActiveOverlayId}
               workspace={workspace}
-              onWorkspaceChange={setWorkspace}
+              onWorkspaceChange={(next) => setWorkspace(restoreWorkspace(JSON.stringify(next), workspacePresets[0][1]))}
               onFitToWorkspace={fitOverlaysToWorkspace}
               onCenterSelected={() => alignOverlay(activeOverlayId, "center")}
               onResetWorkspace={resetWorkspacePreference}

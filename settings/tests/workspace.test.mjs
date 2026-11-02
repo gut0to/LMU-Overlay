@@ -43,3 +43,9 @@ test("fractional coordinates normalize to pixels and do not mutate defaults", ()
   assert.notEqual(restoreWorkspace(null, defaults), defaults);
   assert.deepEqual(defaults, { width: 1920, height: 1080, originX: 0, originY: 0 });
 });
+
+test("workspace origins stay representable by native signed screen coordinates", () => {
+  const workspace = restoreWorkspace('{"originX":1e20,"originY":-1e20}', { width: 1920, height: 1080, originX: 0, originY: 0 });
+  assert.equal(workspace.originX, 2147483647);
+  assert.equal(workspace.originY, -2147483648);
+});
