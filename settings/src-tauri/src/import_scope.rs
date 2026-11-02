@@ -19,9 +19,27 @@ pub fn merge(base: &OverlayConfig, imported: OverlayConfig, scope: ImportScope) 
         ImportScope::Timing => { result.timing = imported.timing; result.coaching = imported.coaching; }
         ImportScope::Hotkeys => result.hotkeys = imported.hotkeys,
         ImportScope::Presets => result.presets = imported.presets,
-        _ => {}
+        ImportScope::Surfaces => {
+            result.window = geometry(&base.window, &imported.window);
+            result.layout = imported.layout;
+            result.widgets = imported.widgets;
+            result.overlays = imported.overlays.into_iter().map(|mut layer| {
+                let previous = base.overlays.iter().find(|previous| previous.id == layer.id).map(|previous| &previous.window).unwrap_or(&base.window);
+                layer.window = geometry(previous, &layer.window);
+                layer
+            }).collect();
+            for (id, widget) in &mut result.extra_widgets {
+                if let Some(source) = imported.extra_widgets.get(id) { widget.layout = source.layout.clone(); widget.enabled = source.enabled; }
+            }
+        }
     }
     result.validate_for_save().map_err(|error| error.to_string())?;
     result.normalize();
     Ok(result)
+}
+
+fn geometry(base: &overlay_renderer::config::WindowConfig, source: &overlay_renderer::config::WindowConfig) -> overlay_renderer::config::WindowConfig {
+    let mut result = base.clone();
+    result.x = source.x; result.y = source.y; result.width = source.width; result.height = source.height;
+    result
 }
