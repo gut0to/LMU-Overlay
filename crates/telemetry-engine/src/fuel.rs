@@ -315,6 +315,11 @@ mod tests {
         sample.vehicle.fuel_liters = Some(24.0);
         assert_eq!(engine.update(&sample).average_lap_used, Some(3.0));
 
+        sample.metadata.track_layout = Some("alternate".into());
+        sample.lap_number = 1;
+        sample.vehicle.fuel_liters = Some(50.0);
+        assert_eq!(engine.update(&sample).average_lap_used, None);
+
         sample.metadata.player_slot_id = 99;
         sample.lap_number = 1;
         sample.vehicle.fuel_liters = Some(50.0);
