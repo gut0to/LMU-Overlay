@@ -2744,6 +2744,9 @@ mod windows_overlay {
     }
 
     fn display_fuel(value_liters: f64, config: &OverlayConfig) -> String {
+        if !value_liters.is_finite() || value_liters < 0.0 {
+            return "FUEL --".to_string();
+        }
         if config.units.fuel == "gallons" {
             format!("{:.2} gal", value_liters * 0.2641720524)
         } else {
@@ -2752,13 +2755,15 @@ mod windows_overlay {
     }
 
     fn display_pressure_value(value_kpa: Option<f64>, config: &OverlayConfig) -> Option<f64> {
-            value_kpa.filter(|value| value.is_finite() && *value >= 0.0).map(|value| {
-            if config.units.pressure == "psi" {
+        value_kpa
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| {
+                if config.units.pressure == "psi" {
                 value * 0.1450377377
-            } else {
-                value
-            }
-        })
+                } else {
+                    value
+                }
+            })
     }
 
     fn pressure_unit_label(config: &OverlayConfig) -> &'static str {
@@ -2770,13 +2775,16 @@ mod windows_overlay {
     }
 
     fn display_temperature_value(value_c: Option<f64>, config: &OverlayConfig) -> Option<f64> {
-        value_c.filter(|value| value.is_finite()).map(|value| {
-            if config.units.temperature == "fahrenheit" {
-                value * 9.0 / 5.0 + 32.0
-            } else {
-                value
-            }
-        })
+        value_c
+            .filter(|value| value.is_finite())
+            .map(|value| {
+                if config.units.temperature == "fahrenheit" {
+                    value * 9.0 / 5.0 + 32.0
+                } else {
+                    value
+                }
+            })
+            .filter(|value| value.is_finite())
     }
 
     fn temperature_unit_label(config: &OverlayConfig) -> &'static str {
