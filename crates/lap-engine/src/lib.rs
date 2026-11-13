@@ -5,6 +5,8 @@ use telemetry_engine::{LapHistoryEntry, TelemetrySnapshot};
 
 const NORMALIZED_REFERENCE_POINTS: usize = 2_001;
 const MAX_MINI_SECTORS: usize = 200;
+const MAX_CURRENT_LAP_POINTS: usize = 32_000;
+const MAX_CURRENT_LAP_EVENTS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReferenceMode {
@@ -584,6 +586,13 @@ impl LapEngine {
                 .last()
                 .is_none_or(|last| point.progress > last.progress)
             {
+                if self.current_points.len() >= MAX_CURRENT_LAP_POINTS {
+                    self.current_points = self
+                        .current_points
+                        .drain(..)
+                        .step_by(2)
+                        .collect();
+                }
                 self.current_points.push(point);
             }
         }
@@ -646,6 +655,9 @@ impl LapEngine {
             gear: gear_number(snapshot.gear),
             input_value,
         };
+        if self.current_events.len() == MAX_CURRENT_LAP_EVENTS {
+            self.current_events.remove(0);
+        }
         self.current_events.push(event);
     }
 
