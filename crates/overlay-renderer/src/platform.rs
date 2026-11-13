@@ -1704,8 +1704,11 @@ mod windows_overlay {
                 .session
                 .flag
                 .map_or_else(|| "FLAG --".to_string(), semantic_flag),
-            "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
-                (Some(fuel), Some(capacity)) if capacity > 0.0 => {
+            "fuel" => match (
+                snapshot.fuel_current_liters.filter(|value| value.is_finite() && *value >= 0.0),
+                snapshot.fuel_capacity_liters.filter(|value| value.is_finite() && *value > 0.0),
+            ) {
+                (Some(fuel), Some(capacity)) => {
                     format!(
                         "{}  {:.0}%",
                         display_fuel(fuel, config),
@@ -2749,7 +2752,7 @@ mod windows_overlay {
     }
 
     fn display_pressure_value(value_kpa: Option<f64>, config: &OverlayConfig) -> Option<f64> {
-        value_kpa.map(|value| {
+            value_kpa.filter(|value| value.is_finite() && *value >= 0.0).map(|value| {
             if config.units.pressure == "psi" {
                 value * 0.1450377377
             } else {
