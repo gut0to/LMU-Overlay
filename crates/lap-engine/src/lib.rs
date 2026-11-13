@@ -5,6 +5,8 @@ use telemetry_engine::{LapHistoryEntry, TelemetrySnapshot};
 
 const NORMALIZED_REFERENCE_POINTS: usize = 2_001;
 const MAX_MINI_SECTORS: usize = 200;
+const MAX_CURRENT_LAP_POINTS: usize = 32_000;
+const MAX_CURRENT_LAP_EVENTS: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReferenceMode {
@@ -58,6 +60,29 @@ impl Default for LapEngineConfig {
             event_match_tolerance_m: 80.0,
             min_reference_points: 20,
         }
+    }
+}
+
+impl LapEngineConfig {
+    fn normalized(mut self) -> Self {
+        self.mini_sectors = self.mini_sectors.clamp(1, MAX_MINI_SECTORS as u16);
+        self.brake_threshold = normalized_threshold(self.brake_threshold, 0.10);
+        self.throttle_threshold = normalized_threshold(self.throttle_threshold, 0.10);
+        self.event_match_tolerance_m = if self.event_match_tolerance_m.is_finite() {
+            self.event_match_tolerance_m.clamp(0.0, 10_000.0)
+        } else {
+            80.0
+        };
+        self.min_reference_points = self.min_reference_points.clamp(2, MAX_CURRENT_LAP_POINTS);
+        self
+    }
+}
+
+fn normalized_threshold(value: f64, fallback: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        fallback
     }
 }
 
@@ -162,7 +187,11 @@ impl ReferenceLap {
         points.sort_by(|a, b| a.progress.total_cmp(&b.progress));
         points.dedup_by(|a, b| (a.progress - b.progress).abs() < f64::EPSILON);
 
-        if points.is_empty()
+        if points.len() < 2
+            || points
+                .last()
+                .zip(points.first())
+                .is_none_or(|(last, first)| last.progress - first.progress < 0.90)
             || points
                 .iter()
                 .any(|point| point.time_seconds > total_time_seconds)
@@ -187,7 +216,7 @@ impl ReferenceLap {
     }
 
     pub fn sample_at(&self, progress: f64) -> Option<ReferencePoint> {
-        if !progress.is_finite() {
+        if !progress.is_finite() || self.points.len() < 2 {
             return None;
         }
         let progress = progress.clamp(0.0, 1.0);
@@ -372,6 +401,7 @@ pub struct LapEngine {
 
 impl LapEngine {
     pub fn new(config: LapEngineConfig) -> Self {
+        let config = config.normalized();
         Self {
             config,
             session_marker: None,
@@ -408,7 +438,7 @@ impl LapEngine {
     /// Existing points and history remain valid; subsequent samples use the
     /// new thresholds and reference mode.
     pub fn update_config(&mut self, config: LapEngineConfig) {
-        self.config = config;
+        self.config = config.normalized();
     }
 
     pub fn update(&mut self, snapshot: TelemetrySnapshot) -> LapAnalysis {
@@ -584,6 +614,13 @@ impl LapEngine {
                 .last()
                 .is_none_or(|last| point.progress > last.progress)
             {
+                if self.current_points.len() >= MAX_CURRENT_LAP_POINTS {
+                    self.current_points = self
+                        .current_points
+                        .drain(..)
+                        .step_by(2)
+                        .collect();
+                }
                 self.current_points.push(point);
             }
         }
@@ -646,6 +683,9 @@ impl LapEngine {
             gear: gear_number(snapshot.gear),
             input_value,
         };
+        if self.current_events.len() == MAX_CURRENT_LAP_EVENTS {
+            self.current_events.remove(0);
+        }
         self.current_events.push(event);
     }
 

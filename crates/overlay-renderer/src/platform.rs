@@ -1704,8 +1704,11 @@ mod windows_overlay {
                 .session
                 .flag
                 .map_or_else(|| "FLAG --".to_string(), semantic_flag),
-            "fuel" => match (snapshot.fuel_current_liters, snapshot.fuel_capacity_liters) {
-                (Some(fuel), Some(capacity)) if capacity > 0.0 => {
+            "fuel" => match (
+                snapshot.fuel_current_liters.filter(|value| value.is_finite() && *value >= 0.0),
+                snapshot.fuel_capacity_liters.filter(|value| value.is_finite() && *value > 0.0),
+            ) {
+                (Some(fuel), Some(capacity)) if fuel <= capacity => {
                     format!(
                         "{}  {:.0}%",
                         display_fuel(fuel, config),
@@ -2730,13 +2733,20 @@ mod windows_overlay {
     }
 
     fn option_decimal(value: Option<f64>) -> String {
-        value.map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
+        value
+            .filter(|value| value.is_finite())
+            .map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
     }
     fn option_percent(value: Option<f64>) -> String {
-        value.map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
+        value
+            .filter(|value| value.is_finite())
+            .map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
     }
 
     fn display_fuel(value_liters: f64, config: &OverlayConfig) -> String {
+        if !value_liters.is_finite() || value_liters < 0.0 {
+            return "FUEL --".to_string();
+        }
         if config.units.fuel == "gallons" {
             format!("{:.2} gal", value_liters * 0.2641720524)
         } else {
@@ -2745,13 +2755,15 @@ mod windows_overlay {
     }
 
     fn display_pressure_value(value_kpa: Option<f64>, config: &OverlayConfig) -> Option<f64> {
-        value_kpa.map(|value| {
-            if config.units.pressure == "psi" {
+        value_kpa
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| {
+                if config.units.pressure == "psi" {
                 value * 0.1450377377
-            } else {
-                value
-            }
-        })
+                } else {
+                    value
+                }
+            })
     }
 
     fn pressure_unit_label(config: &OverlayConfig) -> &'static str {
@@ -2763,13 +2775,16 @@ mod windows_overlay {
     }
 
     fn display_temperature_value(value_c: Option<f64>, config: &OverlayConfig) -> Option<f64> {
-        value_c.map(|value| {
-            if config.units.temperature == "fahrenheit" {
-                value * 9.0 / 5.0 + 32.0
-            } else {
-                value
-            }
-        })
+        value_c
+            .filter(|value| value.is_finite())
+            .map(|value| {
+                if config.units.temperature == "fahrenheit" {
+                    value * 9.0 / 5.0 + 32.0
+                } else {
+                    value
+                }
+            })
+            .filter(|value| value.is_finite())
     }
 
     fn temperature_unit_label(config: &OverlayConfig) -> &'static str {
@@ -4072,6 +4087,7 @@ mod windows_overlay {
 
     fn sector_time(seconds: Option<f64>) -> String {
         seconds
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
             .map(|seconds| format!("{seconds:.3}"))
             .unwrap_or_else(|| "--".to_string())
     }
@@ -4083,7 +4099,9 @@ mod windows_overlay {
     }
 
     fn display_speed(speed_kph: f64, config: &OverlayConfig) -> f64 {
-        if config.units.speed == "mph" {
+        if !speed_kph.is_finite() || speed_kph < 0.0 {
+            0.0
+        } else if config.units.speed == "mph" {
             speed_kph * 0.621_371
         } else {
             speed_kph
@@ -4099,6 +4117,9 @@ mod windows_overlay {
     }
 
     fn timing_hint(meters: f64) -> String {
+        if !meters.is_finite() {
+            return "BRAKE --".to_string();
+        }
         if meters >= 0.0 {
             format!("{meters:.0}m LATE")
         } else {

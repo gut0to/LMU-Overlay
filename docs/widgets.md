@@ -2,11 +2,21 @@
 
 Fuel averages exclude skipped lap numbers and laps containing missing fuel
 samples. Invalid timestamps do not overwrite the last valid session clock, so
-a later clock rewind can still reset the fuel history.
+a later clock rewind can still reset the fuel history. Changing track layout
+also starts a fresh average, preventing consumption from a different circuit
+variant from carrying into the current session. Fuel and unit-converted values
+are hidden when source values are non-finite or outside supported ranges.
 
 Relative neighbors use the explicit player marker before falling back to the
-configured slot. Garage vehicles are omitted. Distances outside one circuit
-length are wrapped before classifying the nearest cars ahead and behind.
+configured slot, preferring an active entry if the scoring field contains a
+duplicate marked player in the garage. Garage vehicles are omitted. Distances
+outside one circuit length are wrapped before classifying the nearest cars ahead
+and behind.
+
+Lap references require samples covering at least 90% of a lap. This prevents a
+session that starts mid-circuit from producing a partial-lap pace reference.
+Active lap samples and driving events also have bounded retention so a missing
+lap transition cannot grow process memory indefinitely.
 
 | Widget | Data source | Status |
 | --- | --- | --- |
