@@ -4087,6 +4087,7 @@ mod windows_overlay {
 
     fn sector_time(seconds: Option<f64>) -> String {
         seconds
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
             .map(|seconds| format!("{seconds:.3}"))
             .unwrap_or_else(|| "--".to_string())
     }
@@ -4098,7 +4099,9 @@ mod windows_overlay {
     }
 
     fn display_speed(speed_kph: f64, config: &OverlayConfig) -> f64 {
-        if config.units.speed == "mph" {
+        if !speed_kph.is_finite() || speed_kph < 0.0 {
+            0.0
+        } else if config.units.speed == "mph" {
             speed_kph * 0.621_371
         } else {
             speed_kph
