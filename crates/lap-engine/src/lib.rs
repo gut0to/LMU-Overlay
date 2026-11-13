@@ -63,6 +63,29 @@ impl Default for LapEngineConfig {
     }
 }
 
+impl LapEngineConfig {
+    fn normalized(mut self) -> Self {
+        self.mini_sectors = self.mini_sectors.clamp(1, MAX_MINI_SECTORS as u16);
+        self.brake_threshold = normalized_threshold(self.brake_threshold, 0.10);
+        self.throttle_threshold = normalized_threshold(self.throttle_threshold, 0.10);
+        self.event_match_tolerance_m = if self.event_match_tolerance_m.is_finite() {
+            self.event_match_tolerance_m.clamp(0.0, 10_000.0)
+        } else {
+            80.0
+        };
+        self.min_reference_points = self.min_reference_points.clamp(2, MAX_CURRENT_LAP_POINTS);
+        self
+    }
+}
+
+fn normalized_threshold(value: f64, fallback: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        fallback
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ReferencePoint {
     pub progress: f64,
@@ -374,6 +397,7 @@ pub struct LapEngine {
 
 impl LapEngine {
     pub fn new(config: LapEngineConfig) -> Self {
+        let config = config.normalized();
         Self {
             config,
             session_marker: None,
@@ -410,7 +434,7 @@ impl LapEngine {
     /// Existing points and history remain valid; subsequent samples use the
     /// new thresholds and reference mode.
     pub fn update_config(&mut self, config: LapEngineConfig) {
-        self.config = config;
+        self.config = config.normalized();
     }
 
     pub fn update(&mut self, snapshot: TelemetrySnapshot) -> LapAnalysis {
