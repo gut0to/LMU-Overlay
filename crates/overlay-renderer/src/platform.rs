@@ -1708,7 +1708,7 @@ mod windows_overlay {
                 snapshot.fuel_current_liters.filter(|value| value.is_finite() && *value >= 0.0),
                 snapshot.fuel_capacity_liters.filter(|value| value.is_finite() && *value > 0.0),
             ) {
-                (Some(fuel), Some(capacity)) => {
+                (Some(fuel), Some(capacity)) if fuel <= capacity => {
                     format!(
                         "{}  {:.0}%",
                         display_fuel(fuel, config),
