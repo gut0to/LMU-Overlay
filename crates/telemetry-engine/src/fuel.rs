@@ -17,7 +17,7 @@ pub struct FuelAnalysis {
 
 #[derive(Debug, Default)]
 pub struct FuelEngine {
-    session_key: Option<(String, String, i32, lmu_telemetry::SessionKind)>,
+    session_key: Option<(String, String, String, i32, lmu_telemetry::SessionKind)>,
     lap_number: Option<i32>,
     lap_start_fuel: Option<f64>,
     last_fuel: Option<f64>,
@@ -47,6 +47,7 @@ impl FuelEngine {
         let fuel = raw_fuel.filter(|value| capacity.is_none_or(|capacity| *value <= capacity));
         let session_key = (
             sample.metadata.track_name.clone().unwrap_or_default(),
+            sample.metadata.track_layout.clone().unwrap_or_default(),
             sample.metadata.vehicle_name.clone().unwrap_or_default(),
             sample.metadata.player_slot_id,
             sample.metadata.session_kind,
