@@ -216,7 +216,7 @@ impl ReferenceLap {
     }
 
     pub fn sample_at(&self, progress: f64) -> Option<ReferencePoint> {
-        if !progress.is_finite() {
+        if !progress.is_finite() || self.points.len() < 2 {
             return None;
         }
         let progress = progress.clamp(0.0, 1.0);
