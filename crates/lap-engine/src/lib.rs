@@ -187,7 +187,11 @@ impl ReferenceLap {
         points.sort_by(|a, b| a.progress.total_cmp(&b.progress));
         points.dedup_by(|a, b| (a.progress - b.progress).abs() < f64::EPSILON);
 
-        if points.is_empty()
+        if points.len() < 2
+            || points
+                .last()
+                .zip(points.first())
+                .is_none_or(|(last, first)| last.progress - first.progress < 0.90)
             || points
                 .iter()
                 .any(|point| point.time_seconds > total_time_seconds)
