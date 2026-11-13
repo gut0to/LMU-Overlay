@@ -21,7 +21,15 @@ pub fn relative_neighbors(
     let track_length_m = track_length_m.filter(|value| value.is_finite() && *value > 0.0)?;
     let player = field
         .iter()
-        .position(|car| car.is_player)
+        .enumerate()
+        .filter(|(_, car)| car.is_player)
+        .min_by_key(|(index, car)| (car.in_garage, *index))
+        .map(|(index, _)| index)
+        .or_else(|| {
+            field
+                .iter()
+                .position(|car| car.slot_id == player_slot_id && !car.in_garage)
+        })
         .or_else(|| field.iter().position(|car| car.slot_id == player_slot_id))?;
     let player_distance = field[player]
         .lap_distance_m
