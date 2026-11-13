@@ -2730,10 +2730,14 @@ mod windows_overlay {
     }
 
     fn option_decimal(value: Option<f64>) -> String {
-        value.map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
+        value
+            .filter(|value| value.is_finite())
+            .map_or_else(|| "--".to_string(), |value| format!("{value:.1}"))
     }
     fn option_percent(value: Option<f64>) -> String {
-        value.map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
+        value
+            .filter(|value| value.is_finite())
+            .map_or_else(|| "--".to_string(), |value| format!("{:.0}", value * 100.0))
     }
 
     fn display_fuel(value_liters: f64, config: &OverlayConfig) -> String {
@@ -2763,7 +2767,7 @@ mod windows_overlay {
     }
 
     fn display_temperature_value(value_c: Option<f64>, config: &OverlayConfig) -> Option<f64> {
-        value_c.map(|value| {
+        value_c.filter(|value| value.is_finite()).map(|value| {
             if config.units.temperature == "fahrenheit" {
                 value * 9.0 / 5.0 + 32.0
             } else {
