@@ -4117,6 +4117,9 @@ mod windows_overlay {
     }
 
     fn timing_hint(meters: f64) -> String {
+        if !meters.is_finite() {
+            return "BRAKE --".to_string();
+        }
         if meters >= 0.0 {
             format!("{meters:.0}m LATE")
         } else {
