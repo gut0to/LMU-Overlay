@@ -82,6 +82,7 @@ impl OverlayConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        backup_existing_config(path)?;
         atomic_write(path, toml::to_string_pretty(self)?)?;
         Ok(())
     }
@@ -108,6 +109,7 @@ impl OverlayConfig {
         self.normalize();
         let text = toml::to_string_pretty(self)?;
         let next_revision = config_revision(text.as_bytes());
+        backup_existing_config(path)?;
         atomic_write(path, text)?;
         Ok(next_revision)
     }
@@ -470,6 +472,14 @@ fn migrate_v6_to_v7(config: &mut OverlayConfig) {
 fn write_migration_backup(path: &Path, version: u32, text: &str) -> io::Result<()> {
     let backup_path = path.with_extension(format!("toml.v{version}.bak"));
     fs::write(backup_path, text)
+}
+
+fn backup_existing_config(path: &Path) -> io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let backup_path = path.with_extension("toml.last-good.bak");
+    fs::copy(path, backup_path).map(|_| ())
 }
 
 fn atomic_write(path: &Path, text: String) -> io::Result<()> {
@@ -2459,13 +2469,19 @@ mod tests {
         let mut updated = config.clone();
         updated.style.theme = "high_contrast".to_string();
         let new_revision = updated.save_if_revision(&temp_path, revision).unwrap();
+        let backup_path = temp_path.with_extension("toml.last-good.bak");
 
         assert_ne!(new_revision, revision);
+        assert_eq!(
+            fs::read_to_string(&backup_path).unwrap(),
+            toml::to_string_pretty(&config).unwrap()
+        );
         assert_eq!(
             OverlayConfig::load(&temp_path).unwrap().style.theme,
             "high_contrast"
         );
         let _ = fs::remove_file(&temp_path);
+        let _ = fs::remove_file(backup_path);
     }
 
     #[test]

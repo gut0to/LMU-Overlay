@@ -812,6 +812,21 @@ mod tests {
     }
 
     #[test]
+    fn clamps_zero_poll_interval_and_parses_overlay_layer_and_version() {
+        let cli = Cli::parse([
+            "--overlay-layer".to_string(),
+            "race".to_string(),
+            "--version".to_string(),
+            "--interval-ms".to_string(),
+            "0".to_string(),
+        ]);
+
+        assert_eq!(cli.overlay_layer.as_deref(), Some("race"));
+        assert!(cli.version);
+        assert_eq!(cli.interval, Duration::from_millis(1));
+    }
+
+    #[test]
     fn builds_reference_lap_key_from_telemetry_metadata() {
         let sample = TelemetrySample {
             timestamp_seconds: 0.0,

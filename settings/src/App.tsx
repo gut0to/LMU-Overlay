@@ -258,6 +258,7 @@ function App() {
   });
   const hydratedConfig = useRef(false);
   const lastSavedConfig = useRef("");
+  const saveSequence = useRef(0);
   const saveTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -334,12 +335,16 @@ function App() {
   }
 
   async function persistConfig(nextConfig: OverlayConfig, successStatus = "Saved"): Promise<boolean> {
+    const sequence = ++saveSequence.current;
     setSaving(true);
     try {
       const response = await invoke<LoadResponse>("save_config", {
         config: nextConfig,
         expected_revision: revision,
       });
+      if (sequence !== saveSequence.current) {
+        return false;
+      }
       const normalized = normalizeUiConfig(response.config);
       setConfig(normalized);
       lastSavedConfig.current = JSON.stringify(normalized);
@@ -348,10 +353,14 @@ function App() {
       setStatus(successStatus);
       return true;
     } catch (error) {
-      setStatus(String(error));
+      if (sequence === saveSequence.current) {
+        setStatus(String(error));
+      }
       return false;
     } finally {
-      setSaving(false);
+      if (sequence === saveSequence.current) {
+        setSaving(false);
+      }
     }
   }
 
@@ -391,7 +400,9 @@ function App() {
         text: configText,
         expected_revision: revision,
       });
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      setConfig(normalized);
+      lastSavedConfig.current = JSON.stringify(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config imported");
@@ -406,7 +417,9 @@ function App() {
     }
     try {
       const response = await invoke<LoadResponse>("reset_config");
-      setConfig(normalizeUiConfig(response.config));
+      const normalized = normalizeUiConfig(response.config);
+      setConfig(normalized);
+      lastSavedConfig.current = JSON.stringify(normalized);
       setPath(response.path);
       setRevision(response.revision);
       setStatus("Config reset");
